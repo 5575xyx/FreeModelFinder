@@ -370,6 +370,7 @@ UI 位于 `http://localhost:3000`，默认连接 `http://127.0.0.1:11435`。macO
 ## 文档与许可
 
 - [每日免费模型清单](FREE_MODELS.md)
+- [完整使用指南](docs/USAGE.md)
 - [API 使用说明](docs/API.md)
 - [macOS 使用说明](docs/MACOS.md)
 - [排障指南](docs/TROUBLESHOOTING.md)
