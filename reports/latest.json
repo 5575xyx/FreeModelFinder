@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-08-11",
-  "generatedAt": "2026-08-10T22:58:52.144Z",
-  "reportPath": "reports/provider-free-model-audit-2026-08-11.md",
-  "totalModels": 63,
+  "date": "2026-08-12",
+  "generatedAt": "2026-08-11T23:05:47.570Z",
+  "reportPath": "reports/provider-free-model-audit-2026-08-12.md",
+  "totalModels": 65,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 14,
+      "count": 16,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -35,6 +35,11 @@
           "contextWindow": 262144
         },
         {
+          "id": "liquid/lfm-2.5-2.6b:free",
+          "displayName": "LiquidAI: LFM2.5-2.6B (free)",
+          "contextWindow": 128000
+        },
+        {
           "id": "nvidia/nemotron-3-nano-30b-a3b:free",
           "displayName": "NVIDIA: Nemotron 3 Nano 30B A3B (free)",
           "contextWindow": 256000
@@ -52,6 +57,11 @@
         {
           "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
           "displayName": "NVIDIA: Nemotron 3 Ultra (free)",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "nvidia/nemotron-3.5-lightning:free",
+          "displayName": "NVIDIA: Nemotron 3.5 Lightning (free)",
           "contextWindow": 1000000
         },
         {
@@ -430,13 +440,19 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-08-10",
+    "comparedWith": "2026-08-11",
     "added": [
       {
-        "provider": "sensenova",
-        "id": "sensenova-6.8-flash-lite",
-        "displayName": "sensenova-6.8-flash-lite",
-        "contextWindow": null
+        "provider": "openrouter",
+        "id": "liquid/lfm-2.5-2.6b:free",
+        "displayName": "LiquidAI: LFM2.5-2.6B (free)",
+        "contextWindow": 128000
+      },
+      {
+        "provider": "openrouter",
+        "id": "nvidia/nemotron-3.5-lightning:free",
+        "displayName": "NVIDIA: Nemotron 3.5 Lightning (free)",
+        "contextWindow": 1000000
       }
     ],
     "removed": [],
