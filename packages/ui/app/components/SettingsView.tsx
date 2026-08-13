@@ -315,7 +315,10 @@ export function SettingsView({
         }),
       });
       if (res.ok) {
-        setToast({ kind: 'success', text: t('settings.sources.savedToast', { provider: providerId }) });
+        setToast({
+          kind: 'success',
+          text: t('settings.sources.savedToast', { provider: providerId }),
+        });
         setKeys((k) => ({ ...k, [providerId]: '' }));
         setSaveStates((s) => ({ ...s, [providerId]: 'saved' }));
         setTimeout(() => setSaveStates((s) => ({ ...s, [providerId]: 'idle' })), 1600);
@@ -668,9 +671,7 @@ export function SettingsView({
               : t('settings.stat.gateway.unavailable')
           }
           hint={
-            cfg
-              ? t('settings.stat.gateway.hint.running')
-              : t('settings.stat.gateway.hint.waiting')
+            cfg ? t('settings.stat.gateway.hint.running') : t('settings.stat.gateway.hint.waiting')
           }
           tone={cfg ? 'ok' : 'muted'}
           icon={<Server size={14} strokeWidth={1.75} />}
@@ -1024,9 +1025,7 @@ export function SettingsView({
                     )}
                   </button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('settings.gateway.baseUrlHint')}
-                </p>
+                <p className="text-xs text-muted-foreground">{t('settings.gateway.baseUrlHint')}</p>
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -1047,9 +1046,7 @@ export function SettingsView({
                     )}
                   </button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('settings.gateway.modelHint')}
-                </p>
+                <p className="text-xs text-muted-foreground">{t('settings.gateway.modelHint')}</p>
               </div>
             </div>
 
@@ -1078,9 +1075,7 @@ export function SettingsView({
                   <button
                     type="button"
                     onClick={() => setGatewayKeyVisible((v) => !v)}
-                    aria-label={
-                      gatewayKeyVisible ? t('settings.hideKey') : t('settings.showKey')
-                    }
+                    aria-label={gatewayKeyVisible ? t('settings.hideKey') : t('settings.showKey')}
                     className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {gatewayKeyVisible ? (
@@ -1254,9 +1249,7 @@ export function SettingsView({
                   <div className="grid gap-4 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] md:items-center">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">
-                          {displayLabel}
-                        </span>
+                        <span className="text-sm font-medium text-foreground">{displayLabel}</span>
                         {enabled ? (
                           <Badge tone="success">
                             <Dot tone="success" />

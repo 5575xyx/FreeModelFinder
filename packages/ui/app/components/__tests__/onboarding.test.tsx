@@ -45,7 +45,9 @@ describe('OnboardingWizard', () => {
     );
     const onReady = vi.fn();
     const user = userEvent.setup();
-    renderInEnglish(<OnboardingWizard onReady={onReady} onDismiss={vi.fn()} onOpenSettings={vi.fn()} />);
+    renderInEnglish(
+      <OnboardingWizard onReady={onReady} onDismiss={vi.fn()} onOpenSettings={vi.fn()} />,
+    );
 
     const openRouter = await screen.findByText('OpenRouter');
     await user.click(
@@ -78,7 +80,9 @@ describe('OnboardingWizard', () => {
       }),
     );
     const user = userEvent.setup();
-    renderInEnglish(<OnboardingWizard onReady={vi.fn()} onDismiss={vi.fn()} onOpenSettings={vi.fn()} />);
+    renderInEnglish(
+      <OnboardingWizard onReady={vi.fn()} onDismiss={vi.fn()} onOpenSettings={vi.fn()} />,
+    );
 
     const openRouter = await screen.findByText('OpenRouter');
     await user.click(
@@ -107,7 +111,9 @@ describe('OnboardingWizard', () => {
       ),
     );
     const user = userEvent.setup();
-    renderInEnglish(<OnboardingWizard onReady={vi.fn()} onDismiss={vi.fn()} onOpenSettings={vi.fn()} />);
+    renderInEnglish(
+      <OnboardingWizard onReady={vi.fn()} onDismiss={vi.fn()} onOpenSettings={vi.fn()} />,
+    );
 
     const openRouter = await screen.findByText('OpenRouter');
     await user.click(

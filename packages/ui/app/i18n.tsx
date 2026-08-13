@@ -89,8 +89,7 @@ const zh: Dict = {
   'finder.quota.remaining': '剩余 {value}',
   'finder.quota.remainingUnknown': '剩余额度未知',
   'finder.quota.resetSuffix': '重置',
-  'finder.quota.noWindows':
-    '上游尚未返回精确的 RPM / RPH / RPD 信息；点击检测可读取响应头。',
+  'finder.quota.noWindows': '上游尚未返回精确的 RPM / RPH / RPD 信息；点击检测可读取响应头。',
   'finder.quota.upstream': '上游',
   'finder.quota.local': '本地估算',
   'finder.quota.shared': '共享',
@@ -127,8 +126,7 @@ const zh: Dict = {
     '先选一个模板，也可以直接在下方输入。对话只会发往你当前选择的 provider。',
   'tester.prompt1.eyebrow': '解释',
   'tester.prompt1.title': '把复杂概念讲清楚',
-  'tester.prompt1.prompt':
-    '用一个生活中的例子解释向量数据库，并说明它与传统关系型数据库的区别。',
+  'tester.prompt1.prompt': '用一个生活中的例子解释向量数据库，并说明它与传统关系型数据库的区别。',
   'tester.prompt2.eyebrow': '代码',
   'tester.prompt2.title': '写一个可靠的工具函数',
   'tester.prompt2.prompt':
@@ -193,14 +191,12 @@ const zh: Dict = {
   'settings.autoRoute.cooldown.title': '正在冷却中的模型',
   'settings.autoRoute.cooldown.clear': '清除全部',
   'settings.autoRoute.cooldown.reset': '重置：',
-  'settings.autoRoute.remembered':
-    '原偏好模型：{model}（限制解除后将自动切回）',
+  'settings.autoRoute.remembered': '原偏好模型：{model}（限制解除后将自动切回）',
   'settings.autoRoute.recent.title': '最近路由动作',
   'settings.autoRoute.saved': '智能路由配置已更新',
 
   'settings.section.gateway': '对外接口',
-  'settings.section.gateway.desc.server':
-    '公网地址用于调用，当前管理地址仅供 Tailscale 使用',
+  'settings.section.gateway.desc.server': '公网地址用于调用，当前管理地址仅供 Tailscale 使用',
   'settings.section.gateway.desc.local': '让其他工具通过 OpenAI 兼容协议调用本地网关',
   'settings.gateway.baseUrl': 'Base URL',
   'settings.gateway.baseUrlHint': '兼容 OpenAI 的接口路径为 /v1/*。',
@@ -216,8 +212,7 @@ const zh: Dict = {
   'settings.gateway.revoke': '撤销',
   'settings.gateway.storedLocally': 'Key 仅保存在本机加密存储',
   'settings.gateway.curlExample': 'curl 示例',
-  'settings.gateway.curlPlaceholder':
-    '示例中的 YOUR_API_KEY 将在生成 Key 后自动替换为实际值。',
+  'settings.gateway.curlPlaceholder': '示例中的 YOUR_API_KEY 将在生成 Key 后自动替换为实际值。',
   'settings.gateway.generated': '已生成新的对外接口 API Key',
   'settings.gateway.revoked': '已撤销对外接口 API Key',
   'settings.gateway.opFailed': '对外接口操作失败：{err}',
@@ -249,8 +244,7 @@ const zh: Dict = {
   'settings.section.custom': '自定义模型',
   'settings.custom.summary': '{sources} 个源 · {models} 个模型',
   'settings.custom.desc': '通过 OpenAI 兼容协议接入你自己的模型（支持多源）',
-  'settings.custom.empty':
-    '尚未添加自定义源。可以为每个 Base URL 单独配置 API Key 和模型列表。',
+  'settings.custom.empty': '尚未添加自定义源。可以为每个 Base URL 单独配置 API Key 和模型列表。',
   'settings.custom.sourceName': '源名称',
   'settings.custom.remove': '删除源',
   'settings.custom.baseUrl': 'Base URL',
@@ -390,8 +384,7 @@ const en: Dict = {
     'Add at least one provider key; if you already did, check the connection errors below.',
   'finder.notice.empty.actionConnect': 'Connect first provider',
   'finder.notice.empty.actionSettings': 'Configure sources',
-  'finder.failures.title':
-    '{count} sources failed to sync this time; previous results are kept',
+  'finder.failures.title': '{count} sources failed to sync this time; previous results are kept',
   'finder.search.placeholder': 'Search models, sources or use cases',
   'finder.search.label': 'Search models',
   'finder.filter.all': 'All sources',
@@ -405,8 +398,7 @@ const en: Dict = {
   'finder.counter': 'Showing {visible} / {total} models',
   'finder.footer': 'Latest request result · No inferred pricing shown',
   'finder.card.free': 'Free',
-  'finder.card.desc.default':
-    "Passes this provider's free-model rules and is ready for text chat.",
+  'finder.card.desc.default': "Passes this provider's free-model rules and is ready for text chat.",
   'finder.card.useToTest': 'Test with it',
   'finder.card.continueTest': 'Continue testing',
   'finder.empty.title': 'No matching models',
@@ -506,8 +498,7 @@ const en: Dict = {
   'settings.section.currentModel.empty': 'No models available',
   'settings.section.currentModel.selectEmpty':
     'No models — please configure an API key below first',
-  'settings.section.currentModel.help':
-    'Selection is used for the "Chat test" page requests.',
+  'settings.section.currentModel.help': 'Selection is used for the "Chat test" page requests.',
   'settings.ping.test': 'Test connectivity',
   'settings.ping.testing': 'Testing…',
   'settings.ping.ok': 'Connection OK',
@@ -570,8 +561,7 @@ const en: Dict = {
   'settings.sources.added': 'Added',
   'settings.sources.notAdded': 'Not added',
   'settings.sources.count': '{n}',
-  'settings.sources.emptyAdded':
-    'No sources added yet. Save any API key below to enable it.',
+  'settings.sources.emptyAdded': 'No sources added yet. Save any API key below to enable it.',
   'settings.sources.emptyNotAdded': 'All providers are added 🎉',
   'settings.sources.configured': 'Configured',
   'settings.sources.notConfigured': 'Not configured',
@@ -603,8 +593,7 @@ const en: Dict = {
   'settings.custom.apiKeyExisting': '••••••••••  (leave empty to keep unchanged)',
   'settings.custom.apiKeyPlaceholder': 'Paste API key (leave empty for local unauthenticated)',
   'settings.custom.modelList': 'Model list',
-  'settings.custom.noModel':
-    'No models yet. Enter a model ID below and click "Add".',
+  'settings.custom.noModel': 'No models yet. Enter a model ID below and click "Add".',
   'settings.custom.modelIdPh': 'Model ID, e.g. gpt-4o-mini',
   'settings.custom.displayNamePh': 'Display name (optional)',
   'settings.custom.ctxPh': 'Context (tokens)',
@@ -625,8 +614,7 @@ const en: Dict = {
   'settings.custom.clearFailed': 'Clear failed: {msg}',
 
   'settings.section.inspect': 'Model inspection',
-  'settings.section.inspect.desc':
-    'Automatically discover newly added or delisted free models',
+  'settings.section.inspect.desc': 'Automatically discover newly added or delisted free models',
   'settings.gatewayHint': 'Gateway URL: ',
   'settings.copyFailed': 'Copy failed. Please select and copy manually.',
 
@@ -692,8 +680,7 @@ const en: Dict = {
   'platforms.modelscope.hint':
     'Free usage is bounded by your account and platform quotas, as returned by the model service API',
   'platforms.modelscope.label': 'ModelScope',
-  'platforms.zhipu.hint':
-    'Only lists Flash models that the platform explicitly marks as free',
+  'platforms.zhipu.hint': 'Only lists Flash models that the platform explicitly marks as free',
   'platforms.zhipu.label': 'Zhipu AI',
   'platforms.nvidia.hint':
     'Uses the rate-limited free access on the build.nvidia.com developer API',

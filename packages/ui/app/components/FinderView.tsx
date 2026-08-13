@@ -480,7 +480,11 @@ function QuotaPanel({
         </div>
         <div className="flex items-center gap-1.5">
           <Clock3 size={12} />
-          <span>{t('finder.quota.lastReset', { time: formatReset(quota?.session.resetAt, language, t) })}</span>
+          <span>
+            {t('finder.quota.lastReset', {
+              time: formatReset(quota?.session.resetAt, language, t),
+            })}
+          </span>
         </div>
       </div>
 
@@ -504,7 +508,9 @@ function QuotaPanel({
               </div>
               <div className="mt-0.5 text-xs font-semibold text-foreground">
                 {window.remaining !== undefined
-                  ? t('finder.quota.remaining', { value: compactNumber(window.remaining, language) })
+                  ? t('finder.quota.remaining', {
+                      value: compactNumber(window.remaining, language),
+                    })
                   : t('finder.quota.remainingUnknown')}
                 {window.limit !== undefined ? ` / ${compactNumber(window.limit, language)}` : ''}
               </div>

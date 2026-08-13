@@ -4,6 +4,8 @@ All notable changes to FreeModelFinder are documented here.
 
 ## [Unreleased]
 
+## [0.1.0-rc.4] - 2026-08-13
+
 - Add a pure macOS menu-bar app with a bundled Node SEA Gateway for Apple Silicon and Intel.
 - Keep Dashboard and menu-bar model selection synchronized through a versioned local control protocol.
 - Add safe service adoption, authenticated shutdown, crash supervision, login launch and manual update notices.
@@ -31,6 +33,7 @@ All notable changes to FreeModelFinder are documented here.
 - Add local quota observation, provider failure reporting and automatic routing.
 - Encrypt provider, custom-source and gateway credentials with the v3 local format.
 
-[Unreleased]: https://github.com/orange90/FreeModelFinder/compare/v0.1.0-rc.3...HEAD
+[Unreleased]: https://github.com/orange90/FreeModelFinder/compare/v0.1.0-rc.4...HEAD
+[0.1.0-rc.4]: https://github.com/orange90/FreeModelFinder/compare/v0.1.0-rc.3...v0.1.0-rc.4
 [0.1.0-rc.3]: https://github.com/orange90/FreeModelFinder/compare/v0.1.0-rc.2...v0.1.0-rc.3
 [0.1.0-rc.2]: https://github.com/orange90/FreeModelFinder/releases/tag/v0.1.0-rc.2
