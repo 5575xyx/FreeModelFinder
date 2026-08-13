@@ -127,9 +127,7 @@ export function ModelChangesBanner() {
           {t('inspect.lastRun', { when: formatRelative(data?.watcher.lastRunAt ?? 0, t) })}
         </span>
         {data && (
-          <span className="text-muted-foreground/80">
-            {t('inspect.total', { n: data.total })}
-          </span>
+          <span className="text-muted-foreground/80">{t('inspect.total', { n: data.total })}</span>
         )}
         <div className="ml-auto flex items-center gap-1">
           <button
@@ -172,9 +170,7 @@ export function ModelChangesBanner() {
       )}
 
       {!hasChanges && !error && (
-        <div className="px-3.5 py-2 text-xs text-muted-foreground">
-          {t('inspect.nothing')}
-        </div>
+        <div className="px-3.5 py-2 text-xs text-muted-foreground">{t('inspect.nothing')}</div>
       )}
 
       {hasChanges && (

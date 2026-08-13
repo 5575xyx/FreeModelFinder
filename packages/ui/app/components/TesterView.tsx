@@ -249,9 +249,7 @@ export function TesterView({
                 }
               }}
               placeholder={
-                models.length > 0
-                  ? t('tester.input.placeholder')
-                  : t('tester.input.needProvider')
+                models.length > 0 ? t('tester.input.placeholder') : t('tester.input.needProvider')
               }
               className="max-h-[180px] min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground/65 disabled:cursor-not-allowed"
             />
