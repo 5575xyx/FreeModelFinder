@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-08-14",
-  "generatedAt": "2026-08-13T23:05:26.719Z",
-  "reportPath": "reports/provider-free-model-audit-2026-08-14.md",
+  "date": "2026-08-15",
+  "generatedAt": "2026-08-14T22:43:17.332Z",
+  "reportPath": "reports/provider-free-model-audit-2026-08-15.md",
   "totalModels": 64,
   "providers": [
     {
@@ -435,16 +435,9 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-08-13",
+    "comparedWith": "2026-08-14",
     "added": [],
-    "removed": [
-      {
-        "provider": "openrouter",
-        "id": "inclusionai/ling-3.0-tiny:free",
-        "displayName": "inclusionAI: Ling 3.0 Tiny (free)",
-        "contextWindow": 262144
-      }
-    ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "gemini",
