@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-08-17",
-  "generatedAt": "2026-08-16T22:40:06.262Z",
-  "reportPath": "reports/provider-free-model-audit-2026-08-17.md",
+  "date": "2026-08-18",
+  "generatedAt": "2026-08-17T22:44:08.123Z",
+  "reportPath": "reports/provider-free-model-audit-2026-08-18.md",
   "totalModels": 66,
   "providers": [
     {
@@ -445,15 +445,8 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-08-16",
-    "added": [
-      {
-        "provider": "openrouter",
-        "id": "z-ai/glm-5.2:free",
-        "displayName": "Z.ai: GLM 5.2 (free)",
-        "contextWindow": 128000
-      }
-    ],
+    "comparedWith": "2026-08-17",
+    "added": [],
     "removed": [],
     "comparedProviders": [
       "openrouter",
