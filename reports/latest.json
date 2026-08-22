@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-08-22",
-  "generatedAt": "2026-08-21T22:44:54.132Z",
-  "reportPath": "reports/provider-free-model-audit-2026-08-22.md",
-  "totalModels": 68,
+  "date": "2026-08-23",
+  "generatedAt": "2026-08-22T22:41:33.543Z",
+  "reportPath": "reports/provider-free-model-audit-2026-08-23.md",
+  "totalModels": 67,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 19,
+      "count": 18,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -73,11 +73,6 @@
           "id": "nvidia/nemotron-nano-9b-v2:free",
           "displayName": "NVIDIA: Nemotron Nano 9B V2 (free)",
           "contextWindow": 128000
-        },
-        {
-          "id": "openai/gpt-oss-20b:free",
-          "displayName": "OpenAI: gpt-oss-20b (free)",
-          "contextWindow": 131072
         },
         {
           "id": "openrouter/free",
@@ -455,22 +450,16 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-08-21",
-    "added": [
+    "comparedWith": "2026-08-22",
+    "added": [],
+    "removed": [
       {
         "provider": "openrouter",
-        "id": "thinkingmachines/inkling-small:free",
-        "displayName": "Thinking Machines: Inkling Small (free)",
-        "contextWindow": 262144
-      },
-      {
-        "provider": "openrouter",
-        "id": "thinkingmachines/inkling:free",
-        "displayName": "Thinking Machines: Inkling (free)",
-        "contextWindow": 262144
+        "id": "openai/gpt-oss-20b:free",
+        "displayName": "OpenAI: gpt-oss-20b (free)",
+        "contextWindow": 131072
       }
     ],
-    "removed": [],
     "comparedProviders": [
       "openrouter",
       "gemini",
