@@ -2,19 +2,15 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-08-23（Asia/Shanghai）** · **67** 个免费模型入口 · **8/10** 个 Provider 正常。
+> 最近目录审计：**2026-08-24（Asia/Shanghai）** · **68** 个免费模型入口 · **9/10** 个 Provider 正常。
 
-[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-08-23.md)
+[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-08-24.md)
 
 这份列表每天由 GitHub Actions 通过各 Provider 的模型目录接口刷新，并应用 FreeModelFinder 核心层的免费规则。它不执行真实推理，不代表无限额度、永久免费或生产级可用。同一上游模型通过多个 Provider 提供时会分别计数，因为对应的账号资格、额度和 Gateway 模型 ID 不同。
 
 ## 今日变化
 
-与 2026-08-22 相比，在成功比较的 8 个 Provider 中：**新增 0 个，移除 1 个**。
-
-### 移除
-
-- `openrouter:openai/gpt-oss-20b:free`
+与 2026-08-23 相比，成功比较的 8 个 Provider 模型清单没有变化。
 
 ## Provider 汇总
 
@@ -27,7 +23,7 @@
 | ModelScope    | 🟢 正常 |          6 | 账号免费额度          | API-Inference 免费型号清单与可用目录取交集                                          |
 | NVIDIA NIM    | 🟢 正常 |         25 | 免费开发端点          | 只保留审核过的 build.nvidia.com 免费开发端点                                        |
 | GitHub Models | 🔴 失败 |   暂不可用 | 原型开发额度          | 目录中的文本输出模型使用账号自带原型开发额度                                        |
-| Cohere        | 🔴 失败 |   暂不可用 | 免费 Trial/Production | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`               |
+| Cohere        | 🟢 正常 |          1 | 免费 Trial/Production | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`               |
 | Hugging Face  | 🟢 正常 |          2 | 实时零价端点          | 实时端点明确报告 `is_free`，或输入输出价格均为 0                                    |
 | SenseNova     | 🟢 正常 |          4 | 实时零价模型          | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单         |
 
@@ -166,11 +162,13 @@
 ### Cohere
 
 - Provider ID：`cohere`
-- 状态：🔴 失败
+- 状态：🟢 正常
 - 免费依据：只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`
 - 主要风险：有速率限制；其他 Command 模型不再被标记为免费
 
-本次没有可展示的模型清单。
+| Gateway 模型 ID              | 显示名称            | 上下文窗口 |
+| ---------------------------- | ------------------- | ---------: |
+| `cohere:north-mini-code-1-0` | north-mini-code-1-0 |       436K |
 
 ### Hugging Face
 

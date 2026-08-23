@@ -33,9 +33,9 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-08-23（Asia/Shanghai）更新：67 个免费模型入口，覆盖 8/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-08-24（Asia/Shanghai）更新：68 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
-> 本次目录失败：GitHub Models、Cohere。
+> 本次目录失败：GitHub Models。
 
 | Provider      | 状态    | 免费模型数 | 免费类型              |
 | ------------- | ------- | ---------: | --------------------- |
@@ -46,22 +46,15 @@
 | ModelScope    | 🟢 正常 |          6 | 账号免费额度          |
 | NVIDIA NIM    | 🟢 正常 |         25 | 免费开发端点          |
 | GitHub Models | 🔴 失败 |   暂不可用 | 原型开发额度          |
-| Cohere        | 🔴 失败 |   暂不可用 | 免费 Trial/Production |
+| Cohere        | 🟢 正常 |          1 | 免费 Trial/Production |
 | Hugging Face  | 🟢 正常 |          2 | 实时零价端点          |
 | SenseNova     | 🟢 正常 |          4 | 实时零价模型          |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-08-23.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-08-24.md)
 
 ### 今日变化
 
-与 2026-08-22 相比，在成功比较的 8 个 Provider 中：**新增 0 个，移除 1 个**。
-
-<details>
-<summary>查看移除的 1 个模型</summary>
-
-- `openrouter:openai/gpt-oss-20b:free`
-
-</details>
+与 2026-08-23 相比，成功比较的 8 个 Provider 模型清单没有变化。
 
 ### 展开完整模型列表
 
@@ -159,6 +152,13 @@
 - `nvidia:openai/gpt-oss-120b`
 - `nvidia:openai/gpt-oss-20b`
 - `nvidia:stepfun-ai/step-3.7-flash`
+
+</details>
+
+<details>
+<summary><strong>Cohere · 1 个模型</strong></summary>
+
+- `cohere:north-mini-code-1-0`
 
 </details>
 
