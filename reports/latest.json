@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-08-24",
-  "generatedAt": "2026-08-23T22:41:30.356Z",
-  "reportPath": "reports/provider-free-model-audit-2026-08-24.md",
-  "totalModels": 68,
+  "date": "2026-08-25",
+  "generatedAt": "2026-08-24T22:47:00.067Z",
+  "reportPath": "reports/provider-free-model-audit-2026-08-25.md",
+  "totalModels": 65,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 18,
+      "count": 15,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -40,11 +40,6 @@
           "contextWindow": 65536
         },
         {
-          "id": "nvidia/nemotron-3-nano-30b-a3b:free",
-          "displayName": "NVIDIA: Nemotron 3 Nano 30B A3B (free)",
-          "contextWindow": 256000
-        },
-        {
           "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
           "displayName": "NVIDIA: Nemotron 3 Nano Omni (free)",
           "contextWindow": 256000
@@ -65,16 +60,6 @@
           "contextWindow": 1000000
         },
         {
-          "id": "nvidia/nemotron-nano-12b-v2-vl:free",
-          "displayName": "NVIDIA: Nemotron Nano 12B 2 VL (free)",
-          "contextWindow": 128000
-        },
-        {
-          "id": "nvidia/nemotron-nano-9b-v2:free",
-          "displayName": "NVIDIA: Nemotron Nano 9B V2 (free)",
-          "contextWindow": 128000
-        },
-        {
           "id": "openrouter/free",
           "displayName": "Free Models Router",
           "contextWindow": 200000
@@ -92,12 +77,12 @@
         {
           "id": "thinkingmachines/inkling-small:free",
           "displayName": "Thinking Machines: Inkling Small (free)",
-          "contextWindow": 262144
+          "contextWindow": 1048576
         },
         {
           "id": "thinkingmachines/inkling:free",
           "displayName": "Thinking Machines: Inkling (free)",
-          "contextWindow": 262144
+          "contextWindow": 1048576
         },
         {
           "id": "z-ai/glm-5.2:free",
@@ -456,9 +441,28 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-08-23",
+    "comparedWith": "2026-08-24",
     "added": [],
-    "removed": [],
+    "removed": [
+      {
+        "provider": "openrouter",
+        "id": "nvidia/nemotron-3-nano-30b-a3b:free",
+        "displayName": "NVIDIA: Nemotron 3 Nano 30B A3B (free)",
+        "contextWindow": 256000
+      },
+      {
+        "provider": "openrouter",
+        "id": "nvidia/nemotron-nano-12b-v2-vl:free",
+        "displayName": "NVIDIA: Nemotron Nano 12B 2 VL (free)",
+        "contextWindow": 128000
+      },
+      {
+        "provider": "openrouter",
+        "id": "nvidia/nemotron-nano-9b-v2:free",
+        "displayName": "NVIDIA: Nemotron Nano 9B V2 (free)",
+        "contextWindow": 128000
+      }
+    ],
     "comparedProviders": [
       "openrouter",
       "gemini",
@@ -466,6 +470,7 @@
       "siliconflow",
       "modelscope",
       "nvidia",
+      "cohere",
       "huggingface",
       "sensenova"
     ]
