@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-08-25",
-  "generatedAt": "2026-08-24T22:47:00.067Z",
-  "reportPath": "reports/provider-free-model-audit-2026-08-25.md",
-  "totalModels": 65,
+  "date": "2026-08-26",
+  "generatedAt": "2026-08-25T22:47:51.969Z",
+  "reportPath": "reports/provider-free-model-audit-2026-08-26.md",
+  "totalModels": 67,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 15,
+      "count": 17,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -38,6 +38,16 @@
           "id": "liquid/lfm-2.5-2.6b:free",
           "displayName": "LiquidAI: LFM2.5-2.6B (free)",
           "contextWindow": 65536
+        },
+        {
+          "id": "minimax/minimax-m2.7:free",
+          "displayName": "MiniMax: MiniMax M2.7 (free)",
+          "contextWindow": 196608
+        },
+        {
+          "id": "minimax/minimax-m3:free",
+          "displayName": "MiniMax: MiniMax M3 (free)",
+          "contextWindow": 1048576
         },
         {
           "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
@@ -441,28 +451,22 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-08-24",
-    "added": [],
-    "removed": [
+    "comparedWith": "2026-08-25",
+    "added": [
       {
         "provider": "openrouter",
-        "id": "nvidia/nemotron-3-nano-30b-a3b:free",
-        "displayName": "NVIDIA: Nemotron 3 Nano 30B A3B (free)",
-        "contextWindow": 256000
+        "id": "minimax/minimax-m2.7:free",
+        "displayName": "MiniMax: MiniMax M2.7 (free)",
+        "contextWindow": 196608
       },
       {
         "provider": "openrouter",
-        "id": "nvidia/nemotron-nano-12b-v2-vl:free",
-        "displayName": "NVIDIA: Nemotron Nano 12B 2 VL (free)",
-        "contextWindow": 128000
-      },
-      {
-        "provider": "openrouter",
-        "id": "nvidia/nemotron-nano-9b-v2:free",
-        "displayName": "NVIDIA: Nemotron Nano 9B V2 (free)",
-        "contextWindow": 128000
+        "id": "minimax/minimax-m3:free",
+        "displayName": "MiniMax: MiniMax M3 (free)",
+        "contextWindow": 1048576
       }
     ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "gemini",
