@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "date": "2026-08-26",
-  "generatedAt": "2026-08-25T22:47:51.969Z",
-  "reportPath": "reports/provider-free-model-audit-2026-08-26.md",
-  "totalModels": 67,
+  "date": "2026-08-27",
+  "generatedAt": "2026-08-27T03:21:13.418Z",
+  "reportPath": "reports/provider-free-model-audit-2026-08-27.md",
+  "totalModels": 57,
   "providers": [
     {
       "id": "openrouter",
@@ -239,7 +239,7 @@
       "id": "nvidia",
       "display": "NVIDIA NIM",
       "status": "ok",
-      "count": 25,
+      "count": 15,
       "freeType": "免费开发端点",
       "freeBasis": "只保留审核过的 build.nvidia.com 免费开发端点",
       "risk": "面向学习、开发和原型，限速且不代表生产环境永久免费",
@@ -255,28 +255,8 @@
           "contextWindow": null
         },
         {
-          "id": "meta/llama-3.1-70b-instruct",
-          "displayName": "meta/llama-3.1-70b-instruct",
-          "contextWindow": null
-        },
-        {
-          "id": "meta/llama-3.1-8b-instruct",
-          "displayName": "meta/llama-3.1-8b-instruct",
-          "contextWindow": null
-        },
-        {
           "id": "meta/llama-3.2-11b-vision-instruct",
           "displayName": "meta/llama-3.2-11b-vision-instruct",
-          "contextWindow": null
-        },
-        {
-          "id": "meta/llama-3.2-1b-instruct",
-          "displayName": "meta/llama-3.2-1b-instruct",
-          "contextWindow": null
-        },
-        {
-          "id": "meta/llama-3.2-3b-instruct",
-          "displayName": "meta/llama-3.2-3b-instruct",
           "contextWindow": null
         },
         {
@@ -300,21 +280,6 @@
           "contextWindow": null
         },
         {
-          "id": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
-          "displayName": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
-          "contextWindow": null
-        },
-        {
-          "id": "nvidia/llama-3.3-nemotron-super-49b-v1",
-          "displayName": "nvidia/llama-3.3-nemotron-super-49b-v1",
-          "contextWindow": null
-        },
-        {
-          "id": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-          "displayName": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-          "contextWindow": null
-        },
-        {
           "id": "nvidia/nemotron-3-nano-30b-a3b",
           "displayName": "nvidia/nemotron-3-nano-30b-a3b",
           "contextWindow": null
@@ -332,21 +297,6 @@
         {
           "id": "nvidia/nemotron-3-ultra-550b-a55b",
           "displayName": "nvidia/nemotron-3-ultra-550b-a55b",
-          "contextWindow": null
-        },
-        {
-          "id": "nvidia/nemotron-mini-4b-instruct",
-          "displayName": "nvidia/nemotron-mini-4b-instruct",
-          "contextWindow": null
-        },
-        {
-          "id": "nvidia/nemotron-nano-12b-v2-vl",
-          "displayName": "nvidia/nemotron-nano-12b-v2-vl",
-          "contextWindow": null
-        },
-        {
-          "id": "nvidia/nvidia-nemotron-nano-9b-v2",
-          "displayName": "nvidia/nvidia-nemotron-nano-9b-v2",
           "contextWindow": null
         },
         {
@@ -451,22 +401,70 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-08-25",
-    "added": [
+    "comparedWith": "2026-08-26",
+    "added": [],
+    "removed": [
       {
-        "provider": "openrouter",
-        "id": "minimax/minimax-m2.7:free",
-        "displayName": "MiniMax: MiniMax M2.7 (free)",
-        "contextWindow": 196608
+        "provider": "nvidia",
+        "id": "meta/llama-3.1-70b-instruct",
+        "displayName": "meta/llama-3.1-70b-instruct",
+        "contextWindow": null
       },
       {
-        "provider": "openrouter",
-        "id": "minimax/minimax-m3:free",
-        "displayName": "MiniMax: MiniMax M3 (free)",
-        "contextWindow": 1048576
+        "provider": "nvidia",
+        "id": "meta/llama-3.1-8b-instruct",
+        "displayName": "meta/llama-3.1-8b-instruct",
+        "contextWindow": null
+      },
+      {
+        "provider": "nvidia",
+        "id": "meta/llama-3.2-1b-instruct",
+        "displayName": "meta/llama-3.2-1b-instruct",
+        "contextWindow": null
+      },
+      {
+        "provider": "nvidia",
+        "id": "meta/llama-3.2-3b-instruct",
+        "displayName": "meta/llama-3.2-3b-instruct",
+        "contextWindow": null
+      },
+      {
+        "provider": "nvidia",
+        "id": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+        "displayName": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+        "contextWindow": null
+      },
+      {
+        "provider": "nvidia",
+        "id": "nvidia/llama-3.3-nemotron-super-49b-v1",
+        "displayName": "nvidia/llama-3.3-nemotron-super-49b-v1",
+        "contextWindow": null
+      },
+      {
+        "provider": "nvidia",
+        "id": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        "displayName": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        "contextWindow": null
+      },
+      {
+        "provider": "nvidia",
+        "id": "nvidia/nemotron-mini-4b-instruct",
+        "displayName": "nvidia/nemotron-mini-4b-instruct",
+        "contextWindow": null
+      },
+      {
+        "provider": "nvidia",
+        "id": "nvidia/nemotron-nano-12b-v2-vl",
+        "displayName": "nvidia/nemotron-nano-12b-v2-vl",
+        "contextWindow": null
+      },
+      {
+        "provider": "nvidia",
+        "id": "nvidia/nvidia-nemotron-nano-9b-v2",
+        "displayName": "nvidia/nvidia-nemotron-nano-9b-v2",
+        "contextWindow": null
       }
     ],
-    "removed": [],
     "comparedProviders": [
       "openrouter",
       "gemini",

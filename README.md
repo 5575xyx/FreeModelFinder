@@ -33,7 +33,7 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-08-26（Asia/Shanghai）更新：67 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-08-27（Asia/Shanghai）更新：57 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 本次目录失败：GitHub Models。
 
@@ -44,23 +44,31 @@
 | Zhipu AI      | 🟢 正常 |          2 | 官方免费型号          |
 | SiliconFlow   | 🟢 正常 |          5 | 免费白名单            |
 | ModelScope    | 🟢 正常 |          6 | 账号免费额度          |
-| NVIDIA NIM    | 🟢 正常 |         25 | 免费开发端点          |
+| NVIDIA NIM    | 🟢 正常 |         15 | 免费开发端点          |
 | GitHub Models | 🔴 失败 |   暂不可用 | 原型开发额度          |
 | Cohere        | 🟢 正常 |          1 | 免费 Trial/Production |
 | Hugging Face  | 🟢 正常 |          2 | 实时零价端点          |
 | SenseNova     | 🟢 正常 |          4 | 实时零价模型          |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-08-26.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-08-27.md)
 
 ### 今日变化
 
-与 2026-08-25 相比，在成功比较的 9 个 Provider 中：**新增 2 个，移除 0 个**。
+与 2026-08-26 相比，在成功比较的 9 个 Provider 中：**新增 0 个，移除 10 个**。
 
 <details>
-<summary>查看新增的 2 个模型</summary>
+<summary>查看移除的 10 个模型</summary>
 
-- `openrouter:minimax/minimax-m2.7:free`
-- `openrouter:minimax/minimax-m3:free`
+- `nvidia:meta/llama-3.1-70b-instruct`
+- `nvidia:meta/llama-3.1-8b-instruct`
+- `nvidia:meta/llama-3.2-1b-instruct`
+- `nvidia:meta/llama-3.2-3b-instruct`
+- `nvidia:nvidia/llama-3.1-nemotron-nano-vl-8b-v1`
+- `nvidia:nvidia/llama-3.3-nemotron-super-49b-v1`
+- `nvidia:nvidia/llama-3.3-nemotron-super-49b-v1.5`
+- `nvidia:nvidia/nemotron-mini-4b-instruct`
+- `nvidia:nvidia/nemotron-nano-12b-v2-vl`
+- `nvidia:nvidia/nvidia-nemotron-nano-9b-v2`
 
 </details>
 
@@ -132,29 +140,19 @@
 </details>
 
 <details>
-<summary><strong>NVIDIA NIM · 25 个模型</strong></summary>
+<summary><strong>NVIDIA NIM · 15 个模型</strong></summary>
 
 - `nvidia:google/diffusiongemma-26b-a4b-it`
 - `nvidia:google/gemma-4-31b-it`
-- `nvidia:meta/llama-3.1-70b-instruct`
-- `nvidia:meta/llama-3.1-8b-instruct`
 - `nvidia:meta/llama-3.2-11b-vision-instruct`
-- `nvidia:meta/llama-3.2-1b-instruct`
-- `nvidia:meta/llama-3.2-3b-instruct`
 - `nvidia:meta/llama-3.2-90b-vision-instruct`
 - `nvidia:minimaxai/minimax-m3`
 - `nvidia:mistralai/mistral-nemotron`
 - `nvidia:nvidia/ising-calibration-1.5-31b`
-- `nvidia:nvidia/llama-3.1-nemotron-nano-vl-8b-v1`
-- `nvidia:nvidia/llama-3.3-nemotron-super-49b-v1`
-- `nvidia:nvidia/llama-3.3-nemotron-super-49b-v1.5`
 - `nvidia:nvidia/nemotron-3-nano-30b-a3b`
 - `nvidia:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
 - `nvidia:nvidia/nemotron-3-super-120b-a12b`
 - `nvidia:nvidia/nemotron-3-ultra-550b-a55b`
-- `nvidia:nvidia/nemotron-mini-4b-instruct`
-- `nvidia:nvidia/nemotron-nano-12b-v2-vl`
-- `nvidia:nvidia/nvidia-nemotron-nano-9b-v2`
 - `nvidia:nvidia/riva-translate-4b-instruct-v1.1`
 - `nvidia:openai/gpt-oss-120b`
 - `nvidia:openai/gpt-oss-20b`
