@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-08-27",
-  "generatedAt": "2026-08-27T03:21:13.418Z",
-  "reportPath": "reports/provider-free-model-audit-2026-08-27.md",
-  "totalModels": 57,
+  "date": "2026-08-28",
+  "generatedAt": "2026-08-28T06:09:44.455Z",
+  "reportPath": "reports/provider-free-model-audit-2026-08-28.md",
+  "totalModels": 58,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 17,
+      "count": 18,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -32,6 +32,11 @@
         {
           "id": "google/gemma-4-31b-it:free",
           "displayName": "Google: Gemma 4 31B (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "inclusionai/ling-3.0-flash-fin:free",
+          "displayName": "Ling 3.0 Flash Fin (free)",
           "contextWindow": 262144
         },
         {
@@ -401,70 +406,16 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-08-26",
-    "added": [],
-    "removed": [
+    "comparedWith": "2026-08-27",
+    "added": [
       {
-        "provider": "nvidia",
-        "id": "meta/llama-3.1-70b-instruct",
-        "displayName": "meta/llama-3.1-70b-instruct",
-        "contextWindow": null
-      },
-      {
-        "provider": "nvidia",
-        "id": "meta/llama-3.1-8b-instruct",
-        "displayName": "meta/llama-3.1-8b-instruct",
-        "contextWindow": null
-      },
-      {
-        "provider": "nvidia",
-        "id": "meta/llama-3.2-1b-instruct",
-        "displayName": "meta/llama-3.2-1b-instruct",
-        "contextWindow": null
-      },
-      {
-        "provider": "nvidia",
-        "id": "meta/llama-3.2-3b-instruct",
-        "displayName": "meta/llama-3.2-3b-instruct",
-        "contextWindow": null
-      },
-      {
-        "provider": "nvidia",
-        "id": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
-        "displayName": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
-        "contextWindow": null
-      },
-      {
-        "provider": "nvidia",
-        "id": "nvidia/llama-3.3-nemotron-super-49b-v1",
-        "displayName": "nvidia/llama-3.3-nemotron-super-49b-v1",
-        "contextWindow": null
-      },
-      {
-        "provider": "nvidia",
-        "id": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-        "displayName": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-        "contextWindow": null
-      },
-      {
-        "provider": "nvidia",
-        "id": "nvidia/nemotron-mini-4b-instruct",
-        "displayName": "nvidia/nemotron-mini-4b-instruct",
-        "contextWindow": null
-      },
-      {
-        "provider": "nvidia",
-        "id": "nvidia/nemotron-nano-12b-v2-vl",
-        "displayName": "nvidia/nemotron-nano-12b-v2-vl",
-        "contextWindow": null
-      },
-      {
-        "provider": "nvidia",
-        "id": "nvidia/nvidia-nemotron-nano-9b-v2",
-        "displayName": "nvidia/nvidia-nemotron-nano-9b-v2",
-        "contextWindow": null
+        "provider": "openrouter",
+        "id": "inclusionai/ling-3.0-flash-fin:free",
+        "displayName": "Ling 3.0 Flash Fin (free)",
+        "contextWindow": 262144
       }
     ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "gemini",
