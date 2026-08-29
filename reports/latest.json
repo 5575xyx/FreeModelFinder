@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "date": "2026-08-28",
-  "generatedAt": "2026-08-28T06:09:44.455Z",
-  "reportPath": "reports/provider-free-model-audit-2026-08-28.md",
-  "totalModels": 58,
+  "date": "2026-08-29",
+  "generatedAt": "2026-08-29T03:44:11.090Z",
+  "reportPath": "reports/provider-free-model-audit-2026-08-29.md",
+  "totalModels": 57,
   "providers": [
     {
       "id": "openrouter",
@@ -244,7 +244,7 @@
       "id": "nvidia",
       "display": "NVIDIA NIM",
       "status": "ok",
-      "count": 15,
+      "count": 14,
       "freeType": "免费开发端点",
       "freeBasis": "只保留审核过的 build.nvidia.com 免费开发端点",
       "risk": "面向学习、开发和原型，限速且不代表生产环境永久免费",
@@ -317,11 +317,6 @@
         {
           "id": "openai/gpt-oss-20b",
           "displayName": "openai/gpt-oss-20b",
-          "contextWindow": null
-        },
-        {
-          "id": "stepfun-ai/step-3.7-flash",
-          "displayName": "stepfun-ai/step-3.7-flash",
           "contextWindow": null
         }
       ]
@@ -406,16 +401,16 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-08-27",
-    "added": [
+    "comparedWith": "2026-08-28",
+    "added": [],
+    "removed": [
       {
-        "provider": "openrouter",
-        "id": "inclusionai/ling-3.0-flash-fin:free",
-        "displayName": "Ling 3.0 Flash Fin (free)",
-        "contextWindow": 262144
+        "provider": "nvidia",
+        "id": "stepfun-ai/step-3.7-flash",
+        "displayName": "stepfun-ai/step-3.7-flash",
+        "contextWindow": null
       }
     ],
-    "removed": [],
     "comparedProviders": [
       "openrouter",
       "gemini",
