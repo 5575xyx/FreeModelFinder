@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-08-29",
-  "generatedAt": "2026-08-29T03:44:11.090Z",
-  "reportPath": "reports/provider-free-model-audit-2026-08-29.md",
+  "date": "2026-08-30",
+  "generatedAt": "2026-08-30T00:23:31.414Z",
+  "reportPath": "reports/provider-free-model-audit-2026-08-30.md",
   "totalModels": 57,
   "providers": [
     {
@@ -401,16 +401,9 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-08-28",
+    "comparedWith": "2026-08-29",
     "added": [],
-    "removed": [
-      {
-        "provider": "nvidia",
-        "id": "stepfun-ai/step-3.7-flash",
-        "displayName": "stepfun-ai/step-3.7-flash",
-        "contextWindow": null
-      }
-    ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "gemini",
