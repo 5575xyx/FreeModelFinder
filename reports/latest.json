@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "date": "2026-08-31",
-  "generatedAt": "2026-08-31T00:38:55.010Z",
-  "reportPath": "reports/provider-free-model-audit-2026-08-31.md",
-  "totalModels": 57,
+  "date": "2026-09-01",
+  "generatedAt": "2026-09-01T01:19:14.197Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-01.md",
+  "totalModels": 59,
   "providers": [
     {
       "id": "openrouter",
@@ -372,7 +372,7 @@
       "id": "sensenova",
       "display": "SenseNova",
       "status": "ok",
-      "count": 4,
+      "count": 6,
       "freeType": "实时零价模型",
       "freeBasis": "实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单",
       "risk": "免费配额和型号可能变化；当前网关只处理文本，即使模型本身支持多模态",
@@ -383,8 +383,18 @@
           "contextWindow": null
         },
         {
+          "id": "deepseek-v4-pro",
+          "displayName": "deepseek-v4-pro",
+          "contextWindow": null
+        },
+        {
           "id": "glm-5.2",
           "displayName": "glm-5.2",
+          "contextWindow": null
+        },
+        {
+          "id": "kimi-k3",
+          "displayName": "kimi-k3",
           "contextWindow": null
         },
         {
@@ -401,8 +411,21 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-08-30",
-    "added": [],
+    "comparedWith": "2026-08-31",
+    "added": [
+      {
+        "provider": "sensenova",
+        "id": "deepseek-v4-pro",
+        "displayName": "deepseek-v4-pro",
+        "contextWindow": null
+      },
+      {
+        "provider": "sensenova",
+        "id": "kimi-k3",
+        "displayName": "kimi-k3",
+        "contextWindow": null
+      }
+    ],
     "removed": [],
     "comparedProviders": [
       "openrouter",
