@@ -33,7 +33,7 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-02（Asia/Shanghai）更新：58 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-03（Asia/Shanghai）更新：59 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 本次目录失败：GitHub Models。
 
@@ -47,19 +47,19 @@
 | NVIDIA NIM    | 🟢 正常 |         13 | 免费开发端点          |
 | GitHub Models | 🔴 失败 |   暂不可用 | 原型开发额度          |
 | Cohere        | 🟢 正常 |          1 | 免费 Trial/Production |
-| Hugging Face  | 🟢 正常 |          2 | 实时零价端点          |
+| Hugging Face  | 🟢 正常 |          3 | 实时零价端点          |
 | SenseNova     | 🟢 正常 |          6 | 实时零价模型          |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-02.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-03.md)
 
 ### 今日变化
 
-与 2026-09-01 相比，在成功比较的 9 个 Provider 中：**新增 0 个，移除 1 个**。
+与 2026-09-02 相比，在成功比较的 9 个 Provider 中：**新增 1 个，移除 0 个**。
 
 <details>
-<summary>查看移除的 1 个模型</summary>
+<summary>查看新增的 1 个模型</summary>
 
-- `nvidia:nvidia/nemotron-3-nano-30b-a3b`
+- `huggingface:Qwen/Qwen3.8-27B`
 
 </details>
 
@@ -158,10 +158,11 @@
 </details>
 
 <details>
-<summary><strong>Hugging Face · 2 个模型</strong></summary>
+<summary><strong>Hugging Face · 3 个模型</strong></summary>
 
 - `huggingface:prism-ml/Ternary-Bonsai-27B-AWQ-4bit`
 - `huggingface:prism-ml/Ternary-Bonsai-27B-gguf`
+- `huggingface:Qwen/Qwen3.8-27B`
 
 </details>
 

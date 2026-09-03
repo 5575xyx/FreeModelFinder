@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-02",
-  "generatedAt": "2026-09-02T00:17:46.643Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-02.md",
-  "totalModels": 58,
+  "date": "2026-09-03",
+  "generatedAt": "2026-09-03T00:19:31.692Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-03.md",
+  "totalModels": 59,
   "providers": [
     {
       "id": "openrouter",
@@ -346,7 +346,7 @@
       "id": "huggingface",
       "display": "Hugging Face",
       "status": "ok",
-      "count": 2,
+      "count": 3,
       "freeType": "实时零价端点",
       "freeBasis": "实时端点明确报告 `is_free`，或输入输出价格均为 0",
       "risk": "普通 Router 模型可能消耗 credits 或按量收费，因此不会混入",
@@ -359,6 +359,11 @@
         {
           "id": "prism-ml/Ternary-Bonsai-27B-gguf",
           "displayName": "prism-ml/Ternary-Bonsai-27B-gguf",
+          "contextWindow": 262144
+        },
+        {
+          "id": "Qwen/Qwen3.8-27B",
+          "displayName": "Qwen/Qwen3.8-27B",
           "contextWindow": 262144
         }
       ]
@@ -406,16 +411,16 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-01",
-    "added": [],
-    "removed": [
+    "comparedWith": "2026-09-02",
+    "added": [
       {
-        "provider": "nvidia",
-        "id": "nvidia/nemotron-3-nano-30b-a3b",
-        "displayName": "nvidia/nemotron-3-nano-30b-a3b",
-        "contextWindow": null
+        "provider": "huggingface",
+        "id": "Qwen/Qwen3.8-27B",
+        "displayName": "Qwen/Qwen3.8-27B",
+        "contextWindow": 262144
       }
     ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "gemini",

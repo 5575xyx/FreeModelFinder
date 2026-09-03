@@ -2,19 +2,19 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-09-02（Asia/Shanghai）** · **58** 个免费模型入口 · **9/10** 个 Provider 正常。
+> 最近目录审计：**2026-09-03（Asia/Shanghai）** · **59** 个免费模型入口 · **9/10** 个 Provider 正常。
 
-[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-02.md)
+[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-03.md)
 
 这份列表每天由 GitHub Actions 通过各 Provider 的模型目录接口刷新，并应用 FreeModelFinder 核心层的免费规则。它不执行真实推理，不代表无限额度、永久免费或生产级可用。同一上游模型通过多个 Provider 提供时会分别计数，因为对应的账号资格、额度和 Gateway 模型 ID 不同。
 
 ## 今日变化
 
-与 2026-09-01 相比，在成功比较的 9 个 Provider 中：**新增 0 个，移除 1 个**。
+与 2026-09-02 相比，在成功比较的 9 个 Provider 中：**新增 1 个，移除 0 个**。
 
-### 移除
+### 新增
 
-- `nvidia:nvidia/nemotron-3-nano-30b-a3b`
+- `huggingface:Qwen/Qwen3.8-27B`
 
 ## Provider 汇总
 
@@ -28,7 +28,7 @@
 | NVIDIA NIM    | 🟢 正常 |         13 | 免费开发端点          | 只保留审核过的 build.nvidia.com 免费开发端点                                        |
 | GitHub Models | 🔴 失败 |   暂不可用 | 原型开发额度          | 目录中的文本输出模型使用账号自带原型开发额度                                        |
 | Cohere        | 🟢 正常 |          1 | 免费 Trial/Production | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`               |
-| Hugging Face  | 🟢 正常 |          2 | 实时零价端点          | 实时端点明确报告 `is_free`，或输入输出价格均为 0                                    |
+| Hugging Face  | 🟢 正常 |          3 | 实时零价端点          | 实时端点明确报告 `is_free`，或输入输出价格均为 0                                    |
 | SenseNova     | 🟢 正常 |          6 | 实时零价模型          | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单         |
 
 ## 完整列表
@@ -173,6 +173,7 @@
 | -------------------------------------------------- | ------------------------------------ | ---------: |
 | `huggingface:prism-ml/Ternary-Bonsai-27B-AWQ-4bit` | prism-ml/Ternary-Bonsai-27B-AWQ-4bit |     262.1K |
 | `huggingface:prism-ml/Ternary-Bonsai-27B-gguf`     | prism-ml/Ternary-Bonsai-27B-gguf     |     262.1K |
+| `huggingface:Qwen/Qwen3.8-27B`                     | Qwen/Qwen3.8-27B                     |     262.1K |
 
 ### SenseNova
 
