@@ -33,7 +33,7 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-03（Asia/Shanghai）更新：59 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-04（Asia/Shanghai）更新：58 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 本次目录失败：GitHub Models。
 
@@ -44,22 +44,22 @@
 | Zhipu AI      | 🟢 正常 |          2 | 官方免费型号          |
 | SiliconFlow   | 🟢 正常 |          5 | 免费白名单            |
 | ModelScope    | 🟢 正常 |          6 | 账号免费额度          |
-| NVIDIA NIM    | 🟢 正常 |         13 | 免费开发端点          |
+| NVIDIA NIM    | 🟢 正常 |         12 | 免费开发端点          |
 | GitHub Models | 🔴 失败 |   暂不可用 | 原型开发额度          |
 | Cohere        | 🟢 正常 |          1 | 免费 Trial/Production |
 | Hugging Face  | 🟢 正常 |          3 | 实时零价端点          |
 | SenseNova     | 🟢 正常 |          6 | 实时零价模型          |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-03.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-04.md)
 
 ### 今日变化
 
-与 2026-09-02 相比，在成功比较的 9 个 Provider 中：**新增 1 个，移除 0 个**。
+与 2026-09-03 相比，在成功比较的 9 个 Provider 中：**新增 0 个，移除 1 个**。
 
 <details>
-<summary>查看新增的 1 个模型</summary>
+<summary>查看移除的 1 个模型</summary>
 
-- `huggingface:Qwen/Qwen3.8-27B`
+- `nvidia:openai/gpt-oss-120b`
 
 </details>
 
@@ -132,7 +132,7 @@
 </details>
 
 <details>
-<summary><strong>NVIDIA NIM · 13 个模型</strong></summary>
+<summary><strong>NVIDIA NIM · 12 个模型</strong></summary>
 
 - `nvidia:google/diffusiongemma-26b-a4b-it`
 - `nvidia:google/gemma-4-31b-it`
@@ -145,7 +145,6 @@
 - `nvidia:nvidia/nemotron-3-super-120b-a12b`
 - `nvidia:nvidia/nemotron-3-ultra-550b-a55b`
 - `nvidia:nvidia/riva-translate-4b-instruct-v1.1`
-- `nvidia:openai/gpt-oss-120b`
 - `nvidia:openai/gpt-oss-20b`
 
 </details>

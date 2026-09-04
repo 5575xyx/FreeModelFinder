@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-03",
-  "generatedAt": "2026-09-03T00:19:31.692Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-03.md",
-  "totalModels": 59,
+  "date": "2026-09-04",
+  "generatedAt": "2026-09-04T00:13:08.983Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-04.md",
+  "totalModels": 58,
   "providers": [
     {
       "id": "openrouter",
@@ -244,7 +244,7 @@
       "id": "nvidia",
       "display": "NVIDIA NIM",
       "status": "ok",
-      "count": 13,
+      "count": 12,
       "freeType": "免费开发端点",
       "freeBasis": "只保留审核过的 build.nvidia.com 免费开发端点",
       "risk": "面向学习、开发和原型，限速且不代表生产环境永久免费",
@@ -302,11 +302,6 @@
         {
           "id": "nvidia/riva-translate-4b-instruct-v1.1",
           "displayName": "nvidia/riva-translate-4b-instruct-v1.1",
-          "contextWindow": null
-        },
-        {
-          "id": "openai/gpt-oss-120b",
-          "displayName": "openai/gpt-oss-120b",
           "contextWindow": null
         },
         {
@@ -411,16 +406,16 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-02",
-    "added": [
+    "comparedWith": "2026-09-03",
+    "added": [],
+    "removed": [
       {
-        "provider": "huggingface",
-        "id": "Qwen/Qwen3.8-27B",
-        "displayName": "Qwen/Qwen3.8-27B",
-        "contextWindow": 262144
+        "provider": "nvidia",
+        "id": "openai/gpt-oss-120b",
+        "displayName": "openai/gpt-oss-120b",
+        "contextWindow": null
       }
     ],
-    "removed": [],
     "comparedProviders": [
       "openrouter",
       "gemini",
