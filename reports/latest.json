@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-05",
-  "generatedAt": "2026-09-05T00:08:41.603Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-05.md",
+  "date": "2026-09-06",
+  "generatedAt": "2026-09-05T23:56:12.894Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-06.md",
   "totalModels": 59,
   "providers": [
     {
@@ -411,15 +411,8 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-04",
-    "added": [
-      {
-        "provider": "openrouter",
-        "id": "inclusionai/ling-3.0-flash-sante:free",
-        "displayName": "inclusionAI: Ling 3.0 Flash Sante (free)",
-        "contextWindow": 262144
-      }
-    ],
+    "comparedWith": "2026-09-05",
+    "added": [],
     "removed": [],
     "comparedProviders": [
       "openrouter",
