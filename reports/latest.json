@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-04",
-  "generatedAt": "2026-09-04T00:13:08.983Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-04.md",
-  "totalModels": 58,
+  "date": "2026-09-05",
+  "generatedAt": "2026-09-05T00:08:41.603Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-05.md",
+  "totalModels": 59,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 18,
+      "count": 19,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -36,7 +36,12 @@
         },
         {
           "id": "inclusionai/ling-3.0-flash-fin:free",
-          "displayName": "Ling 3.0 Flash Fin (free)",
+          "displayName": "inclusionAI: Ling 3.0 Flash Fin (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "inclusionai/ling-3.0-flash-sante:free",
+          "displayName": "inclusionAI: Ling 3.0 Flash Sante (free)",
           "contextWindow": 262144
         },
         {
@@ -406,16 +411,16 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-03",
-    "added": [],
-    "removed": [
+    "comparedWith": "2026-09-04",
+    "added": [
       {
-        "provider": "nvidia",
-        "id": "openai/gpt-oss-120b",
-        "displayName": "openai/gpt-oss-120b",
-        "contextWindow": null
+        "provider": "openrouter",
+        "id": "inclusionai/ling-3.0-flash-sante:free",
+        "displayName": "inclusionAI: Ling 3.0 Flash Sante (free)",
+        "contextWindow": 262144
       }
     ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "gemini",
