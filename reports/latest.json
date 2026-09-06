@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-06",
-  "generatedAt": "2026-09-05T23:56:12.894Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-06.md",
-  "totalModels": 59,
+  "date": "2026-09-07",
+  "generatedAt": "2026-09-06T23:58:24.403Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-07.md",
+  "totalModels": 58,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 19,
+      "count": 18,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -103,11 +103,6 @@
           "id": "thinkingmachines/inkling:free",
           "displayName": "Thinking Machines: Inkling (free)",
           "contextWindow": 1048576
-        },
-        {
-          "id": "z-ai/glm-5.2:free",
-          "displayName": "Z.ai: GLM 5.2 (free)",
-          "contextWindow": 256000
         }
       ]
     },
@@ -411,9 +406,16 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-05",
+    "comparedWith": "2026-09-06",
     "added": [],
-    "removed": [],
+    "removed": [
+      {
+        "provider": "openrouter",
+        "id": "z-ai/glm-5.2:free",
+        "displayName": "Z.ai: GLM 5.2 (free)",
+        "contextWindow": 256000
+      }
+    ],
     "comparedProviders": [
       "openrouter",
       "gemini",

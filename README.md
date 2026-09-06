@@ -33,13 +33,13 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-06（Asia/Shanghai）更新：59 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-07（Asia/Shanghai）更新：58 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 本次目录失败：GitHub Models。
 
 | Provider      | 状态    | 免费模型数 | 免费类型              |
 | ------------- | ------- | ---------: | --------------------- |
-| OpenRouter    | 🟢 正常 |         19 | 零价格模型            |
+| OpenRouter    | 🟢 正常 |         18 | 零价格模型            |
 | Google Gemini | 🟢 正常 |          5 | 账号 Free Tier        |
 | Zhipu AI      | 🟢 正常 |          2 | 官方免费型号          |
 | SiliconFlow   | 🟢 正常 |          5 | 免费白名单            |
@@ -50,16 +50,23 @@
 | Hugging Face  | 🟢 正常 |          3 | 实时零价端点          |
 | SenseNova     | 🟢 正常 |          6 | 实时零价模型          |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-06.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-07.md)
 
 ### 今日变化
 
-与 2026-09-05 相比，成功比较的 9 个 Provider 模型清单没有变化。
+与 2026-09-06 相比，在成功比较的 9 个 Provider 中：**新增 0 个，移除 1 个**。
+
+<details>
+<summary>查看移除的 1 个模型</summary>
+
+- `openrouter:z-ai/glm-5.2:free`
+
+</details>
 
 ### 展开完整模型列表
 
 <details>
-<summary><strong>OpenRouter · 19 个模型</strong></summary>
+<summary><strong>OpenRouter · 18 个模型</strong></summary>
 
 - `openrouter:cohere/north-mini-code:free` — Cohere: North Mini Code (free)
 - `openrouter:dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
@@ -79,7 +86,6 @@
 - `openrouter:poolside/laguna-xs-2.1:free` — Poolside: Laguna XS 2.1 (free)
 - `openrouter:thinkingmachines/inkling-small:free` — Thinking Machines: Inkling Small (free)
 - `openrouter:thinkingmachines/inkling:free` — Thinking Machines: Inkling (free)
-- `openrouter:z-ai/glm-5.2:free` — Z.ai: GLM 5.2 (free)
 
 </details>
 
