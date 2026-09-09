@@ -33,41 +33,49 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-08（Asia/Shanghai）更新：56 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-09（Asia/Shanghai）更新：58 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 本次目录失败：GitHub Models。
 
 | Provider      | 状态    | 免费模型数 | 免费类型              |
 | ------------- | ------- | ---------: | --------------------- |
-| OpenRouter    | 🟢 正常 |         16 | 零价格模型            |
+| OpenRouter    | 🟢 正常 |         18 | 零价格模型            |
 | Google Gemini | 🟢 正常 |          5 | 账号 Free Tier        |
 | Zhipu AI      | 🟢 正常 |          2 | 官方免费型号          |
 | SiliconFlow   | 🟢 正常 |          5 | 免费白名单            |
-| ModelScope    | 🟢 正常 |          6 | 账号免费额度          |
+| ModelScope    | 🟢 正常 |          5 | 账号免费额度          |
 | NVIDIA NIM    | 🟢 正常 |         12 | 免费开发端点          |
 | GitHub Models | 🔴 失败 |   暂不可用 | 原型开发额度          |
 | Cohere        | 🟢 正常 |          1 | 免费 Trial/Production |
-| Hugging Face  | 🟢 正常 |          3 | 实时零价端点          |
+| Hugging Face  | 🟢 正常 |          4 | 实时零价端点          |
 | SenseNova     | 🟢 正常 |          6 | 实时零价模型          |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-08.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-09.md)
 
 ### 今日变化
 
-与 2026-09-07 相比，在成功比较的 9 个 Provider 中：**新增 0 个，移除 2 个**。
+与 2026-09-08 相比，在成功比较的 9 个 Provider 中：**新增 3 个，移除 1 个**。
 
 <details>
-<summary>查看移除的 2 个模型</summary>
+<summary>查看新增的 3 个模型</summary>
 
-- `openrouter:minimax/minimax-m2.7:free`
-- `openrouter:minimax/minimax-m3:free`
+- `openrouter:nex-agi/nex-n2.5-mini:free`
+- `openrouter:nex-agi/nex-n2.5-pro:free`
+- `huggingface:inclusionAI/Ling-3.0-flash-Fin`
+
+</details>
+
+<details>
+<summary>查看移除的 1 个模型</summary>
+
+- `modelscope:Qwen/Qwen3-235B-A22B-Instruct-2507`
 
 </details>
 
 ### 展开完整模型列表
 
 <details>
-<summary><strong>OpenRouter · 16 个模型</strong></summary>
+<summary><strong>OpenRouter · 18 个模型</strong></summary>
 
 - `openrouter:cohere/north-mini-code:free` — Cohere: North Mini Code (free)
 - `openrouter:dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
@@ -76,6 +84,8 @@
 - `openrouter:inclusionai/ling-3.0-flash-fin:free` — inclusionAI: Ling 3.0 Flash Fin (free)
 - `openrouter:inclusionai/ling-3.0-flash-sante:free` — inclusionAI: Ling 3.0 Flash Sante (free)
 - `openrouter:liquid/lfm-2.5-2.6b:free` — LiquidAI: LFM2.5-2.6B (free)
+- `openrouter:nex-agi/nex-n2.5-mini:free` — Nex AGI: Nex-N2.5-Mini (free)
+- `openrouter:nex-agi/nex-n2.5-pro:free` — Nex AGI: Nex-N2.5-Pro (free)
 - `openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` — NVIDIA: Nemotron 3 Nano Omni (free)
 - `openrouter:nvidia/nemotron-3-super-120b-a12b:free` — NVIDIA: Nemotron 3 Super (free)
 - `openrouter:nvidia/nemotron-3-ultra-550b-a55b:free` — NVIDIA: Nemotron 3 Ultra (free)
@@ -119,9 +129,8 @@
 </details>
 
 <details>
-<summary><strong>ModelScope · 6 个模型</strong></summary>
+<summary><strong>ModelScope · 5 个模型</strong></summary>
 
-- `modelscope:Qwen/Qwen3-235B-A22B-Instruct-2507` — Qwen3-235B-A22B-Instruct-2507
 - `modelscope:Qwen/Qwen3-235B-A22B-Thinking-2507` — Qwen3-235B-A22B-Thinking-2507
 - `modelscope:Qwen/Qwen3-Coder-30B-A3B-Instruct` — Qwen3-Coder-30B-A3B-Instruct
 - `modelscope:Qwen/Qwen3-Next-80B-A3B-Instruct` — Qwen3-Next-80B-A3B-Instruct
@@ -156,8 +165,9 @@
 </details>
 
 <details>
-<summary><strong>Hugging Face · 3 个模型</strong></summary>
+<summary><strong>Hugging Face · 4 个模型</strong></summary>
 
+- `huggingface:inclusionAI/Ling-3.0-flash-Fin`
 - `huggingface:prism-ml/Ternary-Bonsai-27B-AWQ-4bit`
 - `huggingface:prism-ml/Ternary-Bonsai-27B-gguf`
 - `huggingface:Qwen/Qwen3.8-27B`

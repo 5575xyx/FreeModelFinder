@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-08",
-  "generatedAt": "2026-09-08T00:27:27.666Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-08.md",
-  "totalModels": 56,
+  "date": "2026-09-09",
+  "generatedAt": "2026-09-09T00:18:21.274Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-09.md",
+  "totalModels": 58,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 16,
+      "count": 18,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -48,6 +48,16 @@
           "id": "liquid/lfm-2.5-2.6b:free",
           "displayName": "LiquidAI: LFM2.5-2.6B (free)",
           "contextWindow": 65536
+        },
+        {
+          "id": "nex-agi/nex-n2.5-mini:free",
+          "displayName": "Nex AGI: Nex-N2.5-Mini (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "nex-agi/nex-n2.5-pro:free",
+          "displayName": "Nex AGI: Nex-N2.5-Pro (free)",
+          "contextWindow": 262144
         },
         {
           "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
@@ -193,16 +203,11 @@
       "id": "modelscope",
       "display": "ModelScope",
       "status": "ok",
-      "count": 6,
+      "count": 5,
       "freeType": "账号免费额度",
       "freeBasis": "API-Inference 免费型号清单与可用目录取交集",
       "risk": "受账号日配额、单模型配额和账号绑定状态限制",
       "models": [
-        {
-          "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
-          "displayName": "Qwen3-235B-A22B-Instruct-2507",
-          "contextWindow": 262144
-        },
         {
           "id": "Qwen/Qwen3-235B-A22B-Thinking-2507",
           "displayName": "Qwen3-235B-A22B-Thinking-2507",
@@ -331,11 +336,16 @@
       "id": "huggingface",
       "display": "Hugging Face",
       "status": "ok",
-      "count": 3,
+      "count": 4,
       "freeType": "实时零价端点",
       "freeBasis": "实时端点明确报告 `is_free`，或输入输出价格均为 0",
       "risk": "普通 Router 模型可能消耗 credits 或按量收费，因此不会混入",
       "models": [
+        {
+          "id": "inclusionAI/Ling-3.0-flash-Fin",
+          "displayName": "inclusionAI/Ling-3.0-flash-Fin",
+          "contextWindow": 262144
+        },
         {
           "id": "prism-ml/Ternary-Bonsai-27B-AWQ-4bit",
           "displayName": "prism-ml/Ternary-Bonsai-27B-AWQ-4bit",
@@ -396,20 +406,33 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-07",
-    "added": [],
-    "removed": [
+    "comparedWith": "2026-09-08",
+    "added": [
       {
         "provider": "openrouter",
-        "id": "minimax/minimax-m2.7:free",
-        "displayName": "MiniMax: MiniMax M2.7 (free)",
-        "contextWindow": 196608
+        "id": "nex-agi/nex-n2.5-mini:free",
+        "displayName": "Nex AGI: Nex-N2.5-Mini (free)",
+        "contextWindow": 262144
       },
       {
         "provider": "openrouter",
-        "id": "minimax/minimax-m3:free",
-        "displayName": "MiniMax: MiniMax M3 (free)",
-        "contextWindow": 1048576
+        "id": "nex-agi/nex-n2.5-pro:free",
+        "displayName": "Nex AGI: Nex-N2.5-Pro (free)",
+        "contextWindow": 262144
+      },
+      {
+        "provider": "huggingface",
+        "id": "inclusionAI/Ling-3.0-flash-Fin",
+        "displayName": "inclusionAI/Ling-3.0-flash-Fin",
+        "contextWindow": 262144
+      }
+    ],
+    "removed": [
+      {
+        "provider": "modelscope",
+        "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "displayName": "Qwen3-235B-A22B-Instruct-2507",
+        "contextWindow": 262144
       }
     ],
     "comparedProviders": [
