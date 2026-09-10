@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-09",
-  "generatedAt": "2026-09-09T00:18:21.274Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-09.md",
+  "date": "2026-09-10",
+  "generatedAt": "2026-09-10T00:17:36.927Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-10.md",
   "totalModels": 58,
   "providers": [
     {
@@ -239,7 +239,7 @@
       "id": "nvidia",
       "display": "NVIDIA NIM",
       "status": "ok",
-      "count": 12,
+      "count": 11,
       "freeType": "免费开发端点",
       "freeBasis": "只保留审核过的 build.nvidia.com 免费开发端点",
       "risk": "面向学习、开发和原型，限速且不代表生产环境永久免费",
@@ -262,11 +262,6 @@
         {
           "id": "meta/llama-3.2-90b-vision-instruct",
           "displayName": "meta/llama-3.2-90b-vision-instruct",
-          "contextWindow": null
-        },
-        {
-          "id": "minimaxai/minimax-m3",
-          "displayName": "minimaxai/minimax-m3",
           "contextWindow": null
         },
         {
@@ -336,7 +331,7 @@
       "id": "huggingface",
       "display": "Hugging Face",
       "status": "ok",
-      "count": 4,
+      "count": 5,
       "freeType": "实时零价端点",
       "freeBasis": "实时端点明确报告 `is_free`，或输入输出价格均为 0",
       "risk": "普通 Router 模型可能消耗 credits 或按量收费，因此不会混入",
@@ -344,6 +339,11 @@
         {
           "id": "inclusionAI/Ling-3.0-flash-Fin",
           "displayName": "inclusionAI/Ling-3.0-flash-Fin",
+          "contextWindow": 262144
+        },
+        {
+          "id": "inclusionAI/Ling-3.0-flash-VL",
+          "displayName": "inclusionAI/Ling-3.0-flash-VL",
           "contextWindow": 262144
         },
         {
@@ -406,33 +406,21 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-08",
+    "comparedWith": "2026-09-09",
     "added": [
       {
-        "provider": "openrouter",
-        "id": "nex-agi/nex-n2.5-mini:free",
-        "displayName": "Nex AGI: Nex-N2.5-Mini (free)",
-        "contextWindow": 262144
-      },
-      {
-        "provider": "openrouter",
-        "id": "nex-agi/nex-n2.5-pro:free",
-        "displayName": "Nex AGI: Nex-N2.5-Pro (free)",
-        "contextWindow": 262144
-      },
-      {
         "provider": "huggingface",
-        "id": "inclusionAI/Ling-3.0-flash-Fin",
-        "displayName": "inclusionAI/Ling-3.0-flash-Fin",
+        "id": "inclusionAI/Ling-3.0-flash-VL",
+        "displayName": "inclusionAI/Ling-3.0-flash-VL",
         "contextWindow": 262144
       }
     ],
     "removed": [
       {
-        "provider": "modelscope",
-        "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
-        "displayName": "Qwen3-235B-A22B-Instruct-2507",
-        "contextWindow": 262144
+        "provider": "nvidia",
+        "id": "minimaxai/minimax-m3",
+        "displayName": "minimaxai/minimax-m3",
+        "contextWindow": null
       }
     ],
     "comparedProviders": [
