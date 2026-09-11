@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-10",
-  "generatedAt": "2026-09-10T00:17:36.927Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-10.md",
-  "totalModels": 58,
+  "date": "2026-09-11",
+  "generatedAt": "2026-09-11T00:13:20.696Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-11.md",
+  "totalModels": 59,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 18,
+      "count": 19,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -42,6 +42,11 @@
         {
           "id": "inclusionai/ling-3.0-flash-sante:free",
           "displayName": "inclusionAI: Ling 3.0 Flash Sante (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "inclusionai/ling-3.0-flash-vl:free",
+          "displayName": "inclusionAI: Ling 3.0 Flash VL (free)",
           "contextWindow": 262144
         },
         {
@@ -406,23 +411,16 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-09",
+    "comparedWith": "2026-09-10",
     "added": [
       {
-        "provider": "huggingface",
-        "id": "inclusionAI/Ling-3.0-flash-VL",
-        "displayName": "inclusionAI/Ling-3.0-flash-VL",
+        "provider": "openrouter",
+        "id": "inclusionai/ling-3.0-flash-vl:free",
+        "displayName": "inclusionAI: Ling 3.0 Flash VL (free)",
         "contextWindow": 262144
       }
     ],
-    "removed": [
-      {
-        "provider": "nvidia",
-        "id": "minimaxai/minimax-m3",
-        "displayName": "minimaxai/minimax-m3",
-        "contextWindow": null
-      }
-    ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "gemini",
