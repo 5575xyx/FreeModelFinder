@@ -2,25 +2,40 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-09-15（Asia/Shanghai）** · **59** 个免费模型入口 · **9/10** 个 Provider 正常。
+> 最近目录审计：**2026-09-16（Asia/Shanghai）** · **71** 个免费模型入口 · **9/10** 个 Provider 正常。
 
-[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-15.md)
+[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-16.md)
 
 这份列表每天由 GitHub Actions 通过各 Provider 的模型目录接口刷新，并应用 FreeModelFinder 核心层的免费规则。它不执行真实推理，不代表无限额度、永久免费或生产级可用。同一上游模型通过多个 Provider 提供时会分别计数，因为对应的账号资格、额度和 Gateway 模型 ID 不同。
 
 ## 今日变化
 
-与 2026-09-14 相比，成功比较的 9 个 Provider 模型清单没有变化。
+与 2026-09-15 相比，在成功比较的 9 个 Provider 中：**新增 12 个，移除 0 个**。
+
+### 新增
+
+- `openrouter:z-ai/glm-5.2:free`
+- `modelscope:deepseek-ai/DeepSeek-R1`
+- `modelscope:deepseek-ai/DeepSeek-V3`
+- `modelscope:deepseek-ai/DeepSeek-V3.1`
+- `modelscope:MiniMax/MiniMax-M2`
+- `modelscope:moonshotai/Kimi-K2-Instruct`
+- `modelscope:Qwen/Qwen3-235B-A22B-Instruct-2507`
+- `modelscope:Qwen/Qwen3-32B`
+- `modelscope:Qwen/Qwen3-Coder-480B-A35B-Instruct`
+- `modelscope:stepfun-ai/step3`
+- `modelscope:ZhipuAI/GLM-4.5`
+- `modelscope:ZhipuAI/GLM-4.6`
 
 ## Provider 汇总
 
 | Provider      | 状态    | 免费模型数 | 免费类型              | 免费依据                                                                            |
 | ------------- | ------- | ---------: | --------------------- | ----------------------------------------------------------------------------------- |
-| OpenRouter    | 🟢 正常 |         19 | 零价格模型            | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型 |
+| OpenRouter    | 🟢 正常 |         20 | 零价格模型            | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型 |
 | Google Gemini | 🟢 正常 |          5 | 账号 Free Tier        | 账号实时目录与 Free Tier 白名单取交集，只保留支持 `generateContent` 的型号          |
 | Zhipu AI      | 🟢 正常 |          2 | 官方免费型号          | 只列入官方免费 Flash 清单                                                           |
 | SiliconFlow   | 🟢 正常 |          5 | 免费白名单            | 平台免费型号白名单与实时模型目录取交集                                              |
-| ModelScope    | 🟢 正常 |          5 | 账号免费额度          | API-Inference 免费型号清单与可用目录取交集                                          |
+| ModelScope    | 🟢 正常 |         16 | 账号免费额度          | API-Inference 免费型号清单与可用目录取交集                                          |
 | NVIDIA NIM    | 🟢 正常 |         11 | 免费开发端点          | 只保留审核过的 build.nvidia.com 免费开发端点                                        |
 | GitHub Models | 🔴 失败 |   暂不可用 | 原型开发额度          | 目录中的文本输出模型使用账号自带原型开发额度                                        |
 | Cohere        | 🟢 正常 |          1 | 免费 Trial/Production | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`               |
@@ -57,6 +72,7 @@
 | `openrouter:poolside/laguna-xs-2.1:free`                        | Poolside: Laguna XS 2.1 (free)           |     262.1K |
 | `openrouter:thinkingmachines/inkling-small:free`                | Thinking Machines: Inkling Small (free)  |         1M |
 | `openrouter:thinkingmachines/inkling:free`                      | Thinking Machines: Inkling (free)        |         1M |
+| `openrouter:z-ai/glm-5.2:free`                                  | Z.ai: GLM 5.2 (free)                     |      32.8K |
 
 ### Google Gemini
 
@@ -107,13 +123,24 @@
 - 免费依据：API-Inference 免费型号清单与可用目录取交集
 - 主要风险：受账号日配额、单模型配额和账号绑定状态限制
 
-| Gateway 模型 ID                                 | 显示名称                      | 上下文窗口 |
-| ----------------------------------------------- | ----------------------------- | ---------: |
-| `modelscope:Qwen/Qwen3-235B-A22B-Thinking-2507` | Qwen3-235B-A22B-Thinking-2507 |     262.1K |
-| `modelscope:Qwen/Qwen3-Coder-30B-A3B-Instruct`  | Qwen3-Coder-30B-A3B-Instruct  |     262.1K |
-| `modelscope:Qwen/Qwen3-Next-80B-A3B-Instruct`   | Qwen3-Next-80B-A3B-Instruct   |     262.1K |
-| `modelscope:Qwen/Qwen3-Next-80B-A3B-Thinking`   | Qwen3-Next-80B-A3B-Thinking   |     262.1K |
-| `modelscope:Qwen/Qwen3-VL-235B-A22B-Instruct`   | Qwen3-VL-235B-A22B-Instruct   |     131.1K |
+| Gateway 模型 ID                                  | 显示名称                       | 上下文窗口 |
+| ------------------------------------------------ | ------------------------------ | ---------: |
+| `modelscope:deepseek-ai/DeepSeek-R1`             | DeepSeek-R1                    |      65.5K |
+| `modelscope:deepseek-ai/DeepSeek-V3`             | DeepSeek-V3                    |      65.5K |
+| `modelscope:deepseek-ai/DeepSeek-V3.1`           | DeepSeek-V3.1                  |     131.1K |
+| `modelscope:MiniMax/MiniMax-M2`                  | MiniMax-M2                     |     204.8K |
+| `modelscope:moonshotai/Kimi-K2-Instruct`         | Kimi-K2-Instruct               |     131.1K |
+| `modelscope:Qwen/Qwen3-235B-A22B-Instruct-2507`  | Qwen3-235B-A22B-Instruct-2507  |     262.1K |
+| `modelscope:Qwen/Qwen3-235B-A22B-Thinking-2507`  | Qwen3-235B-A22B-Thinking-2507  |     262.1K |
+| `modelscope:Qwen/Qwen3-32B`                      | Qwen3-32B                      |     131.1K |
+| `modelscope:Qwen/Qwen3-Coder-30B-A3B-Instruct`   | Qwen3-Coder-30B-A3B-Instruct   |     262.1K |
+| `modelscope:Qwen/Qwen3-Coder-480B-A35B-Instruct` | Qwen3-Coder-480B-A35B-Instruct |     262.1K |
+| `modelscope:Qwen/Qwen3-Next-80B-A3B-Instruct`    | Qwen3-Next-80B-A3B-Instruct    |     262.1K |
+| `modelscope:Qwen/Qwen3-Next-80B-A3B-Thinking`    | Qwen3-Next-80B-A3B-Thinking    |     262.1K |
+| `modelscope:Qwen/Qwen3-VL-235B-A22B-Instruct`    | Qwen3-VL-235B-A22B-Instruct    |     131.1K |
+| `modelscope:stepfun-ai/step3`                    | Step-3                         |      65.5K |
+| `modelscope:ZhipuAI/GLM-4.5`                     | GLM-4.5                        |     131.1K |
+| `modelscope:ZhipuAI/GLM-4.6`                     | GLM-4.6                        |     204.8K |
 
 ### NVIDIA NIM
 

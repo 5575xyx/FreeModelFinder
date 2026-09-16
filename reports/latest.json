@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-15",
-  "generatedAt": "2026-09-15T00:41:14.534Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-15.md",
-  "totalModels": 59,
+  "date": "2026-09-16",
+  "generatedAt": "2026-09-16T00:25:34.091Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-16.md",
+  "totalModels": 71,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 19,
+      "count": 20,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -108,6 +108,11 @@
           "id": "thinkingmachines/inkling:free",
           "displayName": "Thinking Machines: Inkling (free)",
           "contextWindow": 1048576
+        },
+        {
+          "id": "z-ai/glm-5.2:free",
+          "displayName": "Z.ai: GLM 5.2 (free)",
+          "contextWindow": 32768
         }
       ]
     },
@@ -208,19 +213,59 @@
       "id": "modelscope",
       "display": "ModelScope",
       "status": "ok",
-      "count": 5,
+      "count": 16,
       "freeType": "账号免费额度",
       "freeBasis": "API-Inference 免费型号清单与可用目录取交集",
       "risk": "受账号日配额、单模型配额和账号绑定状态限制",
       "models": [
+        {
+          "id": "deepseek-ai/DeepSeek-R1",
+          "displayName": "DeepSeek-R1",
+          "contextWindow": 65536
+        },
+        {
+          "id": "deepseek-ai/DeepSeek-V3",
+          "displayName": "DeepSeek-V3",
+          "contextWindow": 65536
+        },
+        {
+          "id": "deepseek-ai/DeepSeek-V3.1",
+          "displayName": "DeepSeek-V3.1",
+          "contextWindow": 131072
+        },
+        {
+          "id": "MiniMax/MiniMax-M2",
+          "displayName": "MiniMax-M2",
+          "contextWindow": 204800
+        },
+        {
+          "id": "moonshotai/Kimi-K2-Instruct",
+          "displayName": "Kimi-K2-Instruct",
+          "contextWindow": 131072
+        },
+        {
+          "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+          "displayName": "Qwen3-235B-A22B-Instruct-2507",
+          "contextWindow": 262144
+        },
         {
           "id": "Qwen/Qwen3-235B-A22B-Thinking-2507",
           "displayName": "Qwen3-235B-A22B-Thinking-2507",
           "contextWindow": 262144
         },
         {
+          "id": "Qwen/Qwen3-32B",
+          "displayName": "Qwen3-32B",
+          "contextWindow": 131072
+        },
+        {
           "id": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
           "displayName": "Qwen3-Coder-30B-A3B-Instruct",
+          "contextWindow": 262144
+        },
+        {
+          "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+          "displayName": "Qwen3-Coder-480B-A35B-Instruct",
           "contextWindow": 262144
         },
         {
@@ -237,6 +282,21 @@
           "id": "Qwen/Qwen3-VL-235B-A22B-Instruct",
           "displayName": "Qwen3-VL-235B-A22B-Instruct",
           "contextWindow": 131072
+        },
+        {
+          "id": "stepfun-ai/step3",
+          "displayName": "Step-3",
+          "contextWindow": 65536
+        },
+        {
+          "id": "ZhipuAI/GLM-4.5",
+          "displayName": "GLM-4.5",
+          "contextWindow": 131072
+        },
+        {
+          "id": "ZhipuAI/GLM-4.6",
+          "displayName": "GLM-4.6",
+          "contextWindow": 204800
         }
       ]
     },
@@ -411,8 +471,81 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-14",
-    "added": [],
+    "comparedWith": "2026-09-15",
+    "added": [
+      {
+        "provider": "openrouter",
+        "id": "z-ai/glm-5.2:free",
+        "displayName": "Z.ai: GLM 5.2 (free)",
+        "contextWindow": 32768
+      },
+      {
+        "provider": "modelscope",
+        "id": "deepseek-ai/DeepSeek-R1",
+        "displayName": "DeepSeek-R1",
+        "contextWindow": 65536
+      },
+      {
+        "provider": "modelscope",
+        "id": "deepseek-ai/DeepSeek-V3",
+        "displayName": "DeepSeek-V3",
+        "contextWindow": 65536
+      },
+      {
+        "provider": "modelscope",
+        "id": "deepseek-ai/DeepSeek-V3.1",
+        "displayName": "DeepSeek-V3.1",
+        "contextWindow": 131072
+      },
+      {
+        "provider": "modelscope",
+        "id": "MiniMax/MiniMax-M2",
+        "displayName": "MiniMax-M2",
+        "contextWindow": 204800
+      },
+      {
+        "provider": "modelscope",
+        "id": "moonshotai/Kimi-K2-Instruct",
+        "displayName": "Kimi-K2-Instruct",
+        "contextWindow": 131072
+      },
+      {
+        "provider": "modelscope",
+        "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "displayName": "Qwen3-235B-A22B-Instruct-2507",
+        "contextWindow": 262144
+      },
+      {
+        "provider": "modelscope",
+        "id": "Qwen/Qwen3-32B",
+        "displayName": "Qwen3-32B",
+        "contextWindow": 131072
+      },
+      {
+        "provider": "modelscope",
+        "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+        "displayName": "Qwen3-Coder-480B-A35B-Instruct",
+        "contextWindow": 262144
+      },
+      {
+        "provider": "modelscope",
+        "id": "stepfun-ai/step3",
+        "displayName": "Step-3",
+        "contextWindow": 65536
+      },
+      {
+        "provider": "modelscope",
+        "id": "ZhipuAI/GLM-4.5",
+        "displayName": "GLM-4.5",
+        "contextWindow": 131072
+      },
+      {
+        "provider": "modelscope",
+        "id": "ZhipuAI/GLM-4.6",
+        "displayName": "GLM-4.6",
+        "contextWindow": 204800
+      }
+    ],
     "removed": [],
     "comparedProviders": [
       "openrouter",
