@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-16",
-  "generatedAt": "2026-09-16T00:25:34.091Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-16.md",
+  "date": "2026-09-17",
+  "generatedAt": "2026-09-17T00:35:45.488Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-17.md",
   "totalModels": 71,
   "providers": [
     {
@@ -471,81 +471,8 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-15",
-    "added": [
-      {
-        "provider": "openrouter",
-        "id": "z-ai/glm-5.2:free",
-        "displayName": "Z.ai: GLM 5.2 (free)",
-        "contextWindow": 32768
-      },
-      {
-        "provider": "modelscope",
-        "id": "deepseek-ai/DeepSeek-R1",
-        "displayName": "DeepSeek-R1",
-        "contextWindow": 65536
-      },
-      {
-        "provider": "modelscope",
-        "id": "deepseek-ai/DeepSeek-V3",
-        "displayName": "DeepSeek-V3",
-        "contextWindow": 65536
-      },
-      {
-        "provider": "modelscope",
-        "id": "deepseek-ai/DeepSeek-V3.1",
-        "displayName": "DeepSeek-V3.1",
-        "contextWindow": 131072
-      },
-      {
-        "provider": "modelscope",
-        "id": "MiniMax/MiniMax-M2",
-        "displayName": "MiniMax-M2",
-        "contextWindow": 204800
-      },
-      {
-        "provider": "modelscope",
-        "id": "moonshotai/Kimi-K2-Instruct",
-        "displayName": "Kimi-K2-Instruct",
-        "contextWindow": 131072
-      },
-      {
-        "provider": "modelscope",
-        "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
-        "displayName": "Qwen3-235B-A22B-Instruct-2507",
-        "contextWindow": 262144
-      },
-      {
-        "provider": "modelscope",
-        "id": "Qwen/Qwen3-32B",
-        "displayName": "Qwen3-32B",
-        "contextWindow": 131072
-      },
-      {
-        "provider": "modelscope",
-        "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
-        "displayName": "Qwen3-Coder-480B-A35B-Instruct",
-        "contextWindow": 262144
-      },
-      {
-        "provider": "modelscope",
-        "id": "stepfun-ai/step3",
-        "displayName": "Step-3",
-        "contextWindow": 65536
-      },
-      {
-        "provider": "modelscope",
-        "id": "ZhipuAI/GLM-4.5",
-        "displayName": "GLM-4.5",
-        "contextWindow": 131072
-      },
-      {
-        "provider": "modelscope",
-        "id": "ZhipuAI/GLM-4.6",
-        "displayName": "GLM-4.6",
-        "contextWindow": 204800
-      }
-    ],
+    "comparedWith": "2026-09-16",
+    "added": [],
     "removed": [],
     "comparedProviders": [
       "openrouter",
