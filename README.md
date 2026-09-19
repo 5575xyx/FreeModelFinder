@@ -33,35 +33,28 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-19（Asia/Shanghai）更新：72 个免费模型入口，覆盖 9/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-20（Asia/Shanghai）更新：67 个免费模型入口，覆盖 8/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
-> 本次目录失败：GitHub Models。
+> 未配置密钥：Google Gemini、GitHub Models。
 
-| Provider      | 状态    | 免费模型数 | 免费类型              |
-| ------------- | ------- | ---------: | --------------------- |
-| OpenRouter    | 🟢 正常 |         22 | 零价格模型            |
-| Google Gemini | 🟢 正常 |          5 | 账号 Free Tier        |
-| Zhipu AI      | 🟢 正常 |          2 | 官方免费型号          |
-| SiliconFlow   | 🟢 正常 |          5 | 免费白名单            |
-| ModelScope    | 🟢 正常 |         16 | 账号免费额度          |
-| NVIDIA NIM    | 🟢 正常 |         11 | 免费开发端点          |
-| GitHub Models | 🔴 失败 |   暂不可用 | 原型开发额度          |
-| Cohere        | 🟢 正常 |          1 | 免费 Trial/Production |
-| Hugging Face  | 🟢 正常 |          4 | 实时零价端点          |
-| SenseNova     | 🟢 正常 |          6 | 实时零价模型          |
+| Provider      | 状态      | 免费模型数 | 免费类型              |
+| ------------- | --------- | ---------: | --------------------- |
+| OpenRouter    | 🟢 正常   |         22 | 零价格模型            |
+| Google Gemini | ⚪ 未接入 |     未接入 | 账号 Free Tier        |
+| Zhipu AI      | 🟢 正常   |          2 | 官方免费型号          |
+| SiliconFlow   | 🟢 正常   |          5 | 免费白名单            |
+| ModelScope    | 🟢 正常   |         16 | 账号免费额度          |
+| NVIDIA NIM    | 🟢 正常   |         11 | 免费开发端点          |
+| GitHub Models | ⚪ 未接入 |     未接入 | 原型开发额度          |
+| Cohere        | 🟢 正常   |          1 | 免费 Trial/Production |
+| Hugging Face  | 🟢 正常   |          4 | 实时零价端点          |
+| SenseNova     | 🟢 正常   |          6 | 实时零价模型          |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-19.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-20.md)
 
 ### 今日变化
 
-与 2026-09-18 相比，在成功比较的 9 个 Provider 中：**新增 1 个，移除 0 个**。
-
-<details>
-<summary>查看新增的 1 个模型</summary>
-
-- `openrouter:deepseek/deepseek-v4-flash-0731:free`
-
-</details>
+与 2026-09-19 相比，成功比较的 8 个 Provider 模型清单没有变化。
 
 ### 展开完整模型列表
 
@@ -90,17 +83,6 @@
 - `openrouter:thinkingmachines/inkling-small:free` — Thinking Machines: Inkling Small (free)
 - `openrouter:thinkingmachines/inkling:free` — Thinking Machines: Inkling (free)
 - `openrouter:z-ai/glm-5.2:free` — Z.ai: GLM 5.2 (free)
-
-</details>
-
-<details>
-<summary><strong>Google Gemini · 5 个模型</strong></summary>
-
-- `gemini:gemini-3.1-flash-lite` — Gemini 3.1 Flash Lite
-- `gemini:gemini-3.5-flash` — Gemini 3.5 Flash
-- `gemini:gemini-3.5-flash-lite` — Gemini 3.5 Flash Lite
-- `gemini:gemma-4-26b-a4b-it` — Gemma 4 26B A4B IT
-- `gemini:gemma-4-31b-it` — Gemma 4 31B IT
 
 </details>
 

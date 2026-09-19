@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-19",
-  "generatedAt": "2026-09-19T00:23:52.085Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-19.md",
-  "totalModels": 72,
+  "date": "2026-09-20",
+  "generatedAt": "2026-09-19T16:35:55.645Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-20.md",
+  "totalModels": 67,
   "providers": [
     {
       "id": "openrouter",
@@ -129,38 +129,12 @@
     {
       "id": "gemini",
       "display": "Google Gemini",
-      "status": "ok",
-      "count": 5,
+      "status": "skipped",
+      "count": 0,
       "freeType": "账号 Free Tier",
       "freeBasis": "账号实时目录与 Free Tier 白名单取交集，只保留支持 `generateContent` 的型号",
       "risk": "绑定付费项目后可能适用付费层规则；地区和账号资格会影响可用性",
-      "models": [
-        {
-          "id": "gemini-3.1-flash-lite",
-          "displayName": "Gemini 3.1 Flash Lite",
-          "contextWindow": 1048576
-        },
-        {
-          "id": "gemini-3.5-flash",
-          "displayName": "Gemini 3.5 Flash",
-          "contextWindow": 1048576
-        },
-        {
-          "id": "gemini-3.5-flash-lite",
-          "displayName": "Gemini 3.5 Flash Lite",
-          "contextWindow": 1048576
-        },
-        {
-          "id": "gemma-4-26b-a4b-it",
-          "displayName": "Gemma 4 26B A4B IT",
-          "contextWindow": 262144
-        },
-        {
-          "id": "gemma-4-31b-it",
-          "displayName": "Gemma 4 31B IT",
-          "contextWindow": 262144
-        }
-      ]
+      "models": []
     },
     {
       "id": "zhipu",
@@ -379,7 +353,7 @@
     {
       "id": "github",
       "display": "GitHub Models",
-      "status": "error",
+      "status": "skipped",
       "count": 0,
       "freeType": "原型开发额度",
       "freeBasis": "目录中的文本输出模型使用账号自带原型开发额度",
@@ -476,19 +450,11 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-18",
-    "added": [
-      {
-        "provider": "openrouter",
-        "id": "deepseek/deepseek-v4-flash-0731:free",
-        "displayName": "DeepSeek: DeepSeek V4 Flash 0731 (free)",
-        "contextWindow": 1048576
-      }
-    ],
+    "comparedWith": "2026-09-19",
+    "added": [],
     "removed": [],
     "comparedProviders": [
       "openrouter",
-      "gemini",
       "zhipu",
       "siliconflow",
       "modelscope",
