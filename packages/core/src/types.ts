@@ -82,6 +82,7 @@ export interface ModelInfo {
   contextWindow?: number;
   free: boolean;
   description?: string;
+  capabilities?: ('text' | 'image' | 'video')[];
 }
 
 export type QuotaResource = 'requests' | 'tokens' | 'neurons';
@@ -230,3 +231,48 @@ export interface AppConfig {
   autoRoute?: AutoRouteSettings;
   onboarding?: OnboardingState;
 }
+
+// ── Multimodal Generation Types ──────────────────────────────────
+
+export const ImageGenerationRequestSchema = z.object({
+  model: z.string(),
+  prompt: z.string(),
+  size: z.string().optional().default('1024x1024'),
+  n: z.number().int().positive().optional().default(1),
+  response_format: z.enum(['url', 'b64_json']).optional().default('url'),
+  image: z.array(z.string()).optional(),
+});
+export type ImageGenerationRequest = z.infer<typeof ImageGenerationRequestSchema>;
+
+export const ImageGenerationResponseSchema = z.object({
+  created: z.number(),
+  data: z.array(
+    z.object({
+      url: z.string().optional(),
+      b64_json: z.string().optional(),
+    }),
+  ),
+});
+export type ImageGenerationResponse = z.infer<typeof ImageGenerationResponseSchema>;
+
+export const VideoGenerationRequestSchema = z.object({
+  model: z.string(),
+  prompt: z.string(),
+  width: z.number().int().positive().optional().default(1152),
+  height: z.number().int().positive().optional().default(768),
+  num_frames: z.number().int().positive().optional().default(121),
+  frame_rate: z.number().int().min(1).max(60).optional().default(24),
+  image: z.array(z.string()).optional(),
+  negative_prompt: z.string().optional(),
+  seed: z.number().int().optional(),
+});
+export type VideoGenerationRequest = z.infer<typeof VideoGenerationRequestSchema>;
+
+export const VideoGenerationResponseSchema = z.object({
+  video_id: z.string(),
+  status: z.enum(['queued', 'in_progress', 'completed', 'failed']),
+  video_url: z.string().optional(),
+  progress: z.number().optional(),
+  error: z.string().optional(),
+});
+export type VideoGenerationResponse = z.infer<typeof VideoGenerationResponseSchema>;
