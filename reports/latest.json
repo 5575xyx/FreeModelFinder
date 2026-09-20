@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "date": "2026-09-20",
-  "generatedAt": "2026-09-20T14:00:38.670Z",
+  "generatedAt": "2026-09-20T14:04:59.573Z",
   "reportPath": "reports/provider-free-model-audit-2026-09-20.md",
   "totalModels": 98,
   "providers": [
@@ -639,26 +639,7 @@
   "changes": {
     "comparedWith": "2026-09-20",
     "added": [],
-    "removed": [
-      {
-        "provider": "openrouter",
-        "id": "deepseek/deepseek-v4-flash-0731:free",
-        "displayName": "DeepSeek: DeepSeek V4 Flash 0731 (free)",
-        "contextWindow": 1048576
-      },
-      {
-        "provider": "kilo",
-        "id": "deepseek/deepseek-v4-flash-0731:free",
-        "displayName": "DeepSeek: DeepSeek V4 Flash 0731 (free)",
-        "contextWindow": 1048576
-      },
-      {
-        "provider": "agnes",
-        "id": "agnes-image-2.0-flash",
-        "displayName": "Agnes Image 2.0 Flash",
-        "contextWindow": null
-      }
-    ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "zhipu",

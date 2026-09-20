@@ -57,16 +57,7 @@
 
 ### 今日变化
 
-与 2026-09-20 相比，在成功比较的 10 个 Provider 中：**新增 0 个，移除 3 个**。
-
-<details>
-<summary>查看移除的 3 个模型</summary>
-
-- `openrouter:deepseek/deepseek-v4-flash-0731:free`
-- `kilo:deepseek/deepseek-v4-flash-0731:free`
-- `agnes:agnes-image-2.0-flash`
-
-</details>
+与 2026-09-20 相比，成功比较的 10 个 Provider 模型清单没有变化。
 
 ### 展开完整模型列表
 
