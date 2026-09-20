@@ -1,11 +1,15 @@
 import type {
   ChatRequest,
   ChatResponse,
+  ImageGenerationRequest,
+  ImageGenerationResponse,
   ModelInfo,
   ProviderId,
   ProviderCredentials,
   QuotaWindow,
   StreamChunk,
+  VideoGenerationRequest,
+  VideoGenerationResponse,
 } from '../types.js';
 
 export interface ProviderContext {
@@ -52,6 +56,10 @@ export abstract class BaseProvider {
   abstract listModels(): Promise<ModelInfo[]>;
   abstract chat(req: ChatRequest): Promise<ChatResponse>;
   abstract stream(req: ChatRequest): AsyncIterable<StreamChunk>;
+
+  generateImage?(req: ImageGenerationRequest): Promise<ImageGenerationResponse>;
+  generateVideo?(req: VideoGenerationRequest): Promise<VideoGenerationResponse>;
+  queryVideoStatus?(videoId: string): Promise<VideoGenerationResponse>;
 }
 
 export function requireKey(cred: ProviderCredentials | undefined, provider: string): string {

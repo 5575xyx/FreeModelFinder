@@ -21,10 +21,14 @@ import { QuotaTracker } from './quota.js';
 import { AutoRouter, parseRateLimitError } from './router/auto-router.js';
 import type {
   AppConfig,
+  ImageGenerationRequest,
+  ImageGenerationResponse,
   ModelInfo,
   ModelQuotaSnapshot,
   ProviderId,
   SwitchNotice,
+  VideoGenerationRequest,
+  VideoGenerationResponse,
 } from './types.js';
 
 const PROVIDER_CTORS: Record<
@@ -330,5 +334,27 @@ export class ProviderRegistry {
     }
     // default to openrouter
     return { provider: this.getProvider('openrouter'), modelId };
+  }
+
+  async generateImage(
+    req: ImageGenerationRequest,
+  ): Promise<{ provider: BaseProvider; response: ImageGenerationResponse }> {
+    const { provider, modelId } = this.resolveModel(req.model);
+    if (!provider.generateImage) {
+      throw new Error(`Provider ${provider.id} does not support image generation`);
+    }
+    const response = await provider.generateImage({ ...req, model: modelId });
+    return { provider, response };
+  }
+
+  async generateVideo(
+    req: VideoGenerationRequest,
+  ): Promise<{ provider: BaseProvider; response: VideoGenerationResponse }> {
+    const { provider, modelId } = this.resolveModel(req.model);
+    if (!provider.generateVideo) {
+      throw new Error(`Provider ${provider.id} does not support video generation`);
+    }
+    const response = await provider.generateVideo({ ...req, model: modelId });
+    return { provider, response };
   }
 }
