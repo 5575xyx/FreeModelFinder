@@ -357,4 +357,16 @@ export class ProviderRegistry {
     const response = await provider.generateVideo({ ...req, model: modelId });
     return { provider, response };
   }
+
+  async queryVideoStatus(
+    videoId: string,
+    providerId: string,
+  ): Promise<{ provider: BaseProvider; response: VideoGenerationResponse }> {
+    const provider = this.getProvider(providerId as ProviderId);
+    if (!provider.queryVideoStatus) {
+      throw new Error(`Provider ${providerId} does not support video status queries`);
+    }
+    const response = await provider.queryVideoStatus(videoId);
+    return { provider, response };
+  }
 }
