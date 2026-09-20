@@ -213,6 +213,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
     }
 
     const data = (await res.json()) as Record<string, unknown>;
+    // Agnes v2.0 returns the final video URL in remixed_from_video_id (naming is misleading but confirmed)
     const videoUrl =
       (data.remixed_from_video_id as string) ||
       (data.video_url as string) ||
