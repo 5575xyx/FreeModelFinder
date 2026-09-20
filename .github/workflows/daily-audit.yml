@@ -33,6 +33,7 @@ jobs:
       SENSENOVA_API_KEY: ${{ secrets.SENSENOVA_API_KEY }}
       KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
       AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
+      AGNES_INTL_API_KEY: ${{ secrets.AGNES_INTL_API_KEY }}
     steps:
       - uses: actions/checkout@v6
         with:
