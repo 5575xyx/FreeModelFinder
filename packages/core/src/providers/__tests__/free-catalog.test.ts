@@ -10,6 +10,8 @@ import { OpenRouterProvider } from '../openrouter.js';
 import { SenseNovaProvider } from '../sensenova.js';
 import { SiliconFlowProvider } from '../siliconflow.js';
 import { ZhipuProvider } from '../zhipu.js';
+import { KiloProvider } from '../kilo.js';
+import { AgnesProvider } from '../agnes.js';
 
 function jsonFetch(body: unknown): typeof fetch {
   return (async () =>
@@ -245,5 +247,46 @@ describe('free provider catalogs', () => {
       (await sensenova.listModels()).map((model) => model.id),
       ['free-text-model'],
     );
+  });
+
+  it('keeps only whitelist and zero-price models from Kilo', async () => {
+    const kilo = new KiloProvider({
+      credentials: { apiKey: 'test-key' },
+      fetchImpl: jsonFetch({
+        data: [
+          { id: 'kilo-auto/free', name: 'Kilo Free', pricing: { prompt: 0, completion: 0 } },
+          { id: 'nvidia/nemotron-3-super-120b-a12b:free', pricing: { prompt: 0, completion: 0 } },
+          { id: 'vendor/paid-model', pricing: { prompt: 0.001, completion: 0.002 } },
+          { id: 'unknown/free', pricing: null },
+        ],
+      }),
+    });
+    const models = await kilo.listModels();
+    assert.deepEqual(
+      models.map((model) => model.id),
+      ['kilo-auto/free', 'nvidia/nemotron-3-super-120b-a12b:free'],
+    );
+    assert.ok(models.every((model) => model.free));
+  });
+
+  it('keeps only official free models from Agnes', async () => {
+    const agnes = new AgnesProvider({
+      credentials: { apiKey: 'test-key' },
+      fetchImpl: jsonFetch({
+        data: [
+          { id: 'agnes-2.0-flash', name: 'Agnes 2.0 Flash' },
+          { id: 'agnes-2.5-flash', name: 'Agnes 2.5 Flash' },
+          { id: 'agnes-2.1-flash', name: 'Agnes 2.1 Flash' },
+          { id: 'agnes-video-v2.0', name: 'Agnes Video' },
+          { id: 'agnes-paid-model', name: 'Paid Model' },
+        ],
+      }),
+    });
+    const models = await agnes.listModels();
+    assert.deepEqual(
+      models.map((model) => model.id),
+      ['agnes-2.0-flash', 'agnes-2.5-flash', 'agnes-2.1-flash', 'agnes-video-v2.0'],
+    );
+    assert.ok(models.every((model) => model.free));
   });
 });

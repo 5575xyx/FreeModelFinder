@@ -53,6 +53,8 @@ const PROVIDER_POLICIES: Partial<Record<ProviderId, Policy[]>> = {
       model: /deepseek-v4-flash/i,
     },
   ],
+  kilo: [{ resource: 'requests', windowSeconds: 60, limit: 200, scope: 'provider' }],
+  agnes: [{ resource: 'requests', windowSeconds: 60, limit: 20, scope: 'provider' }],
 };
 
 type State = {

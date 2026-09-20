@@ -335,6 +335,8 @@ const zh: Dict = {
   'platforms.zhipu.label': '智谱 AI',
   'platforms.nvidia.hint': '使用 build.nvidia.com 开发者 API 的限速免费访问',
   'platforms.github.hint': '所有账号都有用于原型开发的限速免费用量，付费使用需另行启用',
+  'platforms.kilo.hint': '聚合 17+ 免费模型的编码优化网关，支持自动路由到最佳免费模型',
+  'platforms.agnes.hint': '国产多模态 AI 平台，提供免费文本、图像和视频生成模型',
 
   'settingsPage.back': '返回',
   'settingsPage.title': '设置',
@@ -686,6 +688,10 @@ const en: Dict = {
     'Uses the rate-limited free access on the build.nvidia.com developer API',
   'platforms.github.hint':
     'All accounts have rate-limited free usage for prototyping; paid usage requires opt-in',
+  'platforms.kilo.hint':
+    'Coding-optimized gateway aggregating 17+ free models with auto-routing to the best available',
+  'platforms.agnes.hint':
+    'Chinese multimodal AI platform with free text, image, and video generation models',
 
   'settingsPage.back': 'Back',
   'settingsPage.title': 'Settings',

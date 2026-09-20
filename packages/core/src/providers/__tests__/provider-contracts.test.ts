@@ -13,6 +13,8 @@ import { OpenRouterProvider } from '../openrouter.js';
 import { SenseNovaProvider } from '../sensenova.js';
 import { SiliconFlowProvider } from '../siliconflow.js';
 import { ZhipuProvider } from '../zhipu.js';
+import { KiloProvider } from '../kilo.js';
+import { AgnesProvider } from '../agnes.js';
 
 type ProviderConstructor = new (context: ProviderContext) => BaseProvider;
 
@@ -26,6 +28,8 @@ const openAiCompatibleProviders: Array<[string, ProviderConstructor]> = [
   ['cohere', CohereProvider],
   ['huggingface', HuggingFaceProvider],
   ['sensenova', SenseNovaProvider],
+  ['kilo', KiloProvider],
+  ['agnes', AgnesProvider],
 ];
 
 const chatRequest: ChatRequest = {

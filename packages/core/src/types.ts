@@ -12,6 +12,8 @@ export const ProviderIdSchema = z.enum([
   'cohere',
   'huggingface',
   'sensenova',
+  'kilo',
+  'agnes',
   'custom',
 ]);
 export type ProviderId = z.infer<typeof ProviderIdSchema>;
@@ -180,6 +182,7 @@ export const PROVIDER_SHARED_QUOTA: Partial<Record<ProviderId, boolean>> = {
   github: true,
   cohere: true,
   huggingface: true,
+  kilo: true,
 };
 
 export function isSharedQuotaProvider(provider: ProviderId): boolean {

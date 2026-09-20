@@ -28,6 +28,8 @@ const FREE_TYPE_BY_ID = {
   cohere: '免费 Trial/Production',
   huggingface: '实时零价端点',
   sensenova: '实时零价模型',
+  kilo: '聚合免费模型',
+  agnes: '官方免费模型',
 };
 
 if (!existsSync(SNAPSHOT_PATH)) {

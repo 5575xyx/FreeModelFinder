@@ -31,6 +31,8 @@ jobs:
       COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
       HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
       SENSENOVA_API_KEY: ${{ secrets.SENSENOVA_API_KEY }}
+      KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
+      AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
     steps:
       - uses: actions/checkout@v6
         with:

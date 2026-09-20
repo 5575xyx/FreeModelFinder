@@ -13,6 +13,8 @@ import {
   SenseNovaProvider,
   SiliconFlowProvider,
   ZhipuProvider,
+  KiloProvider,
+  AgnesProvider,
 } from './providers/index.js';
 import type { ProviderContext } from './providers/base.js';
 import { QuotaTracker } from './quota.js';
@@ -39,6 +41,8 @@ const PROVIDER_CTORS: Record<
   cohere: CohereProvider,
   huggingface: HuggingFaceProvider,
   sensenova: SenseNovaProvider,
+  kilo: KiloProvider,
+  agnes: AgnesProvider,
   custom: CustomProvider,
 };
 
@@ -301,6 +305,20 @@ export class ProviderRegistry {
         } catch {
           // fallthrough
         }
+      }
+    }
+    if (modelId.startsWith('kilo:')) {
+      try {
+        return { provider: this.getProvider('kilo'), modelId: modelId.slice(5) };
+      } catch {
+        // fallthrough
+      }
+    }
+    if (modelId.startsWith('agnes:')) {
+      try {
+        return { provider: this.getProvider('agnes'), modelId: modelId.slice(6) };
+      } catch {
+        // fallthrough
       }
     }
     if (modelId.startsWith('command-') || modelId.startsWith('c4ai-')) {

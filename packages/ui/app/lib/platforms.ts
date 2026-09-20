@@ -69,6 +69,20 @@ export const SETTINGS_PROVIDERS = [
     guide: 'https://docs.github.com/en/github-models/prototyping-with-ai-models',
     hint: '所有账号都有用于原型开发的限速免费用量，付费使用需另行启用',
   },
+  {
+    id: 'kilo',
+    label: 'Kilo Code',
+    link: 'https://kilo.ai',
+    guide: 'https://kilo.ai/docs/gateway/api-reference',
+    hint: '聚合 17+ 免费模型的编码优化网关，支持自动路由到最佳免费模型',
+  },
+  {
+    id: 'agnes',
+    label: 'Agnes AI',
+    link: 'https://agnes-ai.com',
+    guide: 'https://agnes-ai.com/doc/overview',
+    hint: '国产多模态 AI 平台，提供免费文本、图像和视频生成模型',
+  },
 ] as const;
 
 export function providerLabelKey(id: string): string | undefined {

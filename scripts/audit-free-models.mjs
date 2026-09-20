@@ -110,6 +110,22 @@ const PROVIDER_META = [
     freeBasis: '实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单',
     risk: '免费配额和型号可能变化；当前网关只处理文本，即使模型本身支持多模态',
   },
+  {
+    id: 'kilo',
+    display: 'Kilo Code',
+    envKeys: ['KILO_API_KEY'],
+    freeType: '聚合免费模型',
+    freeBasis: '白名单 + 零价格双重验证，覆盖 17+ 个免费模型',
+    risk: '免费层约 200 请求/小时；部分模型与 OpenRouter 重叠',
+  },
+  {
+    id: 'agnes',
+    display: 'Agnes AI',
+    envKeys: ['AGNES_API_KEY'],
+    freeType: '官方免费模型',
+    freeBasis: '官方免费模型清单（agnes-2.0-flash、agnes-2.5-flash 等）',
+    risk: '免费层 20 RPM；图像和视频模型有额外限制',
+  },
 ];
 
 function readEnvKey(candidates) {

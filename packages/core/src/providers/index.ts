@@ -9,4 +9,6 @@ export { GitHubModelsProvider } from './github.js';
 export { CohereProvider } from './cohere.js';
 export { HuggingFaceProvider } from './huggingface.js';
 export { SenseNovaProvider } from './sensenova.js';
+export { KiloProvider } from './kilo.js';
+export { AgnesProvider } from './agnes.js';
 export { CustomProvider } from './custom.js';
