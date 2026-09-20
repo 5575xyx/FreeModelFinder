@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
   "date": "2026-09-20",
-  "generatedAt": "2026-09-20T02:10:28.689Z",
+  "generatedAt": "2026-09-20T14:00:38.670Z",
   "reportPath": "reports/provider-free-model-audit-2026-09-20.md",
-  "totalModels": 101,
+  "totalModels": 98,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 22,
+      "count": 21,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -18,11 +18,6 @@
           "id": "cohere/north-mini-code:free",
           "displayName": "Cohere: North Mini Code (free)",
           "contextWindow": 256000
-        },
-        {
-          "id": "deepseek/deepseek-v4-flash-0731:free",
-          "displayName": "DeepSeek: DeepSeek V4 Flash 0731 (free)",
-          "contextWindow": 1048576
         },
         {
           "id": "dots-studio/dots-3-note-preview:free",
@@ -452,7 +447,7 @@
       "id": "kilo",
       "display": "Kilo Code",
       "status": "ok",
-      "count": 27,
+      "count": 26,
       "freeType": "聚合免费模型",
       "freeBasis": "白名单 + 零价格双重验证，覆盖 17+ 个免费模型",
       "risk": "免费层约 200 请求/小时；部分模型与 OpenRouter 重叠",
@@ -461,11 +456,6 @@
           "id": "cohere/north-mini-code:free",
           "displayName": "Cohere: North Mini Code (free)",
           "contextWindow": 256000
-        },
-        {
-          "id": "deepseek/deepseek-v4-flash-0731:free",
-          "displayName": "DeepSeek: DeepSeek V4 Flash 0731 (free)",
-          "contextWindow": 1048576
         },
         {
           "id": "dots-studio/dots-3-note-preview:free",
@@ -596,55 +586,79 @@
     },
     {
       "id": "agnes",
-      "display": "Agnes AI",
+      "display": "Agnes AI (China)",
       "status": "ok",
-      "count": 7,
+      "count": 6,
       "freeType": "官方免费模型",
       "freeBasis": "官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）",
       "risk": "免费层 20 RPM；图像和视频模型有额外限制",
       "models": [
         {
           "id": "agnes-2.5-flash",
-          "displayName": "Agnes 2.5 Flash",
+          "displayName": "agnes-2.5-flash",
           "contextWindow": null
         },
         {
           "id": "agnes-3.0-flash",
-          "displayName": "Agnes 3.0 Flash",
-          "contextWindow": null
-        },
-        {
-          "id": "agnes-image-2.0-flash",
-          "displayName": "Agnes Image 2.0 Flash",
+          "displayName": "agnes-3.0-flash",
           "contextWindow": null
         },
         {
           "id": "agnes-image-2.1-flash",
-          "displayName": "Agnes Image 2.1 Flash",
+          "displayName": "agnes-image-2.1-flash",
           "contextWindow": null
         },
         {
           "id": "agnes-image-2.5-flash",
-          "displayName": "Agnes Image 2.5 Flash",
+          "displayName": "agnes-image-2.5-flash",
           "contextWindow": null
         },
         {
           "id": "agnes-video-2.5-flash",
-          "displayName": "Agnes Video 2.5 Flash",
+          "displayName": "agnes-video-2.5-flash",
           "contextWindow": null
         },
         {
           "id": "agnes-video-v2.0",
-          "displayName": "Agnes Video V2.0",
+          "displayName": "agnes-video-v2.0",
           "contextWindow": null
         }
       ]
+    },
+    {
+      "id": "agnes-intl",
+      "display": "Agnes AI (International)",
+      "status": "skipped",
+      "count": 0,
+      "freeType": "官方免费模型",
+      "freeBasis": "官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）",
+      "risk": "免费层 20 RPM；图像和视频模型有额外限制",
+      "models": []
     }
   ],
   "changes": {
     "comparedWith": "2026-09-20",
     "added": [],
-    "removed": [],
+    "removed": [
+      {
+        "provider": "openrouter",
+        "id": "deepseek/deepseek-v4-flash-0731:free",
+        "displayName": "DeepSeek: DeepSeek V4 Flash 0731 (free)",
+        "contextWindow": 1048576
+      },
+      {
+        "provider": "kilo",
+        "id": "deepseek/deepseek-v4-flash-0731:free",
+        "displayName": "DeepSeek: DeepSeek V4 Flash 0731 (free)",
+        "contextWindow": 1048576
+      },
+      {
+        "provider": "agnes",
+        "id": "agnes-image-2.0-flash",
+        "displayName": "Agnes Image 2.0 Flash",
+        "contextWindow": null
+      }
+    ],
     "comparedProviders": [
       "openrouter",
       "zhipu",
@@ -654,7 +668,8 @@
       "cohere",
       "huggingface",
       "sensenova",
-      "kilo"
+      "kilo",
+      "agnes"
     ]
   }
 }

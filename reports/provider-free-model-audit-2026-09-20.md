@@ -1,21 +1,21 @@
 # FreeModelFinder Provider 与免费模型审计报告
 
 - 审计时间：2026-09-20（Asia/Shanghai）
-- 审计对象：12 个内置 provider
+- 审计对象：13 个内置 provider
 - 审计方法：GitHub Actions 每日调度，通过核心层 `ProviderRegistry.listModels()` 抓取各 provider 实时目录并套用 `free === true` 过滤；本次未执行真实推理测试。
 - 生成脚本：`scripts/audit-free-models.mjs`
 
 ## 结论
 
-- 10/12 个 provider 目录接口在本次运行中成功返回。
-- 命中免费过滤的模型合计 **101** 个。
+- 10/13 个 provider 目录接口在本次运行中成功返回。
+- 命中免费过滤的模型合计 **98** 个。
 - 未配置密钥的 provider 会在下表中标记为“跳过”，不会阻塞审计。
 
 ## Provider 汇总
 
 | Provider | 免费模型数 | 免费依据 | 目录连接 | 主要计费与可用性风险 |
 |---|---:|---|---|---|
-| OpenRouter | 22 | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型 | 成功 | 免费账号通常共享日请求额度；上游目录和限额会变 |
+| OpenRouter | 21 | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型 | 成功 | 免费账号通常共享日请求额度；上游目录和限额会变 |
 | Google Gemini | - | 账号实时目录与 Free Tier 白名单取交集，只保留支持 `generateContent` 的型号 | 跳过（缺少密钥） | 绑定付费项目后可能适用付费层规则；地区和账号资格会影响可用性 |
 | Zhipu AI | 2 | 只列入官方免费 Flash 清单 | 成功 | 免费型号也可能拥塞或限流，静态清单需要随官方政策复审 |
 | SiliconFlow | 5 | 平台免费型号白名单与实时模型目录取交集 | 成功 | 赠金或试用模型不视为零价；上游目录异常时会报告失败而非伪造空目录 |
@@ -25,15 +25,15 @@
 | Cohere | 1 | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0` | 成功 | 有速率限制；其他 Command 模型不再被标记为免费 |
 | Hugging Face | 4 | 实时端点明确报告 `is_free`，或输入输出价格均为 0 | 成功 | 普通 Router 模型可能消耗 credits 或按量收费，因此不会混入 |
 | SenseNova | 6 | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单 | 成功 | 免费配额和型号可能变化；当前网关只处理文本，即使模型本身支持多模态 |
-| Kilo Code | 27 | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型 | 成功 | 免费层约 200 请求/小时；部分模型与 OpenRouter 重叠 |
-| Agnes AI | 7 | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*） | 成功 | 免费层 20 RPM；图像和视频模型有额外限制 |
+| Kilo Code | 26 | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型 | 成功 | 免费层约 200 请求/小时；部分模型与 OpenRouter 重叠 |
+| Agnes AI (China) | 6 | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*） | 成功 | 免费层 20 RPM；图像和视频模型有额外限制 |
+| Agnes AI (International) | - | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*） | 跳过（缺少密钥） | 免费层 20 RPM；图像和视频模型有额外限制 |
 
 ## 逐 provider 明细
 
 ### OpenRouter (openrouter)
 
 - `cohere/north-mini-code:free` — Cohere: North Mini Code (free)
-- `deepseek/deepseek-v4-flash-0731:free` — DeepSeek: DeepSeek V4 Flash 0731 (free)
 - `dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
 - `google/gemma-4-26b-a4b-it:free` — Google: Gemma 4 26B A4B  (free)
 - `google/gemma-4-31b-it:free` — Google: Gemma 4 31B (free)
@@ -132,7 +132,6 @@
 ### Kilo Code (kilo)
 
 - `cohere/north-mini-code:free` — Cohere: North Mini Code (free)
-- `deepseek/deepseek-v4-flash-0731:free` — DeepSeek: DeepSeek V4 Flash 0731 (free)
 - `dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
 - `google/lyria-3-clip-preview` — Google: Lyria 3 Clip Preview
 - `google/lyria-3-pro-preview` — Google: Lyria 3 Pro Preview
@@ -159,15 +158,18 @@
 - `thinkingmachines/inkling-small:free` — Thinking Machines: Inkling Small (free)
 - `z-ai/glm-5.2:free` — Z.ai: GLM 5.2 (free)
 
-### Agnes AI (agnes)
+### Agnes AI (China) (agnes)
 
-- `agnes-2.5-flash` — Agnes 2.5 Flash
-- `agnes-3.0-flash` — Agnes 3.0 Flash
-- `agnes-image-2.0-flash` — Agnes Image 2.0 Flash
-- `agnes-image-2.1-flash` — Agnes Image 2.1 Flash
-- `agnes-image-2.5-flash` — Agnes Image 2.5 Flash
-- `agnes-video-2.5-flash` — Agnes Video 2.5 Flash
-- `agnes-video-v2.0` — Agnes Video V2.0
+- `agnes-2.5-flash`
+- `agnes-3.0-flash`
+- `agnes-image-2.1-flash`
+- `agnes-image-2.5-flash`
+- `agnes-video-2.5-flash`
+- `agnes-video-v2.0`
+
+### Agnes AI (International) (agnes-intl)
+
+- 跳过：CI 环境缺少 AGNES_INTL_API_KEY。
 
 ## 备注
 

@@ -33,38 +33,47 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-20（Asia/Shanghai）更新：101 个免费模型入口，覆盖 10/12 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-20（Asia/Shanghai）更新：98 个免费模型入口，覆盖 10/13 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
-> 未配置密钥：Google Gemini、GitHub Models。
+> 未配置密钥：Google Gemini、GitHub Models、Agnes AI (International)。
 
-| Provider      | 状态      | 免费模型数 | 免费类型              |
-| ------------- | --------- | ---------: | --------------------- |
-| OpenRouter    | 🟢 正常   |         22 | 零价格模型            |
-| Google Gemini | ⚪ 未接入 |     未接入 | 账号 Free Tier        |
-| Zhipu AI      | 🟢 正常   |          2 | 官方免费型号          |
-| SiliconFlow   | 🟢 正常   |          5 | 免费白名单            |
-| ModelScope    | 🟢 正常   |         16 | 账号免费额度          |
-| NVIDIA NIM    | 🟢 正常   |         11 | 免费开发端点          |
-| GitHub Models | ⚪ 未接入 |     未接入 | 原型开发额度          |
-| Cohere        | 🟢 正常   |          1 | 免费 Trial/Production |
-| Hugging Face  | 🟢 正常   |          4 | 实时零价端点          |
-| SenseNova     | 🟢 正常   |          6 | 实时零价模型          |
-| Kilo Code     | 🟢 正常   |         27 | 聚合免费模型          |
-| Agnes AI      | 🟢 正常   |          7 | 官方免费模型          |
+| Provider                 | 状态      | 免费模型数 | 免费类型              |
+| ------------------------ | --------- | ---------: | --------------------- |
+| OpenRouter               | 🟢 正常   |         21 | 零价格模型            |
+| Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier        |
+| Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号          |
+| SiliconFlow              | 🟢 正常   |          5 | 免费白名单            |
+| ModelScope               | 🟢 正常   |         16 | 账号免费额度          |
+| NVIDIA NIM               | 🟢 正常   |         11 | 免费开发端点          |
+| GitHub Models            | ⚪ 未接入 |     未接入 | 原型开发额度          |
+| Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production |
+| Hugging Face             | 🟢 正常   |          4 | 实时零价端点          |
+| SenseNova                | 🟢 正常   |          6 | 实时零价模型          |
+| Kilo Code                | 🟢 正常   |         26 | 聚合免费模型          |
+| Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型          |
+| Agnes AI (International) | ⚪ 未接入 |     未接入 | 官方免费模型          |
 
 [查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-20.md)
 
 ### 今日变化
 
-与 2026-09-20 相比，成功比较的 9 个 Provider 模型清单没有变化。
+与 2026-09-20 相比，在成功比较的 10 个 Provider 中：**新增 0 个，移除 3 个**。
+
+<details>
+<summary>查看移除的 3 个模型</summary>
+
+- `openrouter:deepseek/deepseek-v4-flash-0731:free`
+- `kilo:deepseek/deepseek-v4-flash-0731:free`
+- `agnes:agnes-image-2.0-flash`
+
+</details>
 
 ### 展开完整模型列表
 
 <details>
-<summary><strong>OpenRouter · 22 个模型</strong></summary>
+<summary><strong>OpenRouter · 21 个模型</strong></summary>
 
 - `openrouter:cohere/north-mini-code:free` — Cohere: North Mini Code (free)
-- `openrouter:deepseek/deepseek-v4-flash-0731:free` — DeepSeek: DeepSeek V4 Flash 0731 (free)
 - `openrouter:dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
 - `openrouter:google/gemma-4-26b-a4b-it:free` — Google: Gemma 4 26B A4B (free)
 - `openrouter:google/gemma-4-31b-it:free` — Google: Gemma 4 31B (free)
@@ -176,10 +185,9 @@
 </details>
 
 <details>
-<summary><strong>Kilo Code · 27 个模型</strong></summary>
+<summary><strong>Kilo Code · 26 个模型</strong></summary>
 
 - `kilo:cohere/north-mini-code:free` — Cohere: North Mini Code (free)
-- `kilo:deepseek/deepseek-v4-flash-0731:free` — DeepSeek: DeepSeek V4 Flash 0731 (free)
 - `kilo:dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
 - `kilo:google/lyria-3-clip-preview` — Google: Lyria 3 Clip Preview
 - `kilo:google/lyria-3-pro-preview` — Google: Lyria 3 Pro Preview
@@ -209,15 +217,14 @@
 </details>
 
 <details>
-<summary><strong>Agnes AI · 7 个模型</strong></summary>
+<summary><strong>Agnes AI (China) · 6 个模型</strong></summary>
 
-- `agnes:agnes-2.5-flash` — Agnes 2.5 Flash
-- `agnes:agnes-3.0-flash` — Agnes 3.0 Flash
-- `agnes:agnes-image-2.0-flash` — Agnes Image 2.0 Flash
-- `agnes:agnes-image-2.1-flash` — Agnes Image 2.1 Flash
-- `agnes:agnes-image-2.5-flash` — Agnes Image 2.5 Flash
-- `agnes:agnes-video-2.5-flash` — Agnes Video 2.5 Flash
-- `agnes:agnes-video-v2.0` — Agnes Video V2.0
+- `agnes:agnes-2.5-flash`
+- `agnes:agnes-3.0-flash`
+- `agnes:agnes-image-2.1-flash`
+- `agnes:agnes-image-2.5-flash`
+- `agnes:agnes-video-2.5-flash`
+- `agnes:agnes-video-v2.0`
 
 </details>
 
