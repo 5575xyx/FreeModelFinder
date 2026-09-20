@@ -33,9 +33,9 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-20（Asia/Shanghai）更新：98 个免费模型入口，覆盖 10/13 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-20（Asia/Shanghai）更新：105 个免费模型入口，覆盖 11/13 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
-> 未配置密钥：Google Gemini、GitHub Models、Agnes AI (International)。
+> 未配置密钥：Google Gemini、GitHub Models。
 
 | Provider                 | 状态      | 免费模型数 | 免费类型              |
 | ------------------------ | --------- | ---------: | --------------------- |
@@ -51,7 +51,7 @@
 | SenseNova                | 🟢 正常   |          6 | 实时零价模型          |
 | Kilo Code                | 🟢 正常   |         26 | 聚合免费模型          |
 | Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型          |
-| Agnes AI (International) | ⚪ 未接入 |     未接入 | 官方免费模型          |
+| Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型          |
 
 [查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-20.md)
 
@@ -216,6 +216,19 @@
 - `agnes:agnes-image-2.5-flash`
 - `agnes:agnes-video-2.5-flash`
 - `agnes:agnes-video-v2.0`
+
+</details>
+
+<details>
+<summary><strong>Agnes AI (International) · 7 个模型</strong></summary>
+
+- `agnes-intl:agnes-2.5-flash`
+- `agnes-intl:agnes-3.0-flash`
+- `agnes-intl:agnes-image-2.0-flash`
+- `agnes-intl:agnes-image-2.1-flash`
+- `agnes-intl:agnes-image-2.5-flash`
+- `agnes-intl:agnes-video-2.5-flash`
+- `agnes-intl:agnes-video-v2.0`
 
 </details>
 

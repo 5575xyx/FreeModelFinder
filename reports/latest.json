@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
   "date": "2026-09-20",
-  "generatedAt": "2026-09-20T14:04:59.573Z",
+  "generatedAt": "2026-09-20T14:16:27.889Z",
   "reportPath": "reports/provider-free-model-audit-2026-09-20.md",
-  "totalModels": 98,
+  "totalModels": 105,
   "providers": [
     {
       "id": "openrouter",
@@ -628,12 +628,48 @@
     {
       "id": "agnes-intl",
       "display": "Agnes AI (International)",
-      "status": "skipped",
-      "count": 0,
+      "status": "ok",
+      "count": 7,
       "freeType": "官方免费模型",
       "freeBasis": "官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）",
       "risk": "免费层 20 RPM；图像和视频模型有额外限制",
-      "models": []
+      "models": [
+        {
+          "id": "agnes-2.5-flash",
+          "displayName": "agnes-2.5-flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-3.0-flash",
+          "displayName": "agnes-3.0-flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-image-2.0-flash",
+          "displayName": "agnes-image-2.0-flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-image-2.1-flash",
+          "displayName": "agnes-image-2.1-flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-image-2.5-flash",
+          "displayName": "agnes-image-2.5-flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-video-2.5-flash",
+          "displayName": "agnes-video-2.5-flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-video-v2.0",
+          "displayName": "agnes-video-v2.0",
+          "contextWindow": null
+        }
+      ]
     }
   ],
   "changes": {

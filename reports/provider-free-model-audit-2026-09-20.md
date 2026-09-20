@@ -7,8 +7,8 @@
 
 ## 结论
 
-- 10/13 个 provider 目录接口在本次运行中成功返回。
-- 命中免费过滤的模型合计 **98** 个。
+- 11/13 个 provider 目录接口在本次运行中成功返回。
+- 命中免费过滤的模型合计 **105** 个。
 - 未配置密钥的 provider 会在下表中标记为“跳过”，不会阻塞审计。
 
 ## Provider 汇总
@@ -27,7 +27,7 @@
 | SenseNova | 6 | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单 | 成功 | 免费配额和型号可能变化；当前网关只处理文本，即使模型本身支持多模态 |
 | Kilo Code | 26 | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型 | 成功 | 免费层约 200 请求/小时；部分模型与 OpenRouter 重叠 |
 | Agnes AI (China) | 6 | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*） | 成功 | 免费层 20 RPM；图像和视频模型有额外限制 |
-| Agnes AI (International) | - | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*） | 跳过（缺少密钥） | 免费层 20 RPM；图像和视频模型有额外限制 |
+| Agnes AI (International) | 7 | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*） | 成功 | 免费层 20 RPM；图像和视频模型有额外限制 |
 
 ## 逐 provider 明细
 
@@ -169,7 +169,13 @@
 
 ### Agnes AI (International) (agnes-intl)
 
-- 跳过：CI 环境缺少 AGNES_INTL_API_KEY。
+- `agnes-2.5-flash`
+- `agnes-3.0-flash`
+- `agnes-image-2.0-flash`
+- `agnes-image-2.1-flash`
+- `agnes-image-2.5-flash`
+- `agnes-video-2.5-flash`
+- `agnes-video-v2.0`
 
 ## 备注
 

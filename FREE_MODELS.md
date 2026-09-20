@@ -2,7 +2,7 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-09-20（Asia/Shanghai）** · **98** 个免费模型入口 · **10/13** 个 Provider 正常。
+> 最近目录审计：**2026-09-20（Asia/Shanghai）** · **105** 个免费模型入口 · **11/13** 个 Provider 正常。
 
 [返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-20.md)
 
@@ -28,7 +28,7 @@
 | SenseNova                | 🟢 正常   |          6 | 实时零价模型          | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单                    |
 | Kilo Code                | 🟢 正常   |         26 | 聚合免费模型          | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                                   |
 | Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型          | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_） |
-| Agnes AI (International) | ⚪ 未接入 |     未接入 | 官方免费模型          | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_） |
+| Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型          | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_） |
 
 ## 完整列表
 
@@ -251,8 +251,16 @@
 ### Agnes AI (International)
 
 - Provider ID：`agnes-intl`
-- 状态：⚪ 未接入
+- 状态：🟢 正常
 - 免费依据：官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）
 - 主要风险：免费层 20 RPM；图像和视频模型有额外限制
 
-本次没有可展示的模型清单。
+| Gateway 模型 ID                    | 显示名称              | 上下文窗口 |
+| ---------------------------------- | --------------------- | ---------: |
+| `agnes-intl:agnes-2.5-flash`       | agnes-2.5-flash       |          — |
+| `agnes-intl:agnes-3.0-flash`       | agnes-3.0-flash       |          — |
+| `agnes-intl:agnes-image-2.0-flash` | agnes-image-2.0-flash |          — |
+| `agnes-intl:agnes-image-2.1-flash` | agnes-image-2.1-flash |          — |
+| `agnes-intl:agnes-image-2.5-flash` | agnes-image-2.5-flash |          — |
+| `agnes-intl:agnes-video-2.5-flash` | agnes-video-2.5-flash |          — |
+| `agnes-intl:agnes-video-v2.0`      | agnes-video-v2.0      |          — |
