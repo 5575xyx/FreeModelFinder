@@ -123,7 +123,7 @@ const PROVIDER_META = [
     display: 'Agnes AI',
     envKeys: ['AGNES_API_KEY'],
     freeType: '官方免费模型',
-    freeBasis: '官方免费模型清单（agnes-2.0-flash、agnes-2.5-flash 等）',
+    freeBasis: '官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）',
     risk: '免费层 20 RPM；图像和视频模型有额外限制',
   },
 ];

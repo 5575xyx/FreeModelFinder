@@ -274,10 +274,13 @@ describe('free provider catalogs', () => {
       credentials: { apiKey: 'test-key' },
       fetchImpl: jsonFetch({
         data: [
-          { id: 'agnes-2.0-flash', name: 'Agnes 2.0 Flash' },
           { id: 'agnes-2.5-flash', name: 'Agnes 2.5 Flash' },
-          { id: 'agnes-2.1-flash', name: 'Agnes 2.1 Flash' },
-          { id: 'agnes-video-v2.0', name: 'Agnes Video' },
+          { id: 'agnes-3.0-flash', name: 'Agnes 3.0 Flash' },
+          { id: 'agnes-image-2.0-flash', name: 'Agnes Image 2.0 Flash' },
+          { id: 'agnes-image-2.1-flash', name: 'Agnes Image 2.1 Flash' },
+          { id: 'agnes-image-2.5-flash', name: 'Agnes Image 2.5 Flash' },
+          { id: 'agnes-video-v2.0', name: 'Agnes Video V2.0' },
+          { id: 'agnes-video-2.5-flash', name: 'Agnes Video 2.5 Flash' },
           { id: 'agnes-paid-model', name: 'Paid Model' },
         ],
       }),
@@ -285,8 +288,28 @@ describe('free provider catalogs', () => {
     const models = await agnes.listModels();
     assert.deepEqual(
       models.map((model) => model.id),
-      ['agnes-2.0-flash', 'agnes-2.5-flash', 'agnes-2.1-flash', 'agnes-video-v2.0'],
+      [
+        'agnes-2.5-flash',
+        'agnes-3.0-flash',
+        'agnes-image-2.0-flash',
+        'agnes-image-2.1-flash',
+        'agnes-image-2.5-flash',
+        'agnes-video-v2.0',
+        'agnes-video-2.5-flash',
+      ],
     );
     assert.ok(models.every((model) => model.free));
+  });
+
+  it('falls back to static list when Agnes /models endpoint fails', async () => {
+    const agnes = new AgnesProvider({
+      credentials: { apiKey: 'test-key' },
+      fetchImpl: (async () =>
+        new Response(null, { status: 404 })) as typeof fetch,
+    });
+    const models = await agnes.listModels();
+    assert.ok(models.length > 0, 'should return static models');
+    assert.ok(models.every((model) => model.free));
+    assert.ok(models.every((model) => model.provider === 'agnes'));
   });
 });
