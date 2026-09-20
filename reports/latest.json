@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
   "date": "2026-09-20",
-  "generatedAt": "2026-09-20T01:48:38.679Z",
+  "generatedAt": "2026-09-20T02:10:28.689Z",
   "reportPath": "reports/provider-free-model-audit-2026-09-20.md",
-  "totalModels": 94,
+  "totalModels": 101,
   "providers": [
     {
       "id": "openrouter",
@@ -597,12 +597,48 @@
     {
       "id": "agnes",
       "display": "Agnes AI",
-      "status": "error",
-      "count": 0,
+      "status": "ok",
+      "count": 7,
       "freeType": "官方免费模型",
-      "freeBasis": "官方免费模型清单（agnes-2.0-flash、agnes-2.5-flash 等）",
+      "freeBasis": "官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）",
       "risk": "免费层 20 RPM；图像和视频模型有额外限制",
-      "models": []
+      "models": [
+        {
+          "id": "agnes-2.5-flash",
+          "displayName": "Agnes 2.5 Flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-3.0-flash",
+          "displayName": "Agnes 3.0 Flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-image-2.0-flash",
+          "displayName": "Agnes Image 2.0 Flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-image-2.1-flash",
+          "displayName": "Agnes Image 2.1 Flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-image-2.5-flash",
+          "displayName": "Agnes Image 2.5 Flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-video-2.5-flash",
+          "displayName": "Agnes Video 2.5 Flash",
+          "contextWindow": null
+        },
+        {
+          "id": "agnes-video-v2.0",
+          "displayName": "Agnes Video V2.0",
+          "contextWindow": null
+        }
+      ]
     }
   ],
   "changes": {
@@ -617,7 +653,8 @@
       "nvidia",
       "cohere",
       "huggingface",
-      "sensenova"
+      "sensenova",
+      "kilo"
     ]
   }
 }

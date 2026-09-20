@@ -7,8 +7,8 @@
 
 ## 结论
 
-- 9/12 个 provider 目录接口在本次运行中成功返回。
-- 命中免费过滤的模型合计 **94** 个。
+- 10/12 个 provider 目录接口在本次运行中成功返回。
+- 命中免费过滤的模型合计 **101** 个。
 - 未配置密钥的 provider 会在下表中标记为“跳过”，不会阻塞审计。
 
 ## Provider 汇总
@@ -26,7 +26,7 @@
 | Hugging Face | 4 | 实时端点明确报告 `is_free`，或输入输出价格均为 0 | 成功 | 普通 Router 模型可能消耗 credits 或按量收费，因此不会混入 |
 | SenseNova | 6 | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单 | 成功 | 免费配额和型号可能变化；当前网关只处理文本，即使模型本身支持多模态 |
 | Kilo Code | 27 | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型 | 成功 | 免费层约 200 请求/小时；部分模型与 OpenRouter 重叠 |
-| Agnes AI | - | 官方免费模型清单（agnes-2.0-flash、agnes-2.5-flash 等） | 失败 | 免费层 20 RPM；图像和视频模型有额外限制 |
+| Agnes AI | 7 | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*） | 成功 | 免费层 20 RPM；图像和视频模型有额外限制 |
 
 ## 逐 provider 明细
 
@@ -161,7 +161,13 @@
 
 ### Agnes AI (agnes)
 
-- 目录接口失败：`agnes list models failed: 401`
+- `agnes-2.5-flash` — Agnes 2.5 Flash
+- `agnes-3.0-flash` — Agnes 3.0 Flash
+- `agnes-image-2.0-flash` — Agnes Image 2.0 Flash
+- `agnes-image-2.1-flash` — Agnes Image 2.1 Flash
+- `agnes-image-2.5-flash` — Agnes Image 2.5 Flash
+- `agnes-video-2.5-flash` — Agnes Video 2.5 Flash
+- `agnes-video-v2.0` — Agnes Video V2.0
 
 ## 备注
 

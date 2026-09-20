@@ -33,9 +33,9 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-20（Asia/Shanghai）更新：94 个免费模型入口，覆盖 9/12 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-20（Asia/Shanghai）更新：101 个免费模型入口，覆盖 10/12 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
-> 未配置密钥：Google Gemini、GitHub Models。 本次目录失败：Agnes AI。
+> 未配置密钥：Google Gemini、GitHub Models。
 
 | Provider      | 状态      | 免费模型数 | 免费类型              |
 | ------------- | --------- | ---------: | --------------------- |
@@ -50,13 +50,13 @@
 | Hugging Face  | 🟢 正常   |          4 | 实时零价端点          |
 | SenseNova     | 🟢 正常   |          6 | 实时零价模型          |
 | Kilo Code     | 🟢 正常   |         27 | 聚合免费模型          |
-| Agnes AI      | 🔴 失败   |   暂不可用 | 官方免费模型          |
+| Agnes AI      | 🟢 正常   |          7 | 官方免费模型          |
 
 [查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-20.md)
 
 ### 今日变化
 
-与 2026-09-20 相比，成功比较的 8 个 Provider 模型清单没有变化。
+与 2026-09-20 相比，成功比较的 9 个 Provider 模型清单没有变化。
 
 ### 展开完整模型列表
 
@@ -205,6 +205,19 @@
 - `kilo:stepfun/step-3.7-flash:free` — StepFun: Step 3.7 Flash (free)
 - `kilo:thinkingmachines/inkling-small:free` — Thinking Machines: Inkling Small (free)
 - `kilo:z-ai/glm-5.2:free` — Z.ai: GLM 5.2 (free)
+
+</details>
+
+<details>
+<summary><strong>Agnes AI · 7 个模型</strong></summary>
+
+- `agnes:agnes-2.5-flash` — Agnes 2.5 Flash
+- `agnes:agnes-3.0-flash` — Agnes 3.0 Flash
+- `agnes:agnes-image-2.0-flash` — Agnes Image 2.0 Flash
+- `agnes:agnes-image-2.1-flash` — Agnes Image 2.1 Flash
+- `agnes:agnes-image-2.5-flash` — Agnes Image 2.5 Flash
+- `agnes:agnes-video-2.5-flash` — Agnes Video 2.5 Flash
+- `agnes:agnes-video-v2.0` — Agnes Video V2.0
 
 </details>
 

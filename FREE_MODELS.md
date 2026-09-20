@@ -2,7 +2,7 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-09-20（Asia/Shanghai）** · **94** 个免费模型入口 · **9/12** 个 Provider 正常。
+> 最近目录审计：**2026-09-20（Asia/Shanghai）** · **101** 个免费模型入口 · **10/12** 个 Provider 正常。
 
 [返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-20.md)
 
@@ -10,24 +10,24 @@
 
 ## 今日变化
 
-与 2026-09-20 相比，成功比较的 8 个 Provider 模型清单没有变化。
+与 2026-09-20 相比，成功比较的 9 个 Provider 模型清单没有变化。
 
 ## Provider 汇总
 
-| Provider      | 状态      | 免费模型数 | 免费类型              | 免费依据                                                                            |
-| ------------- | --------- | ---------: | --------------------- | ----------------------------------------------------------------------------------- |
-| OpenRouter    | 🟢 正常   |         22 | 零价格模型            | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型 |
-| Google Gemini | ⚪ 未接入 |     未接入 | 账号 Free Tier        | 账号实时目录与 Free Tier 白名单取交集，只保留支持 `generateContent` 的型号          |
-| Zhipu AI      | 🟢 正常   |          2 | 官方免费型号          | 只列入官方免费 Flash 清单                                                           |
-| SiliconFlow   | 🟢 正常   |          5 | 免费白名单            | 平台免费型号白名单与实时模型目录取交集                                              |
-| ModelScope    | 🟢 正常   |         16 | 账号免费额度          | API-Inference 免费型号清单与可用目录取交集                                          |
-| NVIDIA NIM    | 🟢 正常   |         11 | 免费开发端点          | 只保留审核过的 build.nvidia.com 免费开发端点                                        |
-| GitHub Models | ⚪ 未接入 |     未接入 | 原型开发额度          | 目录中的文本输出模型使用账号自带原型开发额度                                        |
-| Cohere        | 🟢 正常   |          1 | 免费 Trial/Production | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`               |
-| Hugging Face  | 🟢 正常   |          4 | 实时零价端点          | 实时端点明确报告 `is_free`，或输入输出价格均为 0                                    |
-| SenseNova     | 🟢 正常   |          6 | 实时零价模型          | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单         |
-| Kilo Code     | 🟢 正常   |         27 | 聚合免费模型          | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                        |
-| Agnes AI      | 🔴 失败   |   暂不可用 | 官方免费模型          | 官方免费模型清单（agnes-2.0-flash、agnes-2.5-flash 等）                             |
+| Provider      | 状态      | 免费模型数 | 免费类型              | 免费依据                                                                                       |
+| ------------- | --------- | ---------: | --------------------- | ---------------------------------------------------------------------------------------------- |
+| OpenRouter    | 🟢 正常   |         22 | 零价格模型            | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型            |
+| Google Gemini | ⚪ 未接入 |     未接入 | 账号 Free Tier        | 账号实时目录与 Free Tier 白名单取交集，只保留支持 `generateContent` 的型号                     |
+| Zhipu AI      | 🟢 正常   |          2 | 官方免费型号          | 只列入官方免费 Flash 清单                                                                      |
+| SiliconFlow   | 🟢 正常   |          5 | 免费白名单            | 平台免费型号白名单与实时模型目录取交集                                                         |
+| ModelScope    | 🟢 正常   |         16 | 账号免费额度          | API-Inference 免费型号清单与可用目录取交集                                                     |
+| NVIDIA NIM    | 🟢 正常   |         11 | 免费开发端点          | 只保留审核过的 build.nvidia.com 免费开发端点                                                   |
+| GitHub Models | ⚪ 未接入 |     未接入 | 原型开发额度          | 目录中的文本输出模型使用账号自带原型开发额度                                                   |
+| Cohere        | 🟢 正常   |          1 | 免费 Trial/Production | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`                          |
+| Hugging Face  | 🟢 正常   |          4 | 实时零价端点          | 实时端点明确报告 `is_free`，或输入输出价格均为 0                                               |
+| SenseNova     | 🟢 正常   |          6 | 实时零价模型          | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单                    |
+| Kilo Code     | 🟢 正常   |         27 | 聚合免费模型          | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                                   |
+| Agnes AI      | 🟢 正常   |          7 | 官方免费模型          | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_） |
 
 ## 完整列表
 
@@ -236,8 +236,16 @@
 ### Agnes AI
 
 - Provider ID：`agnes`
-- 状态：🔴 失败
-- 免费依据：官方免费模型清单（agnes-2.0-flash、agnes-2.5-flash 等）
+- 状态：🟢 正常
+- 免费依据：官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）
 - 主要风险：免费层 20 RPM；图像和视频模型有额外限制
 
-本次没有可展示的模型清单。
+| Gateway 模型 ID               | 显示名称              | 上下文窗口 |
+| ----------------------------- | --------------------- | ---------: |
+| `agnes:agnes-2.5-flash`       | Agnes 2.5 Flash       |          — |
+| `agnes:agnes-3.0-flash`       | Agnes 3.0 Flash       |          — |
+| `agnes:agnes-image-2.0-flash` | Agnes Image 2.0 Flash |          — |
+| `agnes:agnes-image-2.1-flash` | Agnes Image 2.1 Flash |          — |
+| `agnes:agnes-image-2.5-flash` | Agnes Image 2.5 Flash |          — |
+| `agnes:agnes-video-2.5-flash` | Agnes Video 2.5 Flash |          — |
+| `agnes:agnes-video-v2.0`      | Agnes Video V2.0      |          — |
