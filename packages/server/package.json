@@ -15,8 +15,8 @@
     "build": "tsup",
     "dev": "tsx watch src/cli.ts",
     "start": "node dist/cli.js",
-    "test": "node --import tsx --import ./src/__tests__/setup.mjs --test src/__tests__/*.test.ts",
-    "test:coverage": "node --experimental-test-coverage --test-coverage-include='src/**/*.ts' --test-coverage-exclude='src/__tests__/**' --test-coverage-lines=80 --test-coverage-branches=75 --import tsx --import ./src/__tests__/setup.mjs --test src/__tests__/*.test.ts",
+    "test": "node --import tsx --import ./src/__tests__/setup.mjs --test src/__tests__/*.test.ts src/routes/__tests__/*.test.ts",
+    "test:coverage": "node --experimental-test-coverage --test-coverage-include='src/**/*.ts' --test-coverage-exclude='src/__tests__/**' --test-coverage-lines=80 --test-coverage-branches=75 --import tsx --import ./src/__tests__/setup.mjs --test src/__tests__/*.test.ts src/routes/__tests__/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

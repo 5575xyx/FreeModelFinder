@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { ImageGenerationRequestSchema } from '../../types.js';
 import { AgnesProvider } from '../agnes.js';
 
 function mockFetch(responseBody: unknown, status = 200): typeof fetch {
@@ -20,14 +21,16 @@ describe('AgnesProvider multimodal', () => {
       }),
     });
 
-    const result = await provider.generateImage!({
-      model: 'agnes-image-2.5-flash',
-      prompt: 'a cute cat',
-      size: '1024x1024',
-    });
+    const result = await provider.generateImage!(
+      ImageGenerationRequestSchema.parse({
+        model: 'agnes-image-2.5-flash',
+        prompt: 'a cute cat',
+        size: '1024x1024',
+      }),
+    );
 
     assert.equal(result.data.length, 1);
-    assert.equal(result.data[0].url, 'https://example.com/image.png');
+    assert.equal(result.data[0]!.url, 'https://example.com/image.png');
   });
 
   it('generates image with b64_json response', async () => {
@@ -39,13 +42,15 @@ describe('AgnesProvider multimodal', () => {
       }),
     });
 
-    const result = await provider.generateImage!({
-      model: 'agnes-image-2.5-flash',
-      prompt: 'a cute cat',
-      response_format: 'b64_json',
-    });
+    const result = await provider.generateImage!(
+      ImageGenerationRequestSchema.parse({
+        model: 'agnes-image-2.5-flash',
+        prompt: 'a cute cat',
+        response_format: 'b64_json',
+      }),
+    );
 
-    assert.equal(result.data[0].b64_json, 'base64data...');
+    assert.equal(result.data[0]!.b64_json, 'base64data...');
   });
 
   it('creates video via /videos', async () => {
@@ -94,10 +99,12 @@ describe('AgnesProvider multimodal', () => {
 
     await assert.rejects(
       () =>
-        provider.generateImage!({
-          model: 'agnes-image-2.5-flash',
-          prompt: 'test',
-        }),
+        provider.generateImage!(
+          ImageGenerationRequestSchema.parse({
+            model: 'agnes-image-2.5-flash',
+            prompt: 'test',
+          }),
+        ),
       /401/,
     );
   });

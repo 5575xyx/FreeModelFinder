@@ -123,7 +123,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
     return base.replace(/\/v1$/, '');
   }
 
-  async generateImage(req: ImageGenerationRequest): Promise<ImageGenerationResponse> {
+  override async generateImage(req: ImageGenerationRequest): Promise<ImageGenerationResponse> {
     const key = this.ctx.credentials.apiKey;
     if (!key) throw new Error('agnes API key not configured');
 
@@ -154,7 +154,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
     return (await res.json()) as ImageGenerationResponse;
   }
 
-  async generateVideo(req: VideoGenerationRequest): Promise<VideoGenerationResponse> {
+  override async generateVideo(req: VideoGenerationRequest): Promise<VideoGenerationResponse> {
     const key = this.ctx.credentials.apiKey;
     if (!key) throw new Error('agnes API key not configured');
 
@@ -193,7 +193,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
     };
   }
 
-  async queryVideoStatus(videoId: string): Promise<VideoGenerationResponse> {
+  override async queryVideoStatus(videoId: string): Promise<VideoGenerationResponse> {
     const key = this.ctx.credentials.apiKey;
     if (!key) throw new Error('agnes API key not configured');
 

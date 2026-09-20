@@ -7,10 +7,12 @@ import {
   streamChunkToOpenAI,
   type ChatRequest,
   type ChatResponse,
+  type ImageGenerationRequest,
   type OpenAIChatCompletionRequest,
   type ProviderId,
   type ProviderRegistry,
   type SwitchNotice,
+  type VideoGenerationRequest,
 } from '@freemodelfinder/core';
 
 function extractProviderIdFromError(chatReq: ChatRequest, reg: ProviderRegistry): string {
@@ -264,6 +266,81 @@ export function registerOpenAIRoutes(
         reply.raw.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
       } finally {
         reply.raw.end();
+      }
+    },
+  );
+
+  app.post<{ Body: ImageGenerationRequest }>(
+    '/v1/images/generations',
+    async (req: FastifyRequest<{ Body: ImageGenerationRequest }>, reply: FastifyReply) => {
+      const body = req.body;
+      if (!body?.model || !body?.prompt) {
+        return reply
+          .code(400)
+          .send({ error: { message: 'model and prompt are required' } });
+      }
+      const reg = getRegistry();
+      try {
+        const { response } = await reg.generateImage(body);
+        return reply.send({
+          ...response,
+          model: body.model,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return reply.code(500).send({ error: { message } });
+      }
+    },
+  );
+
+  app.post<{ Body: VideoGenerationRequest }>(
+    '/v1/videos',
+    async (req: FastifyRequest<{ Body: VideoGenerationRequest }>, reply: FastifyReply) => {
+      const body = req.body;
+      if (!body?.model || !body?.prompt) {
+        return reply
+          .code(400)
+          .send({ error: { message: 'model and prompt are required' } });
+      }
+      const reg = getRegistry();
+      try {
+        const { response } = await reg.generateVideo(body);
+        return reply.send({
+          ...response,
+          model: body.model,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return reply.code(500).send({ error: { message } });
+      }
+    },
+  );
+
+  app.get<{ Params: { video_id: string } }>(
+    '/v1/videos/:video_id',
+    async (
+      req: FastifyRequest<{ Params: { video_id: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { video_id } = req.params;
+      if (!video_id) {
+        return reply
+          .code(400)
+          .send({ error: { message: 'video_id is required' } });
+      }
+      const providerId = (req.query as Record<string, string>).provider;
+      if (!providerId) {
+        return reply
+          .code(400)
+          .send({ error: { message: 'provider query parameter is required' } });
+      }
+      const reg = getRegistry();
+      try {
+        const { response } = await reg.queryVideoStatus(video_id, providerId);
+        return reply.send(response);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return reply.code(500).send({ error: { message } });
       }
     },
   );

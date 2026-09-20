@@ -96,8 +96,15 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 function isPublicGatewayRoute(method: string, url: string): boolean {
   if (method === 'GET' && url === '/v1/models') return true;
+  if (method === 'GET' && /^\/v1\/videos\/[^/]+$/.test(url)) return true;
   if (method !== 'POST') return false;
-  if (url === '/v1/chat/completions' || url === '/v1/messages') return true;
+  if (
+    url === '/v1/chat/completions' ||
+    url === '/v1/messages' ||
+    url === '/v1/images/generations' ||
+    url === '/v1/videos'
+  )
+    return true;
   return /^\/v1beta\/models\/.+:(generateContent|streamGenerateContent)$/.test(url);
 }
 
