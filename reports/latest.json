@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
   "date": "2026-09-20",
-  "generatedAt": "2026-09-20T00:11:25.027Z",
+  "generatedAt": "2026-09-20T01:48:38.679Z",
   "reportPath": "reports/provider-free-model-audit-2026-09-20.md",
-  "totalModels": 67,
+  "totalModels": 94,
   "providers": [
     {
       "id": "openrouter",
@@ -447,6 +447,162 @@
           "contextWindow": null
         }
       ]
+    },
+    {
+      "id": "kilo",
+      "display": "Kilo Code",
+      "status": "ok",
+      "count": 27,
+      "freeType": "聚合免费模型",
+      "freeBasis": "白名单 + 零价格双重验证，覆盖 17+ 个免费模型",
+      "risk": "免费层约 200 请求/小时；部分模型与 OpenRouter 重叠",
+      "models": [
+        {
+          "id": "cohere/north-mini-code:free",
+          "displayName": "Cohere: North Mini Code (free)",
+          "contextWindow": 256000
+        },
+        {
+          "id": "deepseek/deepseek-v4-flash-0731:free",
+          "displayName": "DeepSeek: DeepSeek V4 Flash 0731 (free)",
+          "contextWindow": 1048576
+        },
+        {
+          "id": "dots-studio/dots-3-note-preview:free",
+          "displayName": "Dots Studio: Dots3-Note Preview (free)",
+          "contextWindow": 512000
+        },
+        {
+          "id": "google/lyria-3-clip-preview",
+          "displayName": "Google: Lyria 3 Clip Preview",
+          "contextWindow": 1048576
+        },
+        {
+          "id": "google/lyria-3-pro-preview",
+          "displayName": "Google: Lyria 3 Pro Preview",
+          "contextWindow": 1048576
+        },
+        {
+          "id": "inclusionai/ling-3.0-flash-fin:free",
+          "displayName": "inclusionAI: Ling 3.0 Flash Fin (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "inclusionai/ling-3.0-flash-sante:free",
+          "displayName": "inclusionAI: Ling 3.0 Flash Sante (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "inclusionai/ling-3.0-flash-vl:free",
+          "displayName": "inclusionAI: Ling 3.0 Flash VL (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "kilo-auto/free",
+          "displayName": "Auto Free",
+          "contextWindow": 256000
+        },
+        {
+          "id": "liquid/lfm-2.5-2.6b:free",
+          "displayName": "LiquidAI: LFM2.5-2.6B (free)",
+          "contextWindow": 65536
+        },
+        {
+          "id": "nex-agi/nex-n2.5-mini:free",
+          "displayName": "Nex AGI: Nex-N2.5-Mini (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "nex-agi/nex-n2.5-pro:free",
+          "displayName": "Nex AGI: Nex-N2.5-Pro (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+          "displayName": "NVIDIA: Nemotron 3 Nano Omni (free)",
+          "contextWindow": 256000
+        },
+        {
+          "id": "nvidia/nemotron-3-super-120b-a12b:free",
+          "displayName": "NVIDIA: Nemotron 3 Super (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+          "displayName": "NVIDIA: Nemotron 3 Ultra (free)",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "nvidia/nemotron-3.5-content-safety:free",
+          "displayName": "NVIDIA: Nemotron 3.5 Content Safety (free)",
+          "contextWindow": 128000
+        },
+        {
+          "id": "nvidia/nemotron-3.5-lightning:free",
+          "displayName": "NVIDIA: Nemotron 3.5 Lightning (free)",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "openrouter/auto",
+          "displayName": "OpenRouter Auto Router",
+          "contextWindow": 2000000
+        },
+        {
+          "id": "openrouter/bodybuilder",
+          "displayName": "OpenRouter Body Builder (beta)",
+          "contextWindow": 128000
+        },
+        {
+          "id": "openrouter/free",
+          "displayName": "OpenRouter Free Models Router",
+          "contextWindow": 200000
+        },
+        {
+          "id": "openrouter/pareto-code",
+          "displayName": "OpenRouter Pareto Code Router",
+          "contextWindow": 2000000
+        },
+        {
+          "id": "poolside/laguna-s-2.1:free",
+          "displayName": "Poolside: Laguna S 2.1 (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "poolside/laguna-xs-2.1:free",
+          "displayName": "Poolside: Laguna XS 2.1 (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "qwen/qwen3.8-27b:free",
+          "displayName": "Qwen: Qwen3.8 27B (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "stepfun/step-3.7-flash:free",
+          "displayName": "StepFun: Step 3.7 Flash (free)",
+          "contextWindow": 262144
+        },
+        {
+          "id": "thinkingmachines/inkling-small:free",
+          "displayName": "Thinking Machines: Inkling Small (free)",
+          "contextWindow": 1048576
+        },
+        {
+          "id": "z-ai/glm-5.2:free",
+          "displayName": "Z.ai: GLM 5.2 (free)",
+          "contextWindow": 32768
+        }
+      ]
+    },
+    {
+      "id": "agnes",
+      "display": "Agnes AI",
+      "status": "error",
+      "count": 0,
+      "freeType": "官方免费模型",
+      "freeBasis": "官方免费模型清单（agnes-2.0-flash、agnes-2.5-flash 等）",
+      "risk": "免费层 20 RPM；图像和视频模型有额外限制",
+      "models": []
     }
   ],
   "changes": {

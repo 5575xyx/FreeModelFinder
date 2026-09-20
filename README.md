@@ -33,9 +33,9 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-20（Asia/Shanghai）更新：67 个免费模型入口，覆盖 8/10 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-20（Asia/Shanghai）更新：94 个免费模型入口，覆盖 9/12 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
-> 未配置密钥：Google Gemini、GitHub Models。
+> 未配置密钥：Google Gemini、GitHub Models。 本次目录失败：Agnes AI。
 
 | Provider      | 状态      | 免费模型数 | 免费类型              |
 | ------------- | --------- | ---------: | --------------------- |
@@ -49,6 +49,8 @@
 | Cohere        | 🟢 正常   |          1 | 免费 Trial/Production |
 | Hugging Face  | 🟢 正常   |          4 | 实时零价端点          |
 | SenseNova     | 🟢 正常   |          6 | 实时零价模型          |
+| Kilo Code     | 🟢 正常   |         27 | 聚合免费模型          |
+| Agnes AI      | 🔴 失败   |   暂不可用 | 官方免费模型          |
 
 [查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-20.md)
 
@@ -170,6 +172,39 @@
 - `sensenova:kimi-k3`
 - `sensenova:sensenova-6.7-flash-lite`
 - `sensenova:sensenova-6.8-flash-lite`
+
+</details>
+
+<details>
+<summary><strong>Kilo Code · 27 个模型</strong></summary>
+
+- `kilo:cohere/north-mini-code:free` — Cohere: North Mini Code (free)
+- `kilo:deepseek/deepseek-v4-flash-0731:free` — DeepSeek: DeepSeek V4 Flash 0731 (free)
+- `kilo:dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
+- `kilo:google/lyria-3-clip-preview` — Google: Lyria 3 Clip Preview
+- `kilo:google/lyria-3-pro-preview` — Google: Lyria 3 Pro Preview
+- `kilo:inclusionai/ling-3.0-flash-fin:free` — inclusionAI: Ling 3.0 Flash Fin (free)
+- `kilo:inclusionai/ling-3.0-flash-sante:free` — inclusionAI: Ling 3.0 Flash Sante (free)
+- `kilo:inclusionai/ling-3.0-flash-vl:free` — inclusionAI: Ling 3.0 Flash VL (free)
+- `kilo:kilo-auto/free` — Auto Free
+- `kilo:liquid/lfm-2.5-2.6b:free` — LiquidAI: LFM2.5-2.6B (free)
+- `kilo:nex-agi/nex-n2.5-mini:free` — Nex AGI: Nex-N2.5-Mini (free)
+- `kilo:nex-agi/nex-n2.5-pro:free` — Nex AGI: Nex-N2.5-Pro (free)
+- `kilo:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` — NVIDIA: Nemotron 3 Nano Omni (free)
+- `kilo:nvidia/nemotron-3-super-120b-a12b:free` — NVIDIA: Nemotron 3 Super (free)
+- `kilo:nvidia/nemotron-3-ultra-550b-a55b:free` — NVIDIA: Nemotron 3 Ultra (free)
+- `kilo:nvidia/nemotron-3.5-content-safety:free` — NVIDIA: Nemotron 3.5 Content Safety (free)
+- `kilo:nvidia/nemotron-3.5-lightning:free` — NVIDIA: Nemotron 3.5 Lightning (free)
+- `kilo:openrouter/auto` — OpenRouter Auto Router
+- `kilo:openrouter/bodybuilder` — OpenRouter Body Builder (beta)
+- `kilo:openrouter/free` — OpenRouter Free Models Router
+- `kilo:openrouter/pareto-code` — OpenRouter Pareto Code Router
+- `kilo:poolside/laguna-s-2.1:free` — Poolside: Laguna S 2.1 (free)
+- `kilo:poolside/laguna-xs-2.1:free` — Poolside: Laguna XS 2.1 (free)
+- `kilo:qwen/qwen3.8-27b:free` — Qwen: Qwen3.8 27B (free)
+- `kilo:stepfun/step-3.7-flash:free` — StepFun: Step 3.7 Flash (free)
+- `kilo:thinkingmachines/inkling-small:free` — Thinking Machines: Inkling Small (free)
+- `kilo:z-ai/glm-5.2:free` — Z.ai: GLM 5.2 (free)
 
 </details>
 

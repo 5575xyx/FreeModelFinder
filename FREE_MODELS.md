@@ -2,7 +2,7 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-09-20（Asia/Shanghai）** · **67** 个免费模型入口 · **8/10** 个 Provider 正常。
+> 最近目录审计：**2026-09-20（Asia/Shanghai）** · **94** 个免费模型入口 · **9/12** 个 Provider 正常。
 
 [返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-20.md)
 
@@ -26,6 +26,8 @@
 | Cohere        | 🟢 正常   |          1 | 免费 Trial/Production | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`               |
 | Hugging Face  | 🟢 正常   |          4 | 实时零价端点          | 实时端点明确报告 `is_free`，或输入输出价格均为 0                                    |
 | SenseNova     | 🟢 正常   |          6 | 实时零价模型          | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单         |
+| Kilo Code     | 🟢 正常   |         27 | 聚合免费模型          | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                        |
+| Agnes AI      | 🔴 失败   |   暂不可用 | 官方免费模型          | 官方免费模型清单（agnes-2.0-flash、agnes-2.5-flash 等）                             |
 
 ## 完整列表
 
@@ -193,3 +195,49 @@
 | `sensenova:kimi-k3`                  | kimi-k3                  |          — |
 | `sensenova:sensenova-6.7-flash-lite` | sensenova-6.7-flash-lite |          — |
 | `sensenova:sensenova-6.8-flash-lite` | sensenova-6.8-flash-lite |          — |
+
+### Kilo Code
+
+- Provider ID：`kilo`
+- 状态：🟢 正常
+- 免费依据：白名单 + 零价格双重验证，覆盖 17+ 个免费模型
+- 主要风险：免费层约 200 请求/小时；部分模型与 OpenRouter 重叠
+
+| Gateway 模型 ID                                           | 显示名称                                   | 上下文窗口 |
+| --------------------------------------------------------- | ------------------------------------------ | ---------: |
+| `kilo:cohere/north-mini-code:free`                        | Cohere: North Mini Code (free)             |       256K |
+| `kilo:deepseek/deepseek-v4-flash-0731:free`               | DeepSeek: DeepSeek V4 Flash 0731 (free)    |         1M |
+| `kilo:dots-studio/dots-3-note-preview:free`               | Dots Studio: Dots3-Note Preview (free)     |       512K |
+| `kilo:google/lyria-3-clip-preview`                        | Google: Lyria 3 Clip Preview               |         1M |
+| `kilo:google/lyria-3-pro-preview`                         | Google: Lyria 3 Pro Preview                |         1M |
+| `kilo:inclusionai/ling-3.0-flash-fin:free`                | inclusionAI: Ling 3.0 Flash Fin (free)     |     262.1K |
+| `kilo:inclusionai/ling-3.0-flash-sante:free`              | inclusionAI: Ling 3.0 Flash Sante (free)   |     262.1K |
+| `kilo:inclusionai/ling-3.0-flash-vl:free`                 | inclusionAI: Ling 3.0 Flash VL (free)      |     262.1K |
+| `kilo:kilo-auto/free`                                     | Auto Free                                  |       256K |
+| `kilo:liquid/lfm-2.5-2.6b:free`                           | LiquidAI: LFM2.5-2.6B (free)               |      65.5K |
+| `kilo:nex-agi/nex-n2.5-mini:free`                         | Nex AGI: Nex-N2.5-Mini (free)              |     262.1K |
+| `kilo:nex-agi/nex-n2.5-pro:free`                          | Nex AGI: Nex-N2.5-Pro (free)               |     262.1K |
+| `kilo:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | NVIDIA: Nemotron 3 Nano Omni (free)        |       256K |
+| `kilo:nvidia/nemotron-3-super-120b-a12b:free`             | NVIDIA: Nemotron 3 Super (free)            |     262.1K |
+| `kilo:nvidia/nemotron-3-ultra-550b-a55b:free`             | NVIDIA: Nemotron 3 Ultra (free)            |         1M |
+| `kilo:nvidia/nemotron-3.5-content-safety:free`            | NVIDIA: Nemotron 3.5 Content Safety (free) |       128K |
+| `kilo:nvidia/nemotron-3.5-lightning:free`                 | NVIDIA: Nemotron 3.5 Lightning (free)      |         1M |
+| `kilo:openrouter/auto`                                    | OpenRouter Auto Router                     |         2M |
+| `kilo:openrouter/bodybuilder`                             | OpenRouter Body Builder (beta)             |       128K |
+| `kilo:openrouter/free`                                    | OpenRouter Free Models Router              |       200K |
+| `kilo:openrouter/pareto-code`                             | OpenRouter Pareto Code Router              |         2M |
+| `kilo:poolside/laguna-s-2.1:free`                         | Poolside: Laguna S 2.1 (free)              |     262.1K |
+| `kilo:poolside/laguna-xs-2.1:free`                        | Poolside: Laguna XS 2.1 (free)             |     262.1K |
+| `kilo:qwen/qwen3.8-27b:free`                              | Qwen: Qwen3.8 27B (free)                   |     262.1K |
+| `kilo:stepfun/step-3.7-flash:free`                        | StepFun: Step 3.7 Flash (free)             |     262.1K |
+| `kilo:thinkingmachines/inkling-small:free`                | Thinking Machines: Inkling Small (free)    |         1M |
+| `kilo:z-ai/glm-5.2:free`                                  | Z.ai: GLM 5.2 (free)                       |      32.8K |
+
+### Agnes AI
+
+- Provider ID：`agnes`
+- 状态：🔴 失败
+- 免费依据：官方免费模型清单（agnes-2.0-flash、agnes-2.5-flash 等）
+- 主要风险：免费层 20 RPM；图像和视频模型有额外限制
+
+本次没有可展示的模型清单。

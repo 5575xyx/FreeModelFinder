@@ -1,14 +1,14 @@
 # FreeModelFinder Provider 与免费模型审计报告
 
 - 审计时间：2026-09-20（Asia/Shanghai）
-- 审计对象：10 个内置 provider
+- 审计对象：12 个内置 provider
 - 审计方法：GitHub Actions 每日调度，通过核心层 `ProviderRegistry.listModels()` 抓取各 provider 实时目录并套用 `free === true` 过滤；本次未执行真实推理测试。
 - 生成脚本：`scripts/audit-free-models.mjs`
 
 ## 结论
 
-- 8/10 个 provider 目录接口在本次运行中成功返回。
-- 命中免费过滤的模型合计 **67** 个。
+- 9/12 个 provider 目录接口在本次运行中成功返回。
+- 命中免费过滤的模型合计 **94** 个。
 - 未配置密钥的 provider 会在下表中标记为“跳过”，不会阻塞审计。
 
 ## Provider 汇总
@@ -25,6 +25,8 @@
 | Cohere | 1 | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0` | 成功 | 有速率限制；其他 Command 模型不再被标记为免费 |
 | Hugging Face | 4 | 实时端点明确报告 `is_free`，或输入输出价格均为 0 | 成功 | 普通 Router 模型可能消耗 credits 或按量收费，因此不会混入 |
 | SenseNova | 6 | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单 | 成功 | 免费配额和型号可能变化；当前网关只处理文本，即使模型本身支持多模态 |
+| Kilo Code | 27 | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型 | 成功 | 免费层约 200 请求/小时；部分模型与 OpenRouter 重叠 |
+| Agnes AI | - | 官方免费模型清单（agnes-2.0-flash、agnes-2.5-flash 等） | 失败 | 免费层 20 RPM；图像和视频模型有额外限制 |
 
 ## 逐 provider 明细
 
@@ -126,6 +128,40 @@
 - `kimi-k3`
 - `sensenova-6.7-flash-lite`
 - `sensenova-6.8-flash-lite`
+
+### Kilo Code (kilo)
+
+- `cohere/north-mini-code:free` — Cohere: North Mini Code (free)
+- `deepseek/deepseek-v4-flash-0731:free` — DeepSeek: DeepSeek V4 Flash 0731 (free)
+- `dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
+- `google/lyria-3-clip-preview` — Google: Lyria 3 Clip Preview
+- `google/lyria-3-pro-preview` — Google: Lyria 3 Pro Preview
+- `inclusionai/ling-3.0-flash-fin:free` — inclusionAI: Ling 3.0 Flash Fin (free)
+- `inclusionai/ling-3.0-flash-sante:free` — inclusionAI: Ling 3.0 Flash Sante (free)
+- `inclusionai/ling-3.0-flash-vl:free` — inclusionAI: Ling 3.0 Flash VL (free)
+- `kilo-auto/free` — Auto Free
+- `liquid/lfm-2.5-2.6b:free` — LiquidAI: LFM2.5-2.6B (free)
+- `nex-agi/nex-n2.5-mini:free` — Nex AGI: Nex-N2.5-Mini (free)
+- `nex-agi/nex-n2.5-pro:free` — Nex AGI: Nex-N2.5-Pro (free)
+- `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` — NVIDIA: Nemotron 3 Nano Omni (free)
+- `nvidia/nemotron-3-super-120b-a12b:free` — NVIDIA: Nemotron 3 Super (free)
+- `nvidia/nemotron-3-ultra-550b-a55b:free` — NVIDIA: Nemotron 3 Ultra (free)
+- `nvidia/nemotron-3.5-content-safety:free` — NVIDIA: Nemotron 3.5 Content Safety (free)
+- `nvidia/nemotron-3.5-lightning:free` — NVIDIA: Nemotron 3.5 Lightning (free)
+- `openrouter/auto` — OpenRouter Auto Router
+- `openrouter/bodybuilder` — OpenRouter Body Builder (beta)
+- `openrouter/free` — OpenRouter Free Models Router
+- `openrouter/pareto-code` — OpenRouter Pareto Code Router
+- `poolside/laguna-s-2.1:free` — Poolside: Laguna S 2.1 (free)
+- `poolside/laguna-xs-2.1:free` — Poolside: Laguna XS 2.1 (free)
+- `qwen/qwen3.8-27b:free` — Qwen: Qwen3.8 27B (free)
+- `stepfun/step-3.7-flash:free` — StepFun: Step 3.7 Flash (free)
+- `thinkingmachines/inkling-small:free` — Thinking Machines: Inkling Small (free)
+- `z-ai/glm-5.2:free` — Z.ai: GLM 5.2 (free)
+
+### Agnes AI (agnes)
+
+- 目录接口失败：`agnes list models failed: 401`
 
 ## 备注
 
