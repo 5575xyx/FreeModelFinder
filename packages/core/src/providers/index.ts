@@ -11,4 +11,5 @@ export { HuggingFaceProvider } from './huggingface.js';
 export { SenseNovaProvider } from './sensenova.js';
 export { KiloProvider } from './kilo.js';
 export { AgnesProvider } from './agnes.js';
+export { AgnesIntlProvider } from './agnes-intl.js';
 export { CustomProvider } from './custom.js';

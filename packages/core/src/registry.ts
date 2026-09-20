@@ -15,6 +15,7 @@ import {
   ZhipuProvider,
   KiloProvider,
   AgnesProvider,
+  AgnesIntlProvider,
 } from './providers/index.js';
 import type { ProviderContext } from './providers/base.js';
 import { QuotaTracker } from './quota.js';
@@ -47,6 +48,7 @@ const PROVIDER_CTORS: Record<
   sensenova: SenseNovaProvider,
   kilo: KiloProvider,
   agnes: AgnesProvider,
+  'agnes-intl': AgnesIntlProvider,
   custom: CustomProvider,
 };
 

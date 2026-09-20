@@ -30,6 +30,7 @@ const FREE_TYPE_BY_ID = {
   sensenova: '实时零价模型',
   kilo: '聚合免费模型',
   agnes: '官方免费模型',
+  'agnes-intl': '官方免费模型',
 };
 
 if (!existsSync(SNAPSHOT_PATH)) {

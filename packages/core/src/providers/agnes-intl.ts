@@ -16,7 +16,7 @@ interface AgnesModel {
   pricing?: { prompt?: number; completion?: number };
 }
 
-const AGNES_FREE_MODEL_IDS = new Set([
+const AGNES_INTL_FREE_MODEL_IDS = new Set([
   'agnes-2.5-flash',
   'agnes-3.0-flash',
   'agnes-image-2.0-flash',
@@ -26,7 +26,7 @@ const AGNES_FREE_MODEL_IDS = new Set([
   'agnes-video-2.5-flash',
 ]);
 
-const AGNES_STATIC_MODELS: Omit<ModelInfo, 'provider'>[] = [
+const AGNES_INTL_STATIC_MODELS: Omit<ModelInfo, 'provider'>[] = [
   {
     id: 'agnes-2.5-flash',
     displayName: 'Agnes 2.5 Flash',
@@ -78,12 +78,12 @@ const AGNES_STATIC_MODELS: Omit<ModelInfo, 'provider'>[] = [
   },
 ];
 
-export class AgnesProvider extends OpenAICompatibleProvider {
-  readonly id: ProviderId = 'agnes';
-  readonly displayName = 'Agnes AI';
+export class AgnesIntlProvider extends OpenAICompatibleProvider {
+  readonly id: ProviderId = 'agnes-intl';
+  readonly displayName = 'Agnes AI (International)';
 
   protected baseUrl(): string {
-    return this.ctx.credentials.baseUrl ?? 'https://api.agnes-ai.cn/v1';
+    return this.ctx.credentials.baseUrl ?? 'https://apihub.agnes-ai.com/v1';
   }
 
   async listModels(): Promise<ModelInfo[]> {
@@ -96,7 +96,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
         const dynamic = (Array.isArray(data.data) ? data.data : [])
           .filter((m): m is AgnesModel => typeof m?.id === 'string' && m.id.length > 0)
           .filter((m) => {
-            if (AGNES_FREE_MODEL_IDS.has(m.id)) return true;
+            if (AGNES_INTL_FREE_MODEL_IDS.has(m.id)) return true;
             const p = m.pricing?.prompt ?? null;
             const c = m.pricing?.completion ?? null;
             if (p === null || c === null) return false;
@@ -115,7 +115,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
     } catch {
       // Agnes may not expose /models endpoint; fall back to static list
     }
-    return AGNES_STATIC_MODELS.map((m) => ({ ...m, provider: this.id }));
+    return AGNES_INTL_STATIC_MODELS.map((m) => ({ ...m, provider: this.id }));
   }
 
   private rootBase(): string {
@@ -125,7 +125,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
 
   override async generateImage(req: ImageGenerationRequest): Promise<ImageGenerationResponse> {
     const key = this.ctx.credentials.apiKey;
-    if (!key) throw new Error('agnes API key not configured');
+    if (!key) throw new Error('agnes-intl API key not configured');
 
     const body: Record<string, unknown> = {
       model: req.model,
@@ -147,7 +147,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`agnes image generation failed ${res.status}: ${text}`);
+      throw new Error(`agnes-intl image generation failed ${res.status}: ${text}`);
     }
 
     return (await res.json()) as ImageGenerationResponse;
@@ -155,7 +155,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
 
   override async generateVideo(req: VideoGenerationRequest): Promise<VideoGenerationResponse> {
     const key = this.ctx.credentials.apiKey;
-    if (!key) throw new Error('agnes API key not configured');
+    if (!key) throw new Error('agnes-intl API key not configured');
 
     const body: Record<string, unknown> = {
       model: req.model,
@@ -168,7 +168,6 @@ export class AgnesProvider extends OpenAICompatibleProvider {
     if (req.negative_prompt) body.negative_prompt = req.negative_prompt;
     if (req.seed != null) body.seed = req.seed;
 
-    // source_images: multi-image reference / keyframes → image is URL array, placed at top level
     if (req.source_images && req.source_images.length > 0) {
       body.image = req.source_images.map((i) => (typeof i === 'string' ? i : i.url));
       if (req.mode === 'keyframes') body.mode = 'keyframes';
@@ -176,7 +175,6 @@ export class AgnesProvider extends OpenAICompatibleProvider {
       body.image = req.image;
     }
 
-    // extra_params: extensibility channel for future Agnes capabilities
     if (req.extra_params && typeof req.extra_params === 'object') {
       for (const [k, v] of Object.entries(req.extra_params)) {
         if (k in body) continue;
@@ -195,7 +193,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`agnes video creation failed ${res.status}: ${text}`);
+      throw new Error(`agnes-intl video creation failed ${res.status}: ${text}`);
     }
 
     const data = (await res.json()) as Record<string, unknown>;
@@ -207,7 +205,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
 
   override async queryVideoStatus(videoId: string): Promise<VideoGenerationResponse> {
     const key = this.ctx.credentials.apiKey;
-    if (!key) throw new Error('agnes API key not configured');
+    if (!key) throw new Error('agnes-intl API key not configured');
 
     const res = await this.fetch(
       `${this.rootBase()}/agnesapi?video_id=${encodeURIComponent(videoId)}`,
@@ -221,11 +219,10 @@ export class AgnesProvider extends OpenAICompatibleProvider {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`agnes video query failed ${res.status}: ${text}`);
+      throw new Error(`agnes-intl video query failed ${res.status}: ${text}`);
     }
 
     const data = (await res.json()) as Record<string, unknown>;
-    // Agnes v2.0 returns the final video URL in remixed_from_video_id (naming is misleading but confirmed)
     const videoUrl =
       (data.remixed_from_video_id as string) ||
       (data.video_url as string) ||

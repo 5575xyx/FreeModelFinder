@@ -14,6 +14,7 @@ export const ProviderIdSchema = z.enum([
   'sensenova',
   'kilo',
   'agnes',
+  'agnes-intl',
   'custom',
 ]);
 export type ProviderId = z.infer<typeof ProviderIdSchema>;
@@ -263,8 +264,11 @@ export const VideoGenerationRequestSchema = z.object({
   num_frames: z.number().int().positive().optional().default(121),
   frame_rate: z.number().int().min(1).max(60).optional().default(24),
   image: z.array(z.string()).optional(),
+  source_images: z.array(z.union([z.string(), z.object({ url: z.string() })])).optional(),
+  mode: z.enum(['keyframes']).optional(),
   negative_prompt: z.string().optional(),
   seed: z.number().int().optional(),
+  extra_params: z.record(z.unknown()).optional(),
 });
 export type VideoGenerationRequest = z.infer<typeof VideoGenerationRequestSchema>;
 

@@ -78,10 +78,17 @@ export const SETTINGS_PROVIDERS = [
   },
   {
     id: 'agnes',
-    label: 'Agnes AI',
+    label: 'Agnes AI (China)',
     link: 'https://agnes-ai.com',
     guide: 'https://agnes-ai.com/doc/overview',
-    hint: '国产多模态 AI 平台，提供免费文本、图像和视频生成模型',
+    hint: '国产多模态 AI 平台，提供免费文本、图像和视频生成模型（中国站 api.agnes-ai.cn）',
+  },
+  {
+    id: 'agnes-intl',
+    label: 'Agnes AI (International)',
+    link: 'https://agnes-ai.com',
+    guide: 'https://agnes-ai.com/doc/overview',
+    hint: 'Agnes AI international endpoint, free text/image/video generation (apihub.agnes-ai.com)',
   },
 ] as const;
 
