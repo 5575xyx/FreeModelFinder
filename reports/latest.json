@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-20",
-  "generatedAt": "2026-09-20T14:16:27.889Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-20.md",
+  "date": "2026-09-21",
+  "generatedAt": "2026-09-21T00:18:51.271Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-21.md",
   "totalModels": 105,
   "providers": [
     {
@@ -686,7 +686,8 @@
       "huggingface",
       "sensenova",
       "kilo",
-      "agnes"
+      "agnes",
+      "agnes-intl"
     ]
   }
 }
