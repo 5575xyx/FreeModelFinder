@@ -157,16 +157,20 @@ function hasTrustedOrigin(req: FastifyRequest, adminOrigin?: string): boolean {
 }
 
 function isTrustedUiRequest(req: FastifyRequest, adminOrigin?: string): boolean {
-  if (!isLoopbackAddress(req.socket?.remoteAddress ?? null)) return false;
   const clientHeader = req.headers['x-fmf-client'];
-  if (typeof clientHeader === 'string' && clientHeader.toLowerCase() === 'ui') {
+  const hasUiHeader = typeof clientHeader === 'string' && clientHeader.toLowerCase() === 'ui';
+  const isLoopback = isLoopbackAddress(req.socket?.remoteAddress ?? null);
+
+  if (isLoopback) {
+    if (hasUiHeader) return hasTrustedOrigin(req, adminOrigin);
+    const hasOrigin = !!(req.headers['origin'] || req.headers['referer']);
+    if (!hasOrigin) return false;
     return hasTrustedOrigin(req, adminOrigin);
   }
-  const hasOrigin = !!(req.headers['origin'] || req.headers['referer']);
-  if (!hasOrigin) {
-    return false;
-  }
-  return hasTrustedOrigin(req, adminOrigin);
+
+  if (hasUiHeader && !adminOrigin) return true;
+
+  return false;
 }
 
 function generateApiKey(): string {
