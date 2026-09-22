@@ -618,6 +618,37 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       }
     });
 
+    app.post<{ Body: { baseUrl: string; apiKey?: string } }>(
+      '/api/custom/fetch-models',
+      async (req, reply) => {
+        const { baseUrl: rawBaseUrl, apiKey } = req.body ?? {};
+        if (!rawBaseUrl) return reply.code(400).send({ error: 'baseUrl required' });
+        const baseUrl = rawBaseUrl.replace(/\/+$/, '');
+        const url = `${baseUrl}/v1/models`;
+        const headers: Record<string, string> = { Accept: 'application/json' };
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+        try {
+          const resp = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
+          if (!resp.ok) {
+            const text = await resp.text().catch(() => '');
+            return reply
+              .code(502)
+              .send({ error: `upstream ${resp.status}: ${text.slice(0, 200)}` });
+          }
+          const json = (await resp.json()) as {
+            data?: Array<{ id: string; object?: string }>;
+          };
+          const models = (json.data ?? [])
+            .filter((m) => m.object === 'model' || !m.object)
+            .map((m) => ({ id: m.id }));
+          return { models };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return reply.code(502).send({ error: msg });
+        }
+      },
+    );
+
     app.post<{ Body: { model: string } }>('/api/default-model', async (req, reply) => {
       const model = req.body?.model?.trim();
       if (!model) return reply.code(400).send({ error: 'model required' });

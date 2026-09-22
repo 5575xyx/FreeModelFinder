@@ -241,6 +241,8 @@ export function registerOpenAIRoutes(
         const videoReq: VideoGenerationRequest = {
           model: chatReq.model,
           prompt,
+          width: 1152,
+          height: 768,
           num_frames: 121,
           frame_rate: 24,
         };

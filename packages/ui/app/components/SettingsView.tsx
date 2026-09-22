@@ -14,6 +14,7 @@ import {
   PlugZap,
   Plus,
   RefreshCw,
+  Search,
   Server,
   ShieldCheck,
   Sparkles,
@@ -127,6 +128,12 @@ export function SettingsView({
   const [customModelDraft, setCustomModelDraft] = useState<
     Record<string, { id: string; name: string; ctx: string }>
   >({});
+
+  const [fetchedModels, setFetchedModels] = useState<
+    Record<string, { loading: boolean; error: string | null; models: string[] }>
+  >({});
+  const [fetchPickerSource, setFetchPickerSource] = useState<string | null>(null);
+  const [fetchPickerSelected, setFetchPickerSelected] = useState<Set<string>>(new Set());
 
   type AutoRouteInfo = {
     enabled: boolean;
@@ -433,6 +440,63 @@ export function SettingsView({
     if (!source) return;
     patchCustomSource(sourceId, {
       models: source.models.filter((m) => m.id !== modelId),
+    });
+  }
+
+  async function fetchModelsFromSource(sourceId: string) {
+    const source = customSources.find((s) => s.id === sourceId);
+    if (!source) return;
+    if (!source.baseUrl.trim()) {
+      setToast({ kind: 'error', text: t('settings.custom.errorBaseUrlRequired') });
+      return;
+    }
+    setFetchedModels((prev) => ({
+      ...prev,
+      [sourceId]: { loading: true, error: null, models: prev[sourceId]?.models ?? [] },
+    }));
+    try {
+      const resp = await fetch(`${GATEWAY}/api/custom/fetch-models`, withUiHeaders({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: source.baseUrl.trim(), apiKey: source.apiKey || undefined }),
+      }));
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error ?? `HTTP ${resp.status}`);
+      }
+      const data = await resp.json();
+      const models: string[] = data.models?.map((m: { id: string }) => m.id) ?? [];
+      setFetchedModels((prev) => ({
+        ...prev,
+        [sourceId]: { loading: false, error: null, models },
+      }));
+      setFetchPickerSource(sourceId);
+      setFetchPickerSelected(new Set());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFetchedModels((prev) => ({
+        ...prev,
+        [sourceId]: { loading: false, error: msg, models: [] },
+      }));
+      setToast({ kind: 'error', text: msg });
+    }
+  }
+
+  function addSelectedModelsToSource(sourceId: string) {
+    const source = customSources.find((s) => s.id === sourceId);
+    if (!source) return;
+    const existingIds = new Set(source.models.map((m) => m.id));
+    const toAdd = [...fetchPickerSelected].filter((id) => !existingIds.has(id));
+    if (toAdd.length === 0) {
+      setFetchPickerSource(null);
+      return;
+    }
+    const newModels = toAdd.map((id) => ({ id }));
+    patchCustomSource(sourceId, { models: [...source.models, ...newModels] });
+    setFetchPickerSource(null);
+    setToast({
+      kind: 'success',
+      text: t('settings.custom.modelsAdded', { count: toAdd.length }),
     });
   }
 
@@ -1529,8 +1593,23 @@ export function SettingsView({
                       </div>
 
                       <div className="space-y-2">
-                        <div className="text-xs font-medium text-muted-foreground">
-                          {t('settings.custom.modelList')}
+                        <div className="flex items-center gap-2">
+                          <div className="text-xs font-medium text-muted-foreground">
+                            {t('settings.custom.modelList')}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => fetchModelsFromSource(src.id)}
+                            disabled={fetchedModels[src.id]?.loading || !src.baseUrl.trim()}
+                            className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:bg-surface-muted hover:text-foreground disabled:cursor-not-allowed disabled:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {fetchedModels[src.id]?.loading ? (
+                              <Loader2 size={11} className="animate-spin" />
+                            ) : (
+                              <Globe2 size={11} />
+                            )}
+                            {t('settings.custom.fetchModels')}
+                          </button>
                         </div>
                         {src.models.length > 0 ? (
                           <ul className="space-y-1.5">
@@ -1762,6 +1841,116 @@ export function SettingsView({
         {t('settings.gatewayHint')}
         <code className="font-mono">{GATEWAY}</code>
       </p>
+
+      {fetchPickerSource && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setFetchPickerSource(null)}
+        >
+          <div
+            className="mx-4 flex max-h-[80vh] w-full max-w-lg flex-col rounded-lg border border-border bg-section-a shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Search size={14} />
+                {t('settings.custom.fetchModelsTitle')}
+              </div>
+              <button
+                type="button"
+                onClick={() => setFetchPickerSource(null)}
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-surface-muted hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {(fetchedModels[fetchPickerSource]?.models.length ?? 0) === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  {t('settings.custom.noModelsFound')}
+                </div>
+              ) : (
+                <ul className="space-y-1">
+                  <li className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={
+                        fetchPickerSelected.size ===
+                        (fetchedModels[fetchPickerSource]?.models.length ?? 0)
+                      }
+                      onChange={() => {
+                        const all = fetchedModels[fetchPickerSource]?.models ?? [];
+                        if (fetchPickerSelected.size === all.length) {
+                          setFetchPickerSelected(new Set());
+                        } else {
+                          setFetchPickerSelected(new Set(all));
+                        }
+                      }}
+                      className="h-3.5 w-3.5 rounded border-border"
+                    />
+                    {t('settings.custom.selectAll')}
+                  </li>
+                  {fetchedModels[fetchPickerSource]?.models.map((modelId) => {
+                    const alreadyAdded = customSources
+                      .find((s) => s.id === fetchPickerSource)
+                      ?.models.some((m) => m.id === modelId);
+                    return (
+                      <li
+                        key={modelId}
+                        className={classNames(
+                          'flex items-center gap-2 rounded-md px-2 py-1.5 transition hover:bg-surface-muted',
+                          alreadyAdded && 'opacity-50',
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={fetchPickerSelected.has(modelId)}
+                          disabled={alreadyAdded}
+                          onChange={() => {
+                            setFetchPickerSelected((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(modelId)) next.delete(modelId);
+                              else next.add(modelId);
+                              return next;
+                            });
+                          }}
+                          className="h-3.5 w-3.5 rounded border-border"
+                        />
+                        <code className="flex-1 truncate font-mono text-sm text-foreground">
+                          {modelId}
+                        </code>
+                        {alreadyAdded && (
+                          <Badge tone="success">{t('settings.custom.added')}</Badge>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setFetchPickerSource(null)}
+                className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground transition hover:bg-surface-muted"
+              >
+                {t('settings.custom.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => addSelectedModelsToSource(fetchPickerSource)}
+                disabled={fetchPickerSelected.size === 0}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-foreground shadow-sm transition hover:bg-surface-muted disabled:cursor-not-allowed disabled:text-muted-foreground"
+              >
+                <Plus size={13} />
+                {t('settings.custom.addSelected', {
+                  count: fetchPickerSelected.size,
+                })}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div
