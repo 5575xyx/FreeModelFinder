@@ -168,7 +168,7 @@ function isTrustedUiRequest(req: FastifyRequest, adminOrigin?: string): boolean 
     return hasTrustedOrigin(req, adminOrigin);
   }
 
-  if (hasUiHeader && !adminOrigin) return true;
+  if (hasUiHeader && !adminOrigin && process.env.FREEMODELFINDER_TRUST_UI === 'true') return true;
 
   return false;
 }

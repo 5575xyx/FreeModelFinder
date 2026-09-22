@@ -169,30 +169,31 @@ export function registerOpenAIRoutes(
       const reg = getRegistry();
       const chatReq = openAIToChatRequest(body);
 
-      // Auto-route image/video models sent to chat completions
-      try {
-        const { provider } = reg.resolveModel(chatReq.model);
-        const models = (await reg.listAllModels()).models;
-        const modelInfo = models.find(
-          (m) => m.id === chatReq.model || m.id === chatReq.model.split(':').pop(),
-        );
-        const caps = modelInfo?.capabilities ?? [];
-        const prompt = chatReq.messages.map((m) => m.content).join('\n');
+      // Fast-path: infer capabilities from model ID without async calls
+      const rawModelId = chatReq.model.split(':').pop() ?? chatReq.model;
+      const inferredCaps: ('text' | 'image' | 'video')[] = /video/i.test(rawModelId)
+        ? ['video']
+        : /image/i.test(rawModelId)
+          ? ['image']
+          : [];
 
-        if (caps.includes('image')) {
-          const imageReq: ImageGenerationRequest = {
-            model: chatReq.model,
-            prompt,
-            size: '1024x1024',
-            n: 1,
-            response_format: 'url',
-          };
+      const prompt = chatReq.messages.map((m) => m.content).join('\n');
+
+      if (inferredCaps.includes('image')) {
+        const imageReq: ImageGenerationRequest = {
+          model: chatReq.model,
+          prompt,
+          size: '1024x1024',
+          n: 1,
+          response_format: 'url',
+        };
+        try {
           const { response } = await reg.generateImage(imageReq);
           const content = response.data
             .map((d) => d.url ?? d.b64_json ?? '[image]')
             .join('\n');
           const payload = {
-            id: `chatcmpl-agnes-img-${Date.now()}`,
+            id: `chatcmpl-img-${Date.now()}`,
             object: 'chat.completion',
             created: Math.floor(Date.now() / 1000),
             model: chatReq.model,
@@ -230,23 +231,28 @@ export function registerOpenAIRoutes(
           }
 
           return reply.send(payload);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return reply.code(502).send({ error: { message: msg, type: 'image_generation_error' } });
         }
+      }
 
-        if (caps.includes('video')) {
-          const videoReq: VideoGenerationRequest = {
-            model: chatReq.model,
-            prompt,
-            width: 1152,
-            height: 768,
-            num_frames: 121,
-            frame_rate: 24,
-          };
+      if (inferredCaps.includes('video')) {
+        const videoReq: VideoGenerationRequest = {
+          model: chatReq.model,
+          prompt,
+          width: 1152,
+          height: 768,
+          num_frames: 121,
+          frame_rate: 24,
+        };
+        try {
           const { response } = await reg.generateVideo(videoReq);
           const content = response.video_id
-            ? `视频任务已提交，video_id: ${response.video_id}，状态: ${response.status}。请使用 GET /v1/videos/${response.video_id}?provider=${provider.id} 查询进度。`
+            ? `视频任务已提交，video_id: ${response.video_id}，状态: ${response.status}。请使用 GET /v1/videos/${response.video_id}?provider=${chatReq.model.split(':')[0]} 查询进度。`
             : '视频任务提交失败';
           const payload = {
-            id: `chatcmpl-agnes-vid-${Date.now()}`,
+            id: `chatcmpl-vid-${Date.now()}`,
             object: 'chat.completion',
             created: Math.floor(Date.now() / 1000),
             model: chatReq.model,
@@ -258,7 +264,7 @@ export function registerOpenAIRoutes(
               },
             ],
             usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-            fmf_video_response: { ...response, provider: provider.id },
+            fmf_video_response: { ...response, provider: chatReq.model.split(':')[0] },
           };
 
           if (body.stream) {
@@ -284,9 +290,10 @@ export function registerOpenAIRoutes(
           }
 
           return reply.send(payload);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return reply.code(502).send({ error: { message: msg, type: 'video_generation_error' } });
         }
-      } catch {
-        // Not a multimodal model or model info unavailable, fall through to chat
       }
 
       if (!chatReq.stream) {

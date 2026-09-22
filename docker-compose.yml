@@ -10,6 +10,7 @@ services:
       - "11435:11435"
     environment:
       FREEMODELFINDER_HOME: /data
+      FREEMODELFINDER_TRUST_UI: "true"
       NODE_ENV: production
     volumes:
       - freemodelfinder-data:/data
