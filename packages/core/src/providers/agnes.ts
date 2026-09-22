@@ -164,26 +164,63 @@ export class AgnesProvider extends OpenAICompatibleProvider {
     const key = this.ctx.credentials.apiKey;
     if (!key) throw new Error('agnes API key not configured');
 
-    const body: Record<string, unknown> = {
-      model: req.model,
-      prompt: req.prompt,
-      width: req.width,
-      height: req.height,
-      num_frames: req.num_frames,
-      frame_rate: req.frame_rate,
-    };
-    if (req.negative_prompt) body.negative_prompt = req.negative_prompt;
-    if (req.seed != null) body.seed = req.seed;
+    const modelId = (req.model || '').split(':').pop() ?? req.model;
+    const isV25 = /2\.5/.test(modelId);
 
-    // source_images: multi-image reference / keyframes → image is URL array, placed at top level
-    if (req.source_images && req.source_images.length > 0) {
-      body.image = req.source_images.map((i) => (typeof i === 'string' ? i : i.url));
-      if (req.mode === 'keyframes') body.mode = 'keyframes';
-    } else if (req.image && req.image.length > 0) {
-      body.image = req.image;
+    let body: Record<string, unknown>;
+
+    if (isV25) {
+      // agnes-video-2.5 / agnes-video-2.5-flash: new API
+      body = {
+        model: req.model,
+        prompt: req.prompt,
+        mode: 'text',
+        size: '720P',
+      };
+      if (!/flash/i.test(modelId)) {
+        body.size = req.size || '720P';
+      }
+      if (req.num_frames && req.frame_rate) {
+        const secs = Math.round(req.num_frames / req.frame_rate);
+        body.seconds = String(Math.min(12, Math.max(4, secs)));
+      }
+      if (req.source_images && req.source_images.length > 0) {
+        const urls = req.source_images.map((i) => (typeof i === 'string' ? i : i.url));
+        if (req.mode === 'keyframes') {
+          body.mode = 'keyframe';
+          if (urls[0]) body.first_frame = urls[0];
+          if (urls[1]) body.last_frame = urls[1];
+        } else {
+          body.mode = 'reference';
+          body.images = urls;
+        }
+      } else if (req.image && req.image.length > 0) {
+        body.mode = 'reference';
+        body.images = req.image;
+      }
+    } else {
+      // agnes-video-v2.0: old API with width/height/num_frames/frame_rate
+      body = {
+        model: req.model,
+        prompt: req.prompt,
+        mode: 'ti2vid',
+        width: req.width,
+        height: req.height,
+        num_frames: req.num_frames,
+        frame_rate: req.frame_rate,
+      };
+      if (req.image && req.image.length > 0) {
+        body.image = req.image;
+      }
+      if (req.source_images && req.source_images.length > 0) {
+        body.image = req.source_images.map((i) => (typeof i === 'string' ? i : i.url));
+        if (req.mode === 'keyframes') body.mode = 'keyframes';
+      }
     }
 
-    // extra_params: extensibility channel for future Agnes capabilities
+    if (req.negative_prompt) body.negative_prompt = req.negative_prompt;
+    if (req.seed != null) body.seed = Number(req.seed);
+
     if (req.extra_params && typeof req.extra_params === 'object') {
       for (const [k, v] of Object.entries(req.extra_params)) {
         if (k in body) continue;

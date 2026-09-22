@@ -263,6 +263,7 @@ export const VideoGenerationRequestSchema = z.object({
   height: z.number().int().positive().optional().default(768),
   num_frames: z.number().int().positive().optional().default(121),
   frame_rate: z.number().int().min(1).max(60).optional().default(24),
+  size: z.string().optional(),
   image: z.array(z.string()).optional(),
   source_images: z.array(z.union([z.string(), z.object({ url: z.string() })])).optional(),
   mode: z.enum(['keyframes']).optional(),

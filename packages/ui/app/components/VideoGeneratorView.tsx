@@ -163,8 +163,6 @@ export function VideoGeneratorView({
         model,
         prompt: prompt.trim(),
         negative_prompt: negativePrompt.trim() || undefined,
-        width,
-        height,
         num_frames: frames,
         frame_rate: fps,
       };
