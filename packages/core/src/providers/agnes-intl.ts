@@ -109,6 +109,13 @@ export class AgnesIntlProvider extends OpenAICompatibleProvider {
             contextWindow: m.context_length,
             free: true,
             description: m.description,
+            capabilities: AGNES_INTL_FREE_MODEL_IDS.has(m.id)
+              ? m.id.includes('image')
+                ? ['image']
+                : m.id.includes('video')
+                  ? ['video']
+                  : ['text']
+              : ['text'],
           }));
         if (dynamic.length > 0) return dynamic;
       }

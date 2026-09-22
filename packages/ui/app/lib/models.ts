@@ -4,6 +4,7 @@ export type ModelItem = {
   display_name?: string;
   context_window?: number;
   capability_score?: number;
+  capabilities?: ('text' | 'image' | 'video')[];
   description?: string;
   free?: boolean;
   quota?: ModelQuotaSnapshot;

@@ -102,7 +102,9 @@ function isPublicGatewayRoute(method: string, url: string): boolean {
     url === '/v1/chat/completions' ||
     url === '/v1/messages' ||
     url === '/v1/images/generations' ||
-    url === '/v1/videos'
+    url === '/v1/videos' ||
+    url === '/v1/videos/status' ||
+    url === '/v1/videos/proxy'
   )
     return true;
   return /^\/v1beta\/models\/.+:(generateContent|streamGenerateContent)$/.test(url);

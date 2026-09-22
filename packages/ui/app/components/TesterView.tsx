@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   ArrowUp,
   Braces,
   Check,
   Copy,
+  Download,
   Eraser,
+  Film,
   Loader2,
   MessageSquareText,
   Square,
@@ -14,10 +16,16 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { formatContext, modelValue, type ModelItem } from '../lib/models';
-import { classNames } from '../lib/utils';
+import { classNames, GATEWAY, withUiHeaders } from '../lib/utils';
 import { useI18n } from '../i18n';
 
-export type Msg = { role: 'user' | 'assistant' | 'system'; content: string };
+export type Msg = {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  imageUrls?: string[];
+  videoId?: string;
+  videoProvider?: string;
+};
 
 type ExamplePrompt = {
   eyebrowKey: string;
@@ -280,8 +288,88 @@ export function TesterView({
 function MessageRow({ message, isStreamingLast }: { message: Msg; isStreamingLast: boolean }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoStatus, setVideoStatus] = useState('');
+  const [videoPolling, setVideoPolling] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isUser = message.role === 'user';
   const isError = message.content.startsWith('[error]');
+  const hasImages = (message.imageUrls?.length ?? 0) > 0;
+  const hasVideo = !!message.videoId;
+
+  const fetchProxied = useCallback(async (url: string, provider: string): Promise<string> => {
+    const resp = await fetch(
+      `${GATEWAY}/v1/videos/proxy`,
+      withUiHeaders({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, provider }),
+      }),
+    );
+    if (!resp.ok) throw new Error(`proxy failed ${resp.status}`);
+    const blob = await resp.blob();
+    return URL.createObjectURL(blob);
+  }, []);
+
+  useEffect(() => {
+    if (!hasVideo || !message.videoId || !message.videoProvider) return;
+    let cancelled = false;
+
+    async function poll() {
+      setVideoPolling(true);
+      setVideoStatus('生成中…');
+      try {
+        for (let i = 0; i < 120; i++) {
+          if (cancelled) return;
+          const resp = await fetch(
+            `${GATEWAY}/v1/videos/status`,
+            withUiHeaders({
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ video_id: message.videoId, provider: message.videoProvider }),
+            }),
+          );
+          if (!resp.ok) {
+            await new Promise((r) => setTimeout(r, 8000));
+            continue;
+          }
+          const data = (await resp.json()) as {
+            status?: string;
+            video_url?: string;
+            progress?: number;
+          };
+          if (cancelled) return;
+          setVideoStatus(
+            data.status === 'completed'
+              ? '已完成'
+              : data.status === 'failed'
+                ? '生成失败'
+                : `生成中${data.progress != null ? ` ${data.progress}%` : ''}…`,
+          );
+          if (data.status === 'completed' || data.status === 'failed') {
+            if (data.status === 'completed' && data.video_url) {
+              try {
+                const blobUrl = await fetchProxied(data.video_url, message.videoProvider!);
+                if (!cancelled) setVideoUrl(blobUrl);
+              } catch {
+                if (!cancelled) setVideoUrl(data.video_url);
+              }
+            }
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 8000));
+        }
+      } finally {
+        if (!cancelled) setVideoPolling(false);
+      }
+    }
+
+    void poll();
+    return () => {
+      cancelled = true;
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
+  }, [hasVideo, message.videoId, message.videoProvider, fetchProxied]);
 
   async function copy() {
     if (!message.content) return;
@@ -330,7 +418,56 @@ function MessageRow({ message, isStreamingLast }: { message: Msg; isStreamingLas
             </span>
           ) : null}
         </div>
-        {!isUser && message.content && (
+
+        {hasImages && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {message.imageUrls!.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                <img
+                  src={url}
+                  alt={`generated-${i}`}
+                  className="max-h-[300px] rounded-xl border border-border object-contain"
+                  loading="lazy"
+                />
+              </a>
+            ))}
+          </div>
+        )}
+
+        {hasVideo && (
+          <div className="mt-2">
+            {videoUrl ? (
+              <div>
+                <video
+                  src={videoUrl}
+                  controls
+                  preload="metadata"
+                  className="max-h-[300px] rounded-xl border border-border bg-black"
+                />
+                <div className="mt-1.5">
+                  <a
+                    href={videoUrl}
+                    download={`fmf-video-${message.videoId}.mp4`}
+                    className="inline-flex items-center gap-1 rounded-lg bg-surface-muted px-2 py-1 text-[11px] font-medium text-foreground transition hover:bg-surface"
+                  >
+                    <Download size={12} />
+                    {t('videogen.download')}
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
+                <Film size={14} />
+                <span>
+                  {videoPolling ? videoStatus : '视频任务已提交'}
+                </span>
+                {videoPolling && <Loader2 className="animate-spin" size={12} />}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isUser && (message.content || hasImages || hasVideo) && (
           <div className="mt-1.5">
             <button
               type="button"

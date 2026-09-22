@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { KeyRound, MessageSquare, RefreshCw, Search, Wifi, WifiOff } from 'lucide-react';
+import { KeyRound, Image, MessageSquare, RefreshCw, Search, Video, Wifi, WifiOff } from 'lucide-react';
 import { FinderView } from './components/FinderView';
+import { ImageGeneratorView } from './components/ImageGeneratorView';
 import { OnboardingWizard, type OnboardingResult } from './components/OnboardingWizard';
 import { SettingsView } from './components/SettingsView';
 import { TesterView, type Msg } from './components/TesterView';
+import { VideoGeneratorView } from './components/VideoGeneratorView';
 import { BottomNav, type SegmentedItem } from './components/SegmentedTabs';
 import { ThemeToggle } from './theme';
 import { LanguageToggle, useI18n } from './i18n';
@@ -18,7 +20,7 @@ import {
 } from './lib/models';
 import { GATEWAY, classNames, withUiHeaders } from './lib/utils';
 
-type TabKey = 'finder' | 'tester' | 'settings';
+type TabKey = 'finder' | 'tester' | 'imagegen' | 'videogen' | 'settings';
 type OnboardingMode = 'loading' | 'required' | 'dismissed' | 'complete';
 
 type ConfigPayload = {
@@ -40,12 +42,16 @@ const TAB_DEFS: readonly { key: TabKey; icon: SegmentedItem<TabKey>['Icon']; lab
   [
     { key: 'finder', icon: Search, labelKey: 'app.tab.finder' },
     { key: 'tester', icon: MessageSquare, labelKey: 'app.tab.tester' },
+    { key: 'imagegen', icon: Image, labelKey: 'app.tab.imagegen' },
+    { key: 'videogen', icon: Video, labelKey: 'app.tab.videogen' },
     { key: 'settings', icon: KeyRound, labelKey: 'app.tab.settings' },
   ];
 
 const PAGE_COPY_KEYS: Record<TabKey, { title: string; description: string }> = {
   finder: { title: 'app.page.finder.title', description: 'app.page.finder.desc' },
   tester: { title: 'app.page.tester.title', description: 'app.page.tester.desc' },
+  imagegen: { title: 'app.page.imagegen.title', description: 'app.page.imagegen.desc' },
+  videogen: { title: 'app.page.videogen.title', description: 'app.page.videogen.desc' },
   settings: { title: 'app.page.settings.title', description: 'app.page.settings.desc' },
 };
 
@@ -380,6 +386,8 @@ export default function Home() {
             const json = JSON.parse(payload) as {
               choices?: Array<{ delta?: { content?: string } }>;
               error?: string | { message?: string };
+              fmf_image_response?: { data?: Array<{ url?: string; b64_json?: string }> };
+              fmf_video_response?: { video_id?: string; provider?: string };
             };
             if (json.error) {
               const message =
@@ -388,6 +396,40 @@ export default function Home() {
                   : (json.error.message ?? 'upstream error');
               throw new Error(message);
             }
+
+            if (json.fmf_image_response) {
+              const imageUrls =
+                json.fmf_image_response.data
+                  ?.map((d) => d.url ?? (d.b64_json ? `data:image/png;base64,${d.b64_json}` : ''))
+                  .filter(Boolean) ?? [];
+              setMessages((current) => {
+                const copy = [...current];
+                copy[assistantIndex] = {
+                  role: 'assistant',
+                  content: imageUrls.length > 0 ? '' : '图片生成失败',
+                  imageUrls,
+                };
+                return copy;
+              });
+              continue;
+            }
+
+            if (json.fmf_video_response) {
+              setMessages((current) => {
+                const copy = [...current];
+                copy[assistantIndex] = {
+                  role: 'assistant',
+                  content: json.fmf_video_response?.video_id
+                    ? `视频任务已提交，正在生成中…`
+                    : '视频任务提交失败',
+                  videoId: json.fmf_video_response?.video_id,
+                  videoProvider: json.fmf_video_response?.provider,
+                };
+                return copy;
+              });
+              continue;
+            }
+
             const delta = json.choices?.[0]?.delta?.content ?? '';
             if (!delta) continue;
             accumulated += delta;
@@ -607,6 +649,18 @@ export default function Home() {
                 onCancel={cancelStream}
                 onModelChange={selectModel}
                 onClear={() => setMessages([])}
+              />
+            ) : tab === 'imagegen' ? (
+              <ImageGeneratorView
+                models={models}
+                model={model}
+                onModelChange={selectModel}
+              />
+            ) : tab === 'videogen' ? (
+              <VideoGeneratorView
+                models={models}
+                model={model}
+                onModelChange={selectModel}
               />
             ) : (
               <div className="h-full overflow-y-auto">
