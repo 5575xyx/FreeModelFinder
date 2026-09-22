@@ -25,6 +25,7 @@ import {
 
 export interface ServerOptions {
   port?: number;
+  host?: string;
   registry?: ProviderRegistry;
   watchIntervalMs?: number;
   uiDir?: string;
@@ -809,7 +810,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
 export async function createServer(opts: ServerOptions = {}): Promise<{
   app: FastifyInstance;
   registry: ProviderRegistry;
-  listen: (port?: number) => Promise<string>;
+  listen: (port?: number, host?: string) => Promise<string>;
 }> {
   const state: SharedRuntimeState = {
     registry: opts.registry ?? new ProviderRegistry(await loadConfig()),
@@ -818,6 +819,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<{
     catalogRevision: 1,
   };
   const defaultPort = opts.port ?? state.registry.getConfig().port ?? 11435;
+  const listenHost = opts.host ?? '127.0.0.1';
   const app = await createApp({
     mode: 'local',
     surface: 'local',
@@ -835,8 +837,8 @@ export async function createServer(opts: ServerOptions = {}): Promise<{
     get registry() {
       return state.registry;
     },
-    listen: async (port?: number) => {
-      const url = await app.listen({ port: port ?? defaultPort, host: '127.0.0.1' });
+    listen: async (port?: number, host?: string) => {
+      const url = await app.listen({ port: port ?? defaultPort, host: host ?? listenHost });
       await writeRuntimeDescriptor({
         ...state.runtime,
         port: Number(new URL(url).port),
@@ -856,7 +858,7 @@ export async function createServerRuntime(opts: ServerRuntimeOptions = {}): Prom
       get registry() {
         return local.registry;
       },
-      listen: async () => ({ adminUrl: await local.listen(opts.port) }),
+      listen: async () => ({ adminUrl: await local.listen(opts.port, opts.host) }),
       close: async () => local.app.close(),
     };
   }
@@ -913,9 +915,10 @@ export async function createServerRuntime(opts: ServerRuntimeOptions = {}): Prom
     },
     listen: async () => {
       let adminUrl: string;
+      const listenHost = opts.host ?? '127.0.0.1';
       try {
-        adminUrl = await adminApp.listen({ port: adminPort, host: '127.0.0.1' });
-        const gatewayUrl = await gatewayApp.listen({ port: gatewayPort, host: '127.0.0.1' });
+        adminUrl = await adminApp.listen({ port: adminPort, host: listenHost });
+        const gatewayUrl = await gatewayApp.listen({ port: gatewayPort, host: listenHost });
         return { adminUrl, gatewayUrl };
       } catch (error) {
         await Promise.allSettled([gatewayApp.close(), adminApp.close()]);

@@ -29,6 +29,7 @@ export function serveCommand(dependencies: Partial<ServeDependencies> = {}): Com
     .description('Start FreeModelFinder in local or server mode')
     .option('--mode <mode>', 'deployment mode: local or server', 'local')
     .option('-p, --port <port>', 'listen port', (v) => Number(v))
+    .option('--host <host>', 'listen host (use 0.0.0.0 for Docker/server)')
     .option('--admin-port <port>', 'server-mode management port', (v) => Number(v), 11435)
     .option('--gateway-port <port>', 'server-mode public gateway port', (v) => Number(v), 11436)
     .option('--admin-origin <url>', 'server-mode Tailscale management origin')
@@ -39,6 +40,7 @@ export function serveCommand(dependencies: Partial<ServeDependencies> = {}): Com
         opts: {
           mode: string;
           port?: number;
+          host?: string;
           adminPort: number;
           gatewayPort: number;
           adminOrigin?: string;
@@ -89,6 +91,7 @@ export function serveCommand(dependencies: Partial<ServeDependencies> = {}): Com
           try {
             runtime = await createRuntime({
               mode: 'server',
+              host: opts.host,
               adminPort: opts.adminPort,
               gatewayPort: opts.gatewayPort,
               adminOrigin: opts.adminOrigin,
@@ -130,14 +133,14 @@ export function serveCommand(dependencies: Partial<ServeDependencies> = {}): Com
         }
         let listen: Awaited<ReturnType<typeof createServer>>['listen'];
         try {
-          ({ listen } = await createGateway({ port: opts.port, uiDir }));
+          ({ listen } = await createGateway({ port: opts.port, host: opts.host, uiDir }));
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           throw new Error(`could not load the local configuration: ${message}`);
         }
         let url: string;
         try {
-          url = await listen();
+          url = await listen(undefined, opts.host);
         } catch (error) {
           const code = (error as NodeJS.ErrnoException).code;
           if (code === 'EADDRINUSE') {

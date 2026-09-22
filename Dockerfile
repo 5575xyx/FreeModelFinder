@@ -51,4 +51,4 @@ VOLUME ["/data"]
 EXPOSE 11435
 
 ENTRYPOINT ["node", "/app/index.js"]
-CMD ["serve", "--port", "11435"]
+CMD ["serve", "--port", "11435", "--host", "0.0.0.0"]
