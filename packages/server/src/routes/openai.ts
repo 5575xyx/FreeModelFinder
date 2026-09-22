@@ -100,6 +100,45 @@ async function dispatchWithAutoRoute(
   }
 }
 
+type RequestModality = 'text' | 'image' | 'video';
+
+function detectRequestModality(
+  messages: OpenAIChatCompletionRequest['messages'],
+): RequestModality {
+  const VIDEO_KEYWORDS =
+    /\b(生成|制作|创建|做一段?|来一段?|画一段?)(视频|动画|短片|影片|动态|视频片段)\b/i;
+  for (const msg of messages) {
+    const content = msg.content;
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (part.type === 'image_url' || part.type === 'image') return 'image';
+      }
+    }
+    if (typeof content === 'string' && VIDEO_KEYWORDS.test(content)) return 'video';
+  }
+  return 'text';
+}
+
+type TextTier = 'simple' | 'medium' | 'complex';
+
+function classifyTextComplexity(text: string): TextTier {
+  let score = 0;
+  if (text.length > 500) score += 20;
+  if (text.length > 2000) score += 10;
+  if (/```[\s\S]*?```/.test(text)) score += 25;
+  if (/\b(逐步|一步一步|推理|思考链|chain.of.thought|step.by.step|think\s+through)\b/i.test(text))
+    score += 20;
+  const questionMarks = (text.match(/[?？]/g) ?? []).length;
+  if (questionMarks >= 3) score += 15;
+  else if (questionMarks >= 2) score += 8;
+  if (/\b(算法|架构|优化|重构|设计模式|复杂度|并发|分布式|数据结构)\b/i.test(text)) score += 10;
+  if (/\b(证明|推导|公式|方程|微积分|线性代数|矩阵)\b/i.test(text)) score += 15;
+  if (/\b(写一篇|分析.*报告|对比.*优劣|评估|设计方案|技术选型)\b/i.test(text)) score += 10;
+  if (score >= 70) return 'complex';
+  if (score >= 30) return 'medium';
+  return 'simple';
+}
+
 export function registerOpenAIRoutes(
   app: FastifyInstance,
   getRegistry: () => ProviderRegistry,
@@ -168,6 +207,23 @@ export function registerOpenAIRoutes(
       }
       const reg = getRegistry();
       const chatReq = openAIToChatRequest(body);
+
+      // Auto-route: detect modality from request content when model is "auto"
+      if (chatReq.model === 'auto' || chatReq.model === 'default') {
+        const cfg = reg.getConfig();
+        const ar = cfg.autoRoute;
+        const detectedModality = detectRequestModality(body.messages);
+        if (detectedModality === 'image' && ar?.imageModel) {
+          chatReq.model = ar.imageModel;
+        } else if (detectedModality === 'video' && ar?.videoModel) {
+          chatReq.model = ar.videoModel;
+        } else if (detectedModality === 'text' && ar?.textTiers) {
+          const prompt = chatReq.messages.map((m) => m.content).join('\n');
+          const tier = classifyTextComplexity(prompt);
+          const tierModel = ar.textTiers[tier];
+          if (tierModel) chatReq.model = tierModel;
+        }
+      }
 
       // Fast-path: infer capabilities from model ID without async calls
       const rawModelId = chatReq.model.split(':').pop() ?? chatReq.model;

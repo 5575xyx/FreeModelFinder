@@ -673,6 +673,9 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         strategy: ar.strategy,
         profiles: ar.profiles ?? [],
         fallbackChain: ar.fallbackChain ?? [],
+        imageModel: ar.imageModel,
+        videoModel: ar.videoModel,
+        textTiers: ar.textTiers,
         cooldowns: router.listCooldowns(),
         rememberedPreference: router.getRememberedPreference(),
         recentNotices: getRegistry().peekNotices(),
@@ -685,19 +688,33 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         strategy?: 'capability' | 'speed' | 'rate-limit';
         fallbackChain?: string[];
         profiles?: unknown;
+        imageModel?: string;
+        videoModel?: string;
+        textTiers?: { simple?: string; medium?: string; complex?: string };
       };
     }>('/api/auto-route', async (req, reply) => {
-      const { enabled, strategy, fallbackChain, profiles } = req.body ?? {};
+      const { enabled, strategy, fallbackChain, profiles, imageModel, videoModel, textTiers } =
+        req.body ?? {};
       if (strategy && !['capability', 'speed', 'rate-limit'].includes(strategy)) {
         return reply.code(400).send({ error: 'invalid strategy' });
       }
       const next = await updateConfig((cfg) => {
         const cur = cfg.autoRoute ?? { enabled: false, strategy: 'capability' as const };
+        const prevTiers = cur.textTiers;
         cfg.autoRoute = {
           enabled: typeof enabled === 'boolean' ? enabled : cur.enabled,
           strategy: strategy ?? cur.strategy,
           fallbackChain: Array.isArray(fallbackChain) ? fallbackChain : cur.fallbackChain,
           profiles: Array.isArray(profiles) ? (profiles as never) : cur.profiles,
+          imageModel: typeof imageModel === 'string' ? imageModel : cur.imageModel,
+          videoModel: typeof videoModel === 'string' ? videoModel : cur.videoModel,
+          textTiers: textTiers
+            ? {
+                simple: textTiers.simple ?? prevTiers?.simple,
+                medium: textTiers.medium ?? prevTiers?.medium,
+                complex: textTiers.complex ?? prevTiers?.complex,
+              }
+            : prevTiers,
         };
         return cfg;
       });

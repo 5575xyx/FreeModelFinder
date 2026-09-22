@@ -139,6 +139,9 @@ export function SettingsView({
     enabled: boolean;
     strategy: 'capability' | 'speed' | 'rate-limit';
     fallbackChain?: string[];
+    imageModel?: string;
+    videoModel?: string;
+    textTiers?: { simple?: string; medium?: string; complex?: string };
     cooldowns?: { model: string; provider: string; resetAt: number }[];
     rememberedPreference?: string | null;
     recentNotices?: {
@@ -971,6 +974,101 @@ export function SettingsView({
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-md border border-border/60 bg-surface-muted/30 p-3">
+              <div className="text-xs font-medium text-muted-foreground">
+                {t('settings.autoRoute.modality.title')}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {t('settings.autoRoute.modality.desc')}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">
+                    {t('settings.autoRoute.modality.imageModel')}
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-md border border-input bg-surface px-3 py-1.5 font-mono text-xs text-foreground shadow-sm outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder={t('settings.autoRoute.modality.imageModelPh')}
+                    value={autoRoute?.imageModel ?? ''}
+                    onChange={(e) =>
+                      setAutoRoute((prev) =>
+                        prev ? { ...prev, imageModel: e.target.value } : prev,
+                      )
+                    }
+                    onBlur={() => {
+                      if (autoRoute) void saveAutoRoute({ imageModel: autoRoute.imageModel });
+                    }}
+                    disabled={autoRouteBusy}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">
+                    {t('settings.autoRoute.modality.videoModel')}
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-md border border-input bg-surface px-3 py-1.5 font-mono text-xs text-foreground shadow-sm outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder={t('settings.autoRoute.modality.videoModelPh')}
+                    value={autoRoute?.videoModel ?? ''}
+                    onChange={(e) =>
+                      setAutoRoute((prev) =>
+                        prev ? { ...prev, videoModel: e.target.value } : prev,
+                      )
+                    }
+                    onBlur={() => {
+                      if (autoRoute) void saveAutoRoute({ videoModel: autoRoute.videoModel });
+                    }}
+                    disabled={autoRouteBusy}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-md border border-border/60 bg-surface-muted/30 p-3">
+              <div className="text-xs font-medium text-muted-foreground">
+                {t('settings.autoRoute.textTiers.title')}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {t('settings.autoRoute.textTiers.desc')}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {(
+                  [
+                    { key: 'simple', label: t('settings.autoRoute.textTiers.simple'), icon: '⚡' },
+                    { key: 'medium', label: t('settings.autoRoute.textTiers.medium'), icon: '⚖️' },
+                    { key: 'complex', label: t('settings.autoRoute.textTiers.complex'), icon: '🧠' },
+                  ] as const
+                ).map((tier) => (
+                  <div key={tier.key} className="space-y-1.5">
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span>{tier.icon}</span> {tier.label}
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full rounded-md border border-input bg-surface px-3 py-1.5 font-mono text-xs text-foreground shadow-sm outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder={t(`settings.autoRoute.textTiers.${tier.key}Ph` as never)}
+                      value={autoRoute?.textTiers?.[tier.key] ?? ''}
+                      onChange={(e) =>
+                        setAutoRoute((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                textTiers: { ...prev.textTiers, [tier.key]: e.target.value },
+                              }
+                            : prev,
+                        )
+                      }
+                      onBlur={() => {
+                        if (autoRoute) void saveAutoRoute({ textTiers: autoRoute.textTiers });
+                      }}
+                      disabled={autoRouteBusy}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 

@@ -139,6 +139,13 @@ export interface AutoRouteSettings {
   strategy: AutoRouteStrategy;
   profiles?: ModelRoutingProfile[];
   fallbackChain?: string[];
+  imageModel?: string;
+  videoModel?: string;
+  textTiers?: {
+    simple?: string;
+    medium?: string;
+    complex?: string;
+  };
 }
 
 export interface RateLimitState {
