@@ -148,7 +148,7 @@ export function SettingsView({
 
   useEffect(() => {
     const refresh = () =>
-      fetch(`${GATEWAY}/api/auto-route`)
+      fetch(`${GATEWAY}/api/auto-route`, withUiHeaders())
         .then((r) => r.json())
         .then((d) => setAutoRoute(d))
         .catch(() => {
@@ -162,13 +162,13 @@ export function SettingsView({
   async function saveAutoRoute(patch: Partial<AutoRouteInfo>): Promise<void> {
     setAutoRouteBusy(true);
     try {
-      const res = await fetch(`${GATEWAY}/api/auto-route`, {
+      const res = await fetch(`${GATEWAY}/api/auto-route`, withUiHeaders({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(patch),
-      });
+      }));
       if (!res.ok) throw new Error(`failed ${res.status}`);
-      const refreshed = await fetch(`${GATEWAY}/api/auto-route`).then((r) => r.json());
+      const refreshed = await fetch(`${GATEWAY}/api/auto-route`, withUiHeaders()).then((r) => r.json());
       setAutoRoute(refreshed);
       setToast({ kind: 'success', text: t('settings.autoRoute.saved') });
     } catch (err) {
@@ -184,12 +184,12 @@ export function SettingsView({
   async function clearAllCooldowns(): Promise<void> {
     setAutoRouteBusy(true);
     try {
-      await fetch(`${GATEWAY}/api/auto-route/clear-cooldown`, {
+      await fetch(`${GATEWAY}/api/auto-route/clear-cooldown`, withUiHeaders({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({}),
-      });
-      const refreshed = await fetch(`${GATEWAY}/api/auto-route`).then((r) => r.json());
+      }));
+      const refreshed = await fetch(`${GATEWAY}/api/auto-route`, withUiHeaders()).then((r) => r.json());
       setAutoRoute(refreshed);
     } finally {
       setAutoRouteBusy(false);
@@ -197,7 +197,7 @@ export function SettingsView({
   }
 
   useEffect(() => {
-    fetch(`${GATEWAY}/api/config`)
+    fetch(`${GATEWAY}/api/config`, withUiHeaders())
       .then((r) => r.json())
       .then((c: ConfigRes) => {
         setCfg(c);
@@ -220,7 +220,7 @@ export function SettingsView({
         }
       })
       .catch(() => setGatewayError(t('settings.gatewayError')));
-    fetch(`${GATEWAY}/api/gateway`)
+    fetch(`${GATEWAY}/api/gateway`, withUiHeaders())
       .then((r) => r.json())
       .then((g: GatewayInfo) => setGateway(g))
       .catch(() => {
@@ -305,7 +305,7 @@ export function SettingsView({
     if (!apiKey) return;
     setSaveStates((s) => ({ ...s, [providerId]: 'saving' }));
     try {
-      const res = await fetch(`${GATEWAY}/api/providers`, {
+      const res = await fetch(`${GATEWAY}/api/providers`, withUiHeaders({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -313,7 +313,7 @@ export function SettingsView({
           apiKey,
           enabled: true,
         }),
-      });
+      }));
       if (res.ok) {
         setToast({
           kind: 'success',
@@ -322,7 +322,7 @@ export function SettingsView({
         setKeys((k) => ({ ...k, [providerId]: '' }));
         setSaveStates((s) => ({ ...s, [providerId]: 'saved' }));
         setTimeout(() => setSaveStates((s) => ({ ...s, [providerId]: 'idle' })), 1600);
-        fetch(`${GATEWAY}/api/config`)
+        fetch(`${GATEWAY}/api/config`, withUiHeaders())
           .then((r) => r.json())
           .then(setCfg);
         if (onModelsRefresh) {
@@ -476,11 +476,11 @@ export function SettingsView({
         enabled: true,
         sources: payloadSources,
       };
-      const res = await fetch(`${GATEWAY}/api/providers`, {
+      const res = await fetch(`${GATEWAY}/api/providers`, withUiHeaders({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
-      });
+      }));
       if (!res.ok) {
         let detail = '';
         try {
@@ -494,7 +494,7 @@ export function SettingsView({
       setToast({ kind: 'success', text: t('settings.custom.saved') });
       setCustomSaveState('saved');
       setTimeout(() => setCustomSaveState('idle'), 1600);
-      const refreshed = await fetch(`${GATEWAY}/api/config`).then(
+      const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
         (r) => r.json() as Promise<ConfigRes>,
       );
       setCfg(refreshed);
@@ -523,7 +523,7 @@ export function SettingsView({
   async function clearCustomProvider() {
     setCustomSaveState('saving');
     try {
-      const res = await fetch(`${GATEWAY}/api/providers`, {
+      const res = await fetch(`${GATEWAY}/api/providers`, withUiHeaders({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -531,12 +531,12 @@ export function SettingsView({
           enabled: false,
           clearCredentials: true,
         }),
-      });
+      }));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setToast({ kind: 'success', text: t('settings.custom.cleared') });
       setCustomSources([]);
       setCustomSaveState('idle');
-      const refreshed = await fetch(`${GATEWAY}/api/config`).then(
+      const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
         (r) => r.json() as Promise<ConfigRes>,
       );
       setCfg(refreshed);
@@ -556,11 +556,11 @@ export function SettingsView({
 
   async function callGateway(body: Record<string, unknown>): Promise<GatewayInfo | null> {
     try {
-      const res = await fetch(`${GATEWAY}/api/gateway`, {
+      const res = await fetch(`${GATEWAY}/api/gateway`, withUiHeaders({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
-      });
+      }));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as GatewayInfo;
       setGateway(data);
