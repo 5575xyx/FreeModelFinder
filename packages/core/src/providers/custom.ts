@@ -66,7 +66,7 @@ export class CustomProvider extends BaseProvider {
       {
         id: 'default',
         label: 'Custom',
-        baseUrl: legacyBaseUrl.replace(/\/$/, ''),
+        baseUrl: /\/v1\/?$/.test(legacyBaseUrl) ? legacyBaseUrl.replace(/\/$/, '') : `${legacyBaseUrl.replace(/\/$/, '')}/v1`,
         apiKey: legacyKey || undefined,
         models: legacyModels,
       },
@@ -236,7 +236,7 @@ function normalizeSource(input: Partial<CustomSource> | undefined): CustomSource
   return {
     id,
     label: typeof input.label === 'string' && input.label.trim() ? input.label.trim() : undefined,
-    baseUrl: baseUrl.replace(/\/$/, ''),
+    baseUrl: /\/v1\/?$/.test(baseUrl) ? baseUrl.replace(/\/$/, '') : `${baseUrl.replace(/\/$/, '')}/v1`,
     apiKey:
       typeof input.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : undefined,
     models,

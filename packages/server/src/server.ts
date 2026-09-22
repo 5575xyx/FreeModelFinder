@@ -623,8 +623,9 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       async (req, reply) => {
         const { baseUrl: rawBaseUrl, apiKey } = req.body ?? {};
         if (!rawBaseUrl) return reply.code(400).send({ error: 'baseUrl required' });
-        const baseUrl = rawBaseUrl.replace(/\/+$/, '');
-        const url = `${baseUrl}/v1/models`;
+        const base = rawBaseUrl.replace(/\/+$/, '');
+        const modelsPath = /\/v1\/?$/.test(base) ? `${base}/models` : `${base}/v1/models`;
+        const url = modelsPath;
         const headers: Record<string, string> = { Accept: 'application/json' };
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
         try {

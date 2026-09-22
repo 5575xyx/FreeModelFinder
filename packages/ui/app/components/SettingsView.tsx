@@ -1548,6 +1548,14 @@ export function SettingsView({
                             placeholder={t('settings.custom.baseUrlPh')}
                             value={src.baseUrl}
                             onChange={(e) => patchCustomSource(src.id, { baseUrl: e.target.value })}
+                            onBlur={() => {
+                              const v = src.baseUrl.trim();
+                              if (v && !/\/v1\/?$/.test(v)) {
+                                patchCustomSource(src.id, {
+                                  baseUrl: v.replace(/\/$/, '') + '/v1',
+                                });
+                              }
+                            }}
                             autoComplete="off"
                             spellCheck={false}
                           />
