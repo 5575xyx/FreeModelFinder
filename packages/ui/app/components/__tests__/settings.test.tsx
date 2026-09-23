@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { SettingsView } from '../SettingsView';
+import { matchesCapability, type ModelOption } from '../ModelMultiSelect';
 import { configPayload, gateway, server } from '../../../test/server';
 
 describe('SettingsView', () => {
@@ -259,5 +260,102 @@ describe('SettingsView', () => {
     expect((auth as HTMLInputElement).disabled).toBe(true);
     expect(screen.queryByRole('button', { name: '撤销' })).toBeNull();
     expect(screen.getByText(/服务器模式已锁定/)).toBeTruthy();
+  });
+
+  it('filters the image multi-select by image capability', async () => {
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    const trigger = await screen.findByRole('button', { name: '图片生成模型' });
+    await user.click(trigger);
+    const listbox = await screen.findByRole('listbox', { name: '图片生成模型' });
+    expect(await within(listbox).findByText('custom:fixture:img-a')).toBeTruthy();
+    expect(within(listbox).queryByText('custom:fixture:vid-a')).toBeNull();
+    expect(within(listbox).queryByText('custom:fixture:chat-1')).toBeNull();
+    expect(within(listbox).queryByText('custom:fixture:legacy')).toBeNull();
+  });
+
+  it('text tier multi-select hides pure image models and shows text/legacy', async () => {
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    const trigger = await screen.findByRole('button', {
+      name: '⚡ 简单（问候/翻译/简答）',
+    });
+    await user.click(trigger);
+    const listbox = await screen.findByRole('listbox', {
+      name: '⚡ 简单（问候/翻译/简答）',
+    });
+    expect(await within(listbox).findByText('custom:fixture:chat-1')).toBeTruthy();
+    expect(within(listbox).getByText('custom:fixture:legacy')).toBeTruthy();
+    expect(within(listbox).queryByText('custom:fixture:img-a')).toBeNull();
+  });
+
+  it('selecting an image option POSTs an array payload to /api/auto-route', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () => HttpResponse.json(configPayload)),
+      http.post(`${gateway}/api/auto-route`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    const trigger = await screen.findByRole('button', { name: '图片生成模型' });
+    await user.click(trigger);
+    const option = await screen.findByRole('option', { name: /custom:fixture:img-a/ });
+    await user.click(within(option).getByRole('button'));
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    const body = writes.at(-1)!;
+    expect(Array.isArray(body.imageModel)).toBe(true);
+    expect(body.imageModel).toContain('custom:fixture:img-a');
+  });
+
+  it('clear on image multi-select POSTs an empty array', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () => HttpResponse.json(configPayload)),
+      http.post(`${gateway}/api/auto-route`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    expect(await screen.findByText('custom:img')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: '清空' }));
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    expect(writes[0]).toMatchObject({ imageModel: [] });
+  });
+});
+
+describe('matchesCapability', () => {
+  const legacy: ModelOption = { id: 'custom:fixture:legacy', provider: 'custom' };
+  const imageByName: ModelOption = { id: 'custom:image-gen', provider: 'custom' };
+
+  it('empty caps: image filter uses id regex fallback', () => {
+    expect(matchesCapability(legacy, 'image')).toBe(false);
+    expect(matchesCapability(imageByName, 'image')).toBe(true);
+  });
+
+  it('text filter accepts multimodal text+image models', () => {
+    const multi: ModelOption = {
+      id: 'custom:m1',
+      provider: 'custom',
+      capabilities: ['text', 'image'],
+    };
+    expect(matchesCapability(multi, 'text')).toBe(true);
+  });
+
+  it('text filter rejects pure image models', () => {
+    const pureImage: ModelOption = {
+      id: 'custom:i1',
+      provider: 'custom',
+      capabilities: ['image'],
+    };
+    expect(matchesCapability(pureImage, 'text')).toBe(false);
+  });
+
+  it('no filter matches everything', () => {
+    expect(matchesCapability(legacy)).toBe(true);
   });
 });
