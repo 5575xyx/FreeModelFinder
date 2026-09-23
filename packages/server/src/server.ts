@@ -191,6 +191,27 @@ function activeGatewayKeys(
   return [];
 }
 
+function buildKeyMeta(keys: readonly string[]): Array<{ id: string; hint: string }> {
+  return keys
+    .map((k) => (typeof k === 'string' ? k.trim() : ''))
+    .filter((k) => !!k)
+    .map((k, i) => ({
+      id: `k${i}`,
+      hint: `…${k.length >= 4 ? k.slice(-4) : k.length >= 2 ? k.slice(-2) : k}`,
+    }));
+}
+
+function providerKeyPool(cred: { apiKey?: string; apiKeys?: string[] } | undefined): string[] {
+  const pool = cred?.apiKeys?.filter((k) => !!k?.trim()) ?? [];
+  if (pool.length) return pool;
+  return cred?.apiKey?.trim() ? [cred.apiKey.trim()] : [];
+}
+
+function sourceKeyPool(apiKey: string | string[] | undefined): string[] {
+  if (Array.isArray(apiKey)) return apiKey.filter((k) => typeof k === 'string' && !!k.trim());
+  return typeof apiKey === 'string' && apiKey.trim() ? [apiKey.trim()] : [];
+}
+
 function findMatchingGatewayKey(
   provided: string | null,
   keys: GatewayKeyEntry[],
@@ -486,6 +507,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             hasKey: !!(Array.isArray(s.apiKey)
               ? s.apiKey.some((x) => typeof x === 'string' && x)
               : s.apiKey),
+            keyMeta: buildKeyMeta(sourceKeyPool(s.apiKey)),
             models: Array.isArray(s.models) ? s.models : [],
           }))
         : legacyBaseUrl
@@ -495,6 +517,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
                 label: 'Custom',
                 baseUrl: legacyBaseUrl,
                 hasKey: legacyHasKey,
+                keyMeta: legacyHasKey ? buildKeyMeta([custom.credentials?.apiKey ?? '']) : [],
                 models: legacyModels,
               },
             ]
@@ -513,6 +536,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
               keyCount:
                 (s?.credentials?.apiKeys?.filter((k) => !!k?.trim()) ?? []).length ||
                 (s?.credentials?.apiKey ? 1 : 0),
+              keyMeta: buildKeyMeta(providerKeyPool(s?.credentials)),
               credentialError: s?.credentialError,
             },
           ]),
