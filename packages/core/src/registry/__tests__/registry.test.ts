@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { BaseProvider } from '../../providers/base.js';
-import { ProviderRegistry } from '../../registry.js';
+import { ProviderRegistry, resetAutoPoolCursor } from '../../registry.js';
 import type { AppConfig, ModelInfo, ProviderId } from '../../types.js';
 
 function configWithProviders(providers: AppConfig['providers']): AppConfig {
@@ -253,7 +253,13 @@ describe('ProviderRegistry auto scored pool', () => {
   }
 
   function catalogRegistry(models: ModelInfo[], autoRoute?: AppConfig['autoRoute']) {
-    const registry = new ProviderRegistry(poolConfig(autoRoute));
+    const registry = new ProviderRegistry(poolConfig(autoRoute), async () => ({
+      version: 1,
+      updatedAt: 0,
+      models: [],
+      added: [],
+      removed: [],
+    }));
     const fakeProvider = {
       id: 'openrouter' as const,
       displayName: 'Fake',
@@ -264,6 +270,17 @@ describe('ProviderRegistry auto scored pool', () => {
     };
     internals.instances.set('openrouter', fakeProvider);
     return registry;
+  }
+
+  // Pre-prime the in-memory modelsCache without triggering a provider call.
+  // Used by tests that mutate provider state (updateConfig) after registry construction.
+  function prime(registry: ProviderRegistry, models: ModelInfo[]) {
+    (registry as unknown as { modelsCache: unknown }).modelsCache = {
+      models,
+      succeededProviders: ['openrouter'],
+      failedProviders: [],
+    };
+    (registry as unknown as { cacheAt: number }).cacheAt = Date.now();
   }
 
   const bigModel: ModelInfo = {
@@ -290,6 +307,7 @@ describe('ProviderRegistry auto scored pool', () => {
   }
 
   it('round-robins across the scored pool for auto', async () => {
+    resetAutoPoolCursor();
     const registry = catalogRegistry([smallModel, bigModel, midModel]);
     await fill(registry);
     const picks = new Set<string>();
@@ -298,13 +316,18 @@ describe('ProviderRegistry auto scored pool', () => {
   });
 
   it('skips cooling-down members and shrinks the pool', async () => {
+    resetAutoPoolCursor();
     const registry = catalogRegistry([smallModel, bigModel, midModel]);
     await fill(registry);
-    registry.getAutoRouter().markRateLimited('big-70b', 'openrouter', {
+    const router = registry.getAutoRouter();
+    router.markRateLimited('big-70b', 'openrouter', {
       isRateLimit: true,
       resetAt: Date.now() + 60_000,
       message: 'rpm',
     });
+    // openrouter is shared-quota: clear the provider-scope cooldown so
+    // sibling models stay eligible (mirrors real provider isolation).
+    router.clearProviderCooldown('openrouter');
     const a = registry.resolveModel('auto').modelId;
     const b = registry.resolveModel('auto').modelId;
     assert.notEqual(a, b);
@@ -313,6 +336,7 @@ describe('ProviderRegistry auto scored pool', () => {
   });
 
   it('falls back to the first catalog model when the whole pool is cooling', async () => {
+    resetAutoPoolCursor();
     const registry = catalogRegistry([smallModel, bigModel, midModel]);
     await fill(registry);
     const router = registry.getAutoRouter();
@@ -327,6 +351,7 @@ describe('ProviderRegistry auto scored pool', () => {
   });
 
   it('recomputes the pool when strategy changes', async () => {
+    resetAutoPoolCursor();
     const registry = catalogRegistry([smallModel, bigModel, midModel], {
       enabled: false,
       strategy: 'speed',
@@ -334,5 +359,32 @@ describe('ProviderRegistry auto scored pool', () => {
     await fill(registry);
     const pick = registry.resolveModel('auto').modelId;
     assert.equal(pick, 'tiny-3b');
+  });
+
+  it('wraps the pool cursor around after the pool size', async () => {
+    resetAutoPoolCursor();
+    const registry = catalogRegistry([smallModel, bigModel, midModel]);
+    await fill(registry);
+    const picks: string[] = [];
+    for (let i = 0; i < 6; i++) picks.push(registry.resolveModel('auto').modelId);
+    assert.equal(picks[3], picks[0]);
+    assert.equal(picks[4], picks[1]);
+    assert.equal(picks[5], picks[2]);
+  });
+
+  it('default resolves defaultModel first (regression)', async () => {
+    const registry = catalogRegistry([smallModel, bigModel]);
+    registry.updateConfig({ ...registry.getConfig(), defaultModel: 'openrouter:big-70b' });
+    // updateConfig clears modelsCache; re-prime without touching providers
+    prime(registry, [smallModel, bigModel]);
+    assert.equal(registry.resolveModel('default').modelId, 'big-70b');
+    resetAutoPoolCursor();
+    // auto is independent of defaultModel — capability top is big-70b
+    assert.equal(registry.resolveModel('auto').modelId, 'big-70b');
+  });
+
+  it('auto throws when no provider catalog is available', () => {
+    const registry = catalogRegistry([], undefined);
+    assert.throws(() => registry.resolveModel('auto'), /no default model available/);
   });
 });

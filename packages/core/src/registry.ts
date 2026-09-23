@@ -20,7 +20,7 @@ import {
 import type { ProviderContext } from './providers/base.js';
 import { QuotaTracker } from './quota.js';
 import { emitUsageCapture } from './call-logger.js';
-import { AutoRouter, parseRateLimitError } from './router/auto-router.js';
+import { AutoRouter, parseRateLimitError, scoreModel } from './router/auto-router.js';
 import type {
   AppConfig,
   ImageGenerationRequest,
@@ -54,6 +54,12 @@ const PROVIDER_CTORS: Record<
 };
 
 const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+let autoPoolCursor = 0;
+
+export function resetAutoPoolCursor(): void {
+  autoPoolCursor = 0;
+}
 
 export interface RegistryOptions {
   config?: AppConfig;
@@ -274,13 +280,19 @@ export class ProviderRegistry {
 
   resolveModel(modelId: string): { provider: BaseProvider; modelId: string } {
     if (modelId === 'auto' || modelId === 'default') {
-      const preferred = this.config.defaultModel;
-      if (preferred && preferred !== 'auto' && preferred !== 'default') {
-        return this.resolveModel(preferred);
+      if (modelId === 'default') {
+        const preferred = this.config.defaultModel;
+        if (preferred && preferred !== 'auto' && preferred !== 'default') {
+          return this.resolveModel(preferred);
+        }
       }
       const enabled = this.listEnabledProviders();
       if (enabled.length === 0) {
         throw new Error('no provider is configured; add an API key in Settings first');
+      }
+      if (modelId === 'auto') {
+        const picked = this.pickFromScoredPool();
+        if (picked) return picked;
       }
       const cached = this.modelsCache?.models;
       if (cached && cached.length > 0) {
@@ -288,7 +300,7 @@ export class ProviderRegistry {
         return { provider: this.getProvider(first.provider), modelId: first.id };
       }
       throw new Error(
-        'no default model available for `auto`; set a default model or wait for /v1/models to load',
+        'no default model available; set a default model or wait for /v1/models to load',
       );
     }
     const sep = modelId.indexOf(':');
@@ -377,6 +389,34 @@ export class ProviderRegistry {
     }
     // default to openrouter
     return { provider: this.getProvider('openrouter'), modelId };
+  }
+
+  /**
+   * auto 文本兜底：按策略给可用模型打分，取 Top-3 池，池内轮询，
+   * 冷却成员实时过滤（filter 版，非循环跳过）。池全冷却/无缓存 → 返回 null（调用方兜底）。
+   */
+  private pickFromScoredPool(): { provider: BaseProvider; modelId: string } | null {
+    const cached = this.modelsCache?.models;
+    if (!cached || cached.length === 0) return null;
+    const strategy = this.autoRouter.getStrategy();
+    const candidates = cached.filter((m) => {
+      if (this.autoRouter.isProviderRateLimited(m.provider)) return false;
+      if (
+        this.autoRouter.isRateLimited(m.id) ||
+        this.autoRouter.isRateLimited(`${m.provider}:${m.id}`)
+      ) {
+        return false;
+      }
+      return true;
+    });
+    if (candidates.length === 0) return null;
+    const scored = candidates
+      .map((m) => ({ m, s: scoreModel(m, strategy, this.autoRouter.getProfile(m.id)) }))
+      .sort((a, b) => b.s - a.s || a.m.id.localeCompare(b.m.id));
+    const pool = scored.slice(0, 3);
+    const pick = pool[autoPoolCursor % pool.length]!;
+    autoPoolCursor = (autoPoolCursor + 1) % pool.length;
+    return { provider: this.getProvider(pick.m.provider), modelId: pick.m.id };
   }
 
   async generateImage(
