@@ -530,6 +530,12 @@ export function registerOpenAIRoutes(
           if (notices.length > 0) {
             (payload as Record<string, unknown>).fmf_route_notices = notices;
           }
+          if (body.model === 'auto') {
+            (payload as Record<string, unknown>).fmf_auto_route = {
+              picked: finalModel,
+              strategy: reg.getAutoRouter().getStrategy(),
+            };
+          }
           const finalUsage = usage ?? response.usage;
           record(req, t0, {
             kind: 'chat',
@@ -624,6 +630,12 @@ export function registerOpenAIRoutes(
           async () => {
             for await (const chunk of provider.stream(dispatchReq)) {
               const payload = streamChunkToOpenAI(chunk);
+              if (body.model === 'auto') {
+                (payload as Record<string, unknown>).fmf_auto_route = {
+                  picked: `${provider.id}:${realModelId}`,
+                  strategy: router.getStrategy(),
+                };
+              }
               reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
             }
           },

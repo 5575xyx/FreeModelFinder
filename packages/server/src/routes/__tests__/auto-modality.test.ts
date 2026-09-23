@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   ProviderRegistry,
+  resetAutoPoolCursor,
   type AppConfig,
   type ChatRequest,
   type ChatResponse,
   type ModelInfo,
+  type ProviderId,
 } from '@freemodelfinder/core';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../../server.js';
@@ -112,7 +114,11 @@ function modalityConfig(autoRoute: AppConfig['autoRoute']): AppConfig {
   };
 }
 
-function modalityRegistry(options: { autoRoute: AppConfig['autoRoute']; models: ModelInfo[] }): {
+function modalityRegistry(options: {
+  autoRoute: AppConfig['autoRoute'];
+  models: ModelInfo[];
+  realResolveModel?: boolean;
+}): {
   registry: ProviderRegistry;
   imageCallCount: () => number;
   videoCallCount: () => number;
@@ -158,6 +164,25 @@ function modalityRegistry(options: { autoRoute: AppConfig['autoRoute']; models: 
       };
     },
   };
+  if (options.realResolveModel) {
+    const internals = registry as unknown as {
+      instances: Map<ProviderId, unknown>;
+      modelsCache: unknown;
+      cacheAt: number;
+    };
+    internals.instances.set('custom', provider);
+    internals.modelsCache = {
+      models: options.models,
+      succeededProviders: ['custom'],
+      failedProviders: [],
+    };
+    internals.cacheAt = Date.now();
+    return {
+      registry,
+      imageCallCount: () => imageCalls,
+      videoCallCount: () => videoCalls,
+    };
+  }
   registry.resolveModel = () => ({ provider: provider as never, modelId: 'fixture-model' });
   registry.listAllModels = async () => ({
     models: options.models,
@@ -203,6 +228,95 @@ const capabilityImageModel: ModelInfo = {
 };
 
 describe('auto modality HTTP routing', () => {
+  it('reports fmf_auto_route on auto text picks and round-robins across the scored pool', async () => {
+    await withApp(
+      {
+        autoRoute: {
+          enabled: false,
+          strategy: 'capability',
+          imageModel: ['custom:img-model'],
+        },
+        models: [
+          textOnlyModel,
+          {
+            id: 'second-text-model',
+            provider: 'custom',
+            displayName: 'Second Text',
+            free: true,
+          },
+        ],
+        realResolveModel: true,
+      },
+      async (app) => {
+        resetAutoPoolCursor();
+        const res1 = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'auto',
+            messages: [{ role: 'user', content: '你好' }],
+            stream: false,
+          },
+        });
+        assert.equal(res1.statusCode, 200);
+        const r1 = res1.json() as {
+          model: string;
+          fmf_auto_route?: { picked: string; strategy: string };
+        };
+        assert.deepEqual(r1.fmf_auto_route, {
+          picked: r1.model,
+          strategy: 'capability',
+        });
+        const res2 = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'auto',
+            messages: [{ role: 'user', content: '你好' }],
+            stream: false,
+          },
+        });
+        assert.equal(res2.statusCode, 200);
+        const r2 = res2.json() as {
+          model: string;
+          fmf_auto_route?: { picked: string; strategy: string };
+        };
+        assert.deepEqual(r2.fmf_auto_route, {
+          picked: r2.model,
+          strategy: 'capability',
+        });
+        assert.notEqual(r1.model, r2.model, 'two consecutive auto picks should differ');
+        const resStream = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'auto',
+            messages: [{ role: 'user', content: '你好' }],
+            stream: true,
+          },
+        });
+        assert.equal(resStream.statusCode, 200);
+        const chunkLines = resStream.body
+          .split('\n')
+          .filter((l) => l.startsWith('data: '))
+          .map((l) => {
+            try {
+              return JSON.parse(l.slice(6));
+            } catch {
+              return null;
+            }
+          })
+          .filter((c) => c !== null && c.type !== 'upstream_error');
+        const chunkWithRoute = chunkLines.find((c) => c.fmf_auto_route !== undefined);
+        assert.ok(chunkWithRoute, 'stream chunk should carry fmf_auto_route');
+        assert.equal(
+          (chunkWithRoute?.fmf_auto_route as { strategy: string }).strategy,
+          'capability',
+        );
+      },
+    );
+  });
+
   it('routes auto image intent to configured imageModel', async () => {
     await withApp(
       {
