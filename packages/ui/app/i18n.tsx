@@ -258,6 +258,11 @@ const zh: Dict = {
   'settings.autoRoute.textTiers.complex': '复杂（推理/代码/数学）',
   'settings.autoRoute.textTiers.complexPh': '例如 custom:grok:gpt-5.5',
 
+  'modelMultiSelect.placeholder': '选择模型…',
+  'modelMultiSelect.clear': '清空',
+  'modelMultiSelect.empty': '无匹配模型',
+  'modelMultiSelect.selected': '已选 {count} 个',
+
   'settings.section.gateway': '对外接口',
   'settings.section.gateway.desc.server': '公网地址用于调用，当前管理地址仅供 Tailscale 使用',
   'settings.section.gateway.desc.local': '让其他工具通过 OpenAI 兼容协议调用本地网关',
@@ -719,6 +724,11 @@ const en: Dict = {
   'settings.autoRoute.textTiers.mediumPh': 'e.g. custom:grok:gpt-4o',
   'settings.autoRoute.textTiers.complex': 'Complex (reasoning / code / math)',
   'settings.autoRoute.textTiers.complexPh': 'e.g. custom:grok:gpt-5.5',
+
+  'modelMultiSelect.placeholder': 'Select models…',
+  'modelMultiSelect.clear': 'Clear',
+  'modelMultiSelect.empty': 'No matching models',
+  'modelMultiSelect.selected': '{count} selected',
 
   'settings.section.gateway': 'External API',
   'settings.section.gateway.desc.server':
