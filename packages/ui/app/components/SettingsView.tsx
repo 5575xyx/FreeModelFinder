@@ -44,6 +44,7 @@ type CustomSourceDef = {
   apiKey?: string;
   hasKey?: boolean;
   models: CustomModelDef[];
+  keyMeta?: Array<{ id: string; hint: string }>;
 };
 
 type ConfigRes = {
@@ -55,6 +56,7 @@ type ConfigRes = {
       enabled: boolean;
       hasKey: boolean;
       keyCount?: number;
+      keyMeta?: Array<{ id: string; hint: string }>;
       credentialError?: string;
     }
   >;
@@ -115,7 +117,8 @@ export function SettingsView({
 }) {
   const { t } = useI18n();
   const [cfg, setCfg] = useState<ConfigRes | null>(null);
-  const [keys, setKeys] = useState<Record<string, string>>({});
+  const [keyDrafts, setKeyDrafts] = useState<Record<string, string[]>>({});
+  const [_srcKeyDrafts, _setSrcKeyDrafts] = useState<Record<string, string[]>>({});
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
   const [toast, setToast] = useState<Toast>(null);
@@ -337,25 +340,28 @@ export function SettingsView({
   }
 
   async function save(providerId: string) {
-    const raw = keys[providerId] ?? '';
-    const apiKeys = raw
-      .split(/[\s,;|]+/)
-      .map((k) => k.trim())
-      .filter(Boolean);
-    if (!apiKeys.length) return;
+    const appendKeys = (keyDrafts[providerId] ?? []).map((k) => k.trim()).filter(Boolean);
+    if (!appendKeys.length) return;
     setSaveStates((s) => ({ ...s, [providerId]: 'saving' }));
     try {
+      const state = cfg?.providers[providerId];
+      const hasSavedKeys =
+        !!state?.hasKey || (state?.keyMeta?.length ?? 0) > 0 || (state?.keyCount ?? 0) > 0;
       const res = await fetch(
         `${GATEWAY}/api/providers`,
         withUiHeaders({
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            provider: providerId,
-            apiKey: apiKeys[0],
-            apiKeys,
-            enabled: true,
-          }),
+          body: JSON.stringify(
+            hasSavedKeys
+              ? { provider: providerId, appendKeys, enabled: true }
+              : {
+                  provider: providerId,
+                  apiKey: appendKeys[0],
+                  apiKeys: appendKeys,
+                  enabled: true,
+                },
+          ),
         }),
       );
       if (res.ok) {
@@ -363,7 +369,7 @@ export function SettingsView({
           kind: 'success',
           text: t('settings.sources.savedToast', { provider: providerId }),
         });
-        setKeys((k) => ({ ...k, [providerId]: '' }));
+        setKeyDrafts((d) => ({ ...d, [providerId]: [] }));
         setSaveStates((s) => ({ ...s, [providerId]: 'saved' }));
         setTimeout(() => setSaveStates((s) => ({ ...s, [providerId]: 'idle' })), 1600);
         fetch(`${GATEWAY}/api/config`, withUiHeaders())
@@ -413,6 +419,32 @@ export function SettingsView({
       });
       setSaveStates((s) => ({ ...s, [providerId]: 'error' }));
       setTimeout(() => setSaveStates((s) => ({ ...s, [providerId]: 'idle' })), 1800);
+    }
+  }
+
+  async function removeProviderKey(providerId: string, index: number) {
+    setSaveStates((s) => ({ ...s, [providerId]: 'saving' }));
+    try {
+      const res = await fetch(
+        `${GATEWAY}/api/providers`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ provider: providerId, removeKeyIndex: index }),
+        }),
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      fetch(`${GATEWAY}/api/config`, withUiHeaders())
+        .then((r) => r.json())
+        .then(setCfg);
+      setSaveStates((s) => ({ ...s, [providerId]: 'idle' }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setToast({
+        kind: 'error',
+        text: t('settings.sources.saveFailed', { provider: providerId, detail: `: ${msg}` }),
+      });
+      setSaveStates((s) => ({ ...s, [providerId]: 'idle' }));
     }
   }
 
@@ -1574,6 +1606,10 @@ export function SettingsView({
               const labelKey = providerLabelKey(p.id);
               const displayLabel = labelKey ? t(labelKey) : p.label;
               const displayHint = t(providerHintKey(p.id));
+              const savedKeyCount = state?.keyMeta?.length ?? state?.keyCount ?? 0;
+              const storedDrafts = keyDrafts[p.id];
+              const draftRows: string[] =
+                storedDrafts && storedDrafts.length > 0 ? storedDrafts : [''];
               return (
                 <div
                   key={p.id}
@@ -1627,67 +1663,126 @@ export function SettingsView({
                         </p>
                       )}
                     </div>
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <div className="relative flex-1">
-                        <input
-                          type={isVisible ? 'text' : 'password'}
-                          className="w-full rounded-md border border-input bg-surface px-3 py-2 pr-9 font-mono text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
-                          placeholder={
-                            state?.hasKey
-                              ? t('settings.sources.pasteExisting')
-                              : t('settings.sources.pastePlaceholder')
-                          }
-                          value={keys[p.id] ?? ''}
-                          onChange={(e) => setKeys((k) => ({ ...k, [p.id]: e.target.value }))}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && keys[p.id]) {
-                              e.preventDefault();
-                              void save(p.id);
+                    <div className="flex flex-col gap-2">
+                      {(state?.keyMeta ?? []).map((row, idx) => (
+                        <div
+                          key={row.id}
+                          className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
+                        >
+                          <code className="flex-1 truncate font-mono text-xs text-foreground">
+                            {row.hint}
+                          </code>
+                          <span className="sr-only">
+                            {t('settings.sources.keyRow', { n: idx + 1, hint: row.hint })}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void removeProviderKey(p.id, idx)}
+                            disabled={saveState === 'saving'}
+                            aria-label={t('settings.sources.removeKey', { n: idx + 1 })}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                          >
+                            <Trash2 size={13} strokeWidth={1.75} />
+                          </button>
+                        </div>
+                      ))}
+                      {draftRows.map((draft, di) => (
+                        <div key={`draft-${di}`} className="relative">
+                          <input
+                            type={isVisible ? 'text' : 'password'}
+                            className="w-full rounded-md border border-input bg-surface px-3 py-2 pr-16 font-mono text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+                            placeholder={t('settings.sources.pastePlaceholder')}
+                            value={draft}
+                            onChange={(e) =>
+                              setKeyDrafts((d) => {
+                                const list = [...(d[p.id] ?? [])];
+                                list[di] = e.target.value;
+                                return { ...d, [p.id]: list };
+                              })
                             }
-                          }}
-                          aria-label={t('settings.providerApiKeyAria', { provider: displayLabel })}
-                          autoComplete="off"
-                          spellCheck={false}
-                        />
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && draft.trim()) {
+                                e.preventDefault();
+                                void save(p.id);
+                              }
+                            }}
+                            aria-label={t('settings.providerApiKeyAria', {
+                              provider: displayLabel,
+                            })}
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setVisible((v) => ({ ...v, [p.id]: !v[p.id] }))}
+                            aria-label={isVisible ? t('settings.hideKey') : t('settings.showKey')}
+                            className="absolute right-8 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {isVisible ? (
+                              <EyeOff size={13} strokeWidth={1.75} />
+                            ) : (
+                              <Eye size={13} strokeWidth={1.75} />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setKeyDrafts((d) => ({
+                                ...d,
+                                [p.id]: (d[p.id] ?? []).filter((_, i) => i !== di),
+                              }))
+                            }
+                            aria-label={t('settings.sources.removeKey', {
+                              n: savedKeyCount + di + 1,
+                            })}
+                            className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <X size={13} strokeWidth={1.75} />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {savedKeyCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setKeyDrafts((d) => ({ ...d, [p.id]: [...(d[p.id] ?? []), ''] }))
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <Plus size={12} strokeWidth={2} />
+                            {t('settings.sources.addKey')}
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => setVisible((v) => ({ ...v, [p.id]: !v[p.id] }))}
-                          aria-label={isVisible ? t('settings.hideKey') : t('settings.showKey')}
-                          className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {isVisible ? (
-                            <EyeOff size={13} strokeWidth={1.75} />
-                          ) : (
-                            <Eye size={13} strokeWidth={1.75} />
+                          className={classNames(
+                            'inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            saveState === 'error'
+                              ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                              : saveState === 'saved'
+                                ? 'bg-success text-primary-foreground'
+                                : 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground',
                           )}
+                          onClick={() => void save(p.id)}
+                          disabled={
+                            !(keyDrafts[p.id] ?? []).some((k) => k.trim()) || saveState === 'saving'
+                          }
+                        >
+                          {saveState === 'saving' && (
+                            <Loader2 size={13} strokeWidth={2} className="animate-spin" />
+                          )}
+                          {saveState === 'saved' && <Check size={13} strokeWidth={2} />}
+                          {saveState === 'error' && <X size={13} strokeWidth={2} />}
+                          {saveState === 'saving'
+                            ? t('settings.sources.saving')
+                            : saveState === 'saved'
+                              ? t('settings.sources.saved')
+                              : saveState === 'error'
+                                ? t('settings.sources.retry')
+                                : t('settings.sources.save')}
                         </button>
                       </div>
-                      <button
-                        type="button"
-                        className={classNames(
-                          'inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                          saveState === 'error'
-                            ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                            : saveState === 'saved'
-                              ? 'bg-success text-primary-foreground'
-                              : 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground',
-                        )}
-                        onClick={() => void save(p.id)}
-                        disabled={!keys[p.id] || saveState === 'saving'}
-                      >
-                        {saveState === 'saving' && (
-                          <Loader2 size={13} strokeWidth={2} className="animate-spin" />
-                        )}
-                        {saveState === 'saved' && <Check size={13} strokeWidth={2} />}
-                        {saveState === 'error' && <X size={13} strokeWidth={2} />}
-                        {saveState === 'saving'
-                          ? t('settings.sources.saving')
-                          : saveState === 'saved'
-                            ? t('settings.sources.saved')
-                            : saveState === 'error'
-                              ? t('settings.sources.retry')
-                              : t('settings.sources.save')}
-                      </button>
                     </div>
                   </div>
                 </div>
