@@ -698,6 +698,11 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       ) {
         return reply.code(400).send({ error: 'source key ops require provider "custom"' });
       }
+      if (providerId === 'custom' && (appendKeys !== undefined || removeKeyIndex !== undefined)) {
+        return reply
+          .code(400)
+          .send({ error: 'appendKeys/removeKeyIndex not supported for provider "custom"' });
+      }
       const appendSourceKeyList =
         appendSourceKeys && Array.isArray(appendSourceKeys.keys)
           ? appendSourceKeys.keys

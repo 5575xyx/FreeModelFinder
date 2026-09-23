@@ -346,6 +346,24 @@ describe('multi-key management', () => {
     assert.equal(badRemove.statusCode, 400);
   });
 
+  it('rejects provider-level key ops for custom provider', async () => {
+    const append = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: { provider: 'custom', appendKeys: ['sk-x'] },
+    });
+    assert.equal(append.statusCode, 400);
+
+    const remove = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: { provider: 'custom', removeKeyIndex: 0 },
+    });
+    assert.equal(remove.statusCode, 400);
+  });
+
   it('lets clearCredentials win over append and remove', async () => {
     const res = await app.inject({
       method: 'POST',
