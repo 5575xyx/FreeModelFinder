@@ -199,6 +199,18 @@ function classifyTextComplexity(text: string): TextTier {
   return 'simple';
 }
 
+async function findImageModelId(reg: ProviderRegistry): Promise<string | null> {
+  try {
+    const { models } = await reg.listAllModels();
+    const byId = models.find((m) => /image/i.test(m.id.split(':').pop() ?? m.id));
+    if (byId) return byId.id;
+    const byCap = models.find((m) => m.capabilities?.includes('image'));
+    return byCap ? byCap.id : null;
+  } catch {
+    return null;
+  }
+}
+
 export function registerOpenAIRoutes(
   app: FastifyInstance,
   getRegistry: () => ProviderRegistry,
@@ -295,12 +307,23 @@ export function registerOpenAIRoutes(
       const chatReq = openAIToChatRequest(body);
 
       // Auto-route: detect modality from request content when model is "auto"
+      let forcedImageModality = false;
       if (chatReq.model === 'auto' || chatReq.model === 'default') {
         const cfg = reg.getConfig();
         const ar = cfg.autoRoute;
         const detectedModality = detectRequestModality(body.messages);
-        if (detectedModality === 'image' && ar?.imageModel) {
-          chatReq.model = ar.imageModel;
+        if (detectedModality === 'image') {
+          if (ar?.imageModel) {
+            chatReq.model = ar.imageModel;
+            forcedImageModality = true;
+          } else {
+            const discovered = await findImageModelId(reg);
+            if (discovered) {
+              chatReq.model = discovered;
+              forcedImageModality = true;
+            }
+            // 未发现则保持 auto → 原文本链路
+          }
         } else if (detectedModality === 'video' && ar?.videoModel) {
           chatReq.model = ar.videoModel;
         } else if (detectedModality === 'text' && ar?.textTiers) {
@@ -315,7 +338,7 @@ export function registerOpenAIRoutes(
       const rawModelId = chatReq.model.split(':').pop() ?? chatReq.model;
       const inferredCaps: ('text' | 'image' | 'video')[] = /video/i.test(rawModelId)
         ? ['video']
-        : /image/i.test(rawModelId)
+        : /image/i.test(rawModelId) || forcedImageModality
           ? ['image']
           : [];
 
