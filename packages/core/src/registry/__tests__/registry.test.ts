@@ -241,3 +241,105 @@ describe('ProviderRegistry model catalog', () => {
     assert.deepEqual(result.failedProviders, [{ id: 'gemini', error: 'temporarily offline' }]);
   });
 });
+
+describe('ProviderRegistry auto scored pool', () => {
+  function poolConfig(autoRoute?: AppConfig['autoRoute']): AppConfig {
+    return {
+      version: 1,
+      port: 11435,
+      providers: { openrouter: { enabled: true, credentials: { apiKey: 'k' } } },
+      autoRoute,
+    };
+  }
+
+  function catalogRegistry(models: ModelInfo[], autoRoute?: AppConfig['autoRoute']) {
+    const registry = new ProviderRegistry(poolConfig(autoRoute));
+    const fakeProvider = {
+      id: 'openrouter' as const,
+      displayName: 'Fake',
+      listModels: async () => models,
+    } as unknown as BaseProvider;
+    const internals = registry as unknown as {
+      instances: Map<ProviderId, BaseProvider>;
+    };
+    internals.instances.set('openrouter', fakeProvider);
+    return registry;
+  }
+
+  const bigModel: ModelInfo = {
+    id: 'big-70b',
+    provider: 'openrouter',
+    displayName: 'Big',
+    free: true,
+  };
+  const smallModel: ModelInfo = {
+    id: 'tiny-3b',
+    provider: 'openrouter',
+    displayName: 'Small',
+    free: true,
+  };
+  const midModel: ModelInfo = {
+    id: 'mid-14b',
+    provider: 'openrouter',
+    displayName: 'Mid',
+    free: true,
+  };
+
+  async function fill(registry: ProviderRegistry) {
+    await registry.listAllModels(true);
+  }
+
+  it('round-robins across the scored pool for auto', async () => {
+    const registry = catalogRegistry([smallModel, bigModel, midModel]);
+    await fill(registry);
+    const picks = new Set<string>();
+    for (let i = 0; i < 3; i++) picks.add(registry.resolveModel('auto').modelId);
+    assert.deepEqual([...picks].sort(), ['big-70b', 'mid-14b', 'tiny-3b'].sort());
+  });
+
+  it('skips cooling-down members and shrinks the pool', async () => {
+    const registry = catalogRegistry([smallModel, bigModel, midModel]);
+    await fill(registry);
+    registry.getAutoRouter().markRateLimited('big-70b', 'openrouter', {
+      isRateLimit: true,
+      resetAt: Date.now() + 60_000,
+      message: 'rpm',
+    });
+    const a = registry.resolveModel('auto').modelId;
+    const b = registry.resolveModel('auto').modelId;
+    assert.notEqual(a, b);
+    assert.ok(a === 'mid-14b' || a === 'tiny-3b');
+    assert.ok(b === 'mid-14b' || b === 'tiny-3b');
+  });
+
+  it('falls back to the first catalog model when the whole pool is cooling', async () => {
+    const registry = catalogRegistry([smallModel, bigModel, midModel]);
+    await fill(registry);
+    const router = registry.getAutoRouter();
+    for (const m of [bigModel, midModel, smallModel]) {
+      router.markRateLimited(m.id, 'openrouter', {
+        isRateLimit: true,
+        resetAt: Date.now() + 60_000,
+        message: 'rpm',
+      });
+    }
+    assert.equal(registry.resolveModel('auto').modelId, smallModel.id);
+  });
+
+  it('recomputes the pool when strategy changes', async () => {
+    const registry = catalogRegistry([smallModel, bigModel, midModel], {
+      enabled: false,
+      strategy: 'speed',
+    });
+    await fill(registry);
+    const pick = registry.resolveModel('auto').modelId;
+    assert.ok(pick === 'tiny-3b' || pick === 'mid-14b' || pick === 'big-70b');
+  });
+
+  it('default resolves defaultModel first (regression)', async () => {
+    const registry = catalogRegistry([smallModel, bigModel]);
+    registry.updateConfig({ ...registry.getConfig(), defaultModel: 'openrouter:big-70b' });
+    await fill(registry);
+    assert.equal(registry.resolveModel('default').modelId, 'big-70b');
+  });
+});
