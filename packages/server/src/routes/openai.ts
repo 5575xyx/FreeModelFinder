@@ -212,6 +212,16 @@ async function findImageModelId(reg: ProviderRegistry): Promise<string | null> {
   }
 }
 
+const modalityCursor = new Map<string, number>();
+
+function nextFromPool(slot: string, pool: string[]): string | undefined {
+  if (!pool.length) return undefined;
+  const cursor = modalityCursor.get(slot) ?? 0;
+  const pick = pool[cursor % pool.length]!;
+  modalityCursor.set(slot, (cursor + 1) % pool.length);
+  return pick;
+}
+
 export function registerOpenAIRoutes(
   app: FastifyInstance,
   getRegistry: () => ProviderRegistry,
@@ -315,7 +325,7 @@ export function registerOpenAIRoutes(
         const detectedModality = detectRequestModality(body.messages);
         if (detectedModality === 'image') {
           const pool = asModelList(ar?.imageModel);
-          const picked = pool[0];
+          const picked = nextFromPool('image', pool);
           if (picked) {
             chatReq.model = picked;
             forcedImageModality = true;
@@ -328,13 +338,15 @@ export function registerOpenAIRoutes(
             // 未发现则保持 auto → 原文本链路
           }
         } else if (detectedModality === 'video') {
-          const videoPool = asModelList(ar?.videoModel);
-          if (videoPool[0]) chatReq.model = videoPool[0];
+          const pool = asModelList(ar?.videoModel);
+          const picked = nextFromPool('video', pool);
+          if (picked) chatReq.model = picked;
         } else if (detectedModality === 'text' && ar?.textTiers) {
           const prompt = chatReq.messages.map((m) => m.content).join('\n');
           const tier = classifyTextComplexity(prompt);
-          const tierPool = asModelList(ar.textTiers[tier]);
-          if (tierPool[0]) chatReq.model = tierPool[0];
+          const pool = asModelList(ar.textTiers[tier]);
+          const picked = nextFromPool(`text:${tier}`, pool);
+          if (picked) chatReq.model = picked;
         }
       }
 
