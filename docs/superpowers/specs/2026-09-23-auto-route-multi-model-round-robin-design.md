@@ -48,8 +48,11 @@ textTiers?: {
 
 ## 能力过滤（UI 选项）
 
-- 数据源：SettingsView 新增拉取 `GET ${GATEWAY}/v1/models`（`ModelsResponse`），与 Finder/ImageGenerator/Tester 同源。
-- 选项值：`modelValue(item)`（`provider:id`，与 `ImageGeneratorView`/`TesterView` 一致），配置里存完整路由 id（如 `custom:grok:claude-sonnet-4-6`）。
+- **数据源 = 本地已添加模型目录（合并），打开下拉绝不调用厂商 `listModels` / `listAllModels(true)`。**
+  1. registry 内存缓存 `modelsCache`（若有且未过期则直接用）；否则读本地 `models-snapshot.json`（`loadSnapshot()`），不触发上游刷新。
+  2. 自定义源 config 里已添加的 `sources[].models`（`GET /api/config` 已返回），id 形如 `custom:<sourceId>:<modelId>`（与现有路由 id 一致时直接并入；若仅裸 id 则按 `custom:<sourceId>:<id>` 规范化后并入，去重）。
+- 实现建议：server 增加轻量 `GET /api/auto-route/model-options`（或复用现有管理端点），**只读本地缓存/快照 + config 自定义源**，返回带 `capabilities`/`displayName` 的列表；UI 下拉只打这个端点，不打 `/v1/models`（避免 `listAllModels` 缓存过期后打厂商）。
+- 选项值：完整路由 id（与 `modelValue` / 现有 autoRoute 配置格式一致）。
 - 已选 id 不在当前列表（模型下线）时仍显示为已选项，避免静默丢配置。
 
 | 档位     | 过滤规则                                                                             |
@@ -57,6 +60,8 @@ textTiers?: {
 | 图片     | `capabilities` 含 `image`，或裸 id 匹配 `/image/i`（与 `findImageModelId` 一致）     |
 | 视频     | `capabilities` 含 `video`，或裸 id 匹配 `/video/i`                                   |
 | 文本三档 | 有 `text` 能力、无 `capabilities`、或裸 id 不落入 image/video 关键字（保留通用模型） |
+
+快照条目若无 `capabilities`，仅按裸 id 关键字过滤；自定义源模型无 capabilities 时同样按 id 关键字 + 默认视为可进文本档。
 
 ## UI
 
