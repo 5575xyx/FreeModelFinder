@@ -51,6 +51,119 @@ describe('SettingsView', () => {
     expect(mainSources.every((s) => !('apiKey' in s))).toBe(true);
   });
 
+  it('adds a key draft and saves with appendKeys', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            openrouter: {
+              enabled: true,
+              hasKey: true,
+              keyCount: 1,
+              keyMeta: [{ id: 'k0', hint: '…abcd' }],
+            },
+          },
+        }),
+      ),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    expect(await screen.findByText('…abcd')).toBeTruthy();
+    const providerKey = await screen.findByLabelText(/OpenRouter API Key/);
+    const controls = providerKey.parentElement?.parentElement;
+    expect(controls).not.toBeNull();
+    await user.click(within(controls!).getByRole('button', { name: '添加 Key' }));
+    const input = screen.getByLabelText(/OpenRouter API Key/);
+    await user.type(input, 'brand-new-key');
+    await user.click(within(controls!).getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    expect(writes[0]).toMatchObject({
+      provider: 'openrouter',
+      appendKeys: ['brand-new-key'],
+    });
+    expect(writes[0]).not.toHaveProperty('apiKeys');
+  });
+
+  it('removes a saved provider key via removeKeyIndex', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            openrouter: {
+              enabled: true,
+              hasKey: true,
+              keyCount: 1,
+              keyMeta: [{ id: 'k0', hint: '…abcd' }],
+            },
+          },
+        }),
+      ),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    expect(await screen.findByText('…abcd')).toBeTruthy();
+    const providerKey = await screen.findByLabelText(/OpenRouter API Key/);
+    const controls = providerKey.parentElement?.parentElement;
+    expect(controls).not.toBeNull();
+    await user.click(within(controls!).getByRole('button', { name: '删除 Key 1' }));
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    expect(writes[0]).toMatchObject({ provider: 'openrouter', removeKeyIndex: 0 });
+  });
+
+  it('re-entry guard: double Enter produces a single appendKeys write', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            openrouter: {
+              enabled: true,
+              hasKey: true,
+              keyCount: 1,
+              keyMeta: [{ id: 'k0', hint: '…abcd' }],
+            },
+          },
+        }),
+      ),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    expect(await screen.findByText('…abcd')).toBeTruthy();
+    const providerKey = await screen.findByLabelText(/OpenRouter API Key/);
+    const controls = providerKey.parentElement?.parentElement;
+    expect(controls).not.toBeNull();
+    await user.type(providerKey, 'double-enter-key');
+    await user.keyboard('{Enter}');
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(writes.length).toBe(1);
+    expect(writes[0]).toMatchObject({
+      provider: 'openrouter',
+      appendKeys: ['double-enter-key'],
+    });
+  });
+
   it('generates and displays a gateway key', async () => {
     let gatewayLoaded = false;
     server.use(

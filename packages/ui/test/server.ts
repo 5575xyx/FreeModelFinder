@@ -25,8 +25,8 @@ export const configPayload = {
   port: 11435,
   defaultModel: 'openrouter:fixture-model',
   providers: {
-    openrouter: { enabled: false, hasKey: false },
-    gemini: { enabled: false, hasKey: false },
+    openrouter: { enabled: false, hasKey: false, keyCount: 0, keyMeta: [] },
+    gemini: { enabled: false, hasKey: false, keyCount: 0, keyMeta: [] },
   },
   onboarding: {
     completedAt: 1_700_000_000_000,
@@ -43,6 +43,7 @@ export const configPayload = {
         label: 'Fixture Source',
         baseUrl: 'https://fixture.invalid/v1',
         hasKey: true,
+        keyMeta: [{ id: 'k0', hint: '…a1b2' }],
         models: [{ id: 'custom-model', displayName: 'Custom Model' }],
       },
     ],
