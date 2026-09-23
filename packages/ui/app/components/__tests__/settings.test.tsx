@@ -358,4 +358,53 @@ describe('matchesCapability', () => {
   it('no filter matches everything', () => {
     expect(matchesCapability(legacy)).toBe(true);
   });
+
+  it('empty caps text filter: image/video-like names excluded, neutral kept', () => {
+    expect(matchesCapability({ id: 'custom:x:sora-image', provider: 'custom' }, 'text')).toBe(
+      false,
+    );
+    expect(matchesCapability({ id: 'custom:x:legacy', provider: 'custom' }, 'text')).toBe(true);
+    expect(matchesCapability({ id: 'custom:x:video-clip', provider: 'custom' }, 'text')).toBe(
+      false,
+    );
+  });
+
+  it('image filter: hasCaps takes priority over name', () => {
+    expect(
+      matchesCapability(
+        { id: 'custom:x:image-gen', provider: 'custom', capabilities: ['text'] },
+        'image',
+      ),
+    ).toBe(false);
+    expect(
+      matchesCapability(
+        { id: 'custom:x:mystery', provider: 'custom', capabilities: ['image'] },
+        'image',
+      ),
+    ).toBe(true);
+  });
+
+  it('video filter: empty caps falls back to name regex', () => {
+    expect(matchesCapability({ id: 'custom:x:movie-video', provider: 'custom' }, 'video')).toBe(
+      true,
+    );
+    expect(matchesCapability({ id: 'custom:x:plain-chat', provider: 'custom' }, 'video')).toBe(
+      false,
+    );
+  });
+
+  it('video filter: hasCaps checks video capability', () => {
+    expect(
+      matchesCapability(
+        { id: 'custom:x:v1', provider: 'custom', capabilities: ['video'] },
+        'video',
+      ),
+    ).toBe(true);
+    expect(
+      matchesCapability(
+        { id: 'custom:x:i1', provider: 'custom', capabilities: ['image'] },
+        'video',
+      ),
+    ).toBe(false);
+  });
 });
