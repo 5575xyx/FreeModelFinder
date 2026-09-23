@@ -300,7 +300,7 @@ export class ProviderRegistry {
         return { provider: this.getProvider(first.provider), modelId: first.id };
       }
       throw new Error(
-        'no default model available; set a default model or wait for /v1/models to load',
+        'no model available for `auto`; wait for /v1/models to load or set a default model',
       );
     }
     const sep = modelId.indexOf(':');
@@ -392,8 +392,11 @@ export class ProviderRegistry {
   }
 
   /**
-   * auto 文本兜底：按策略给可用模型打分，取 Top-3 池，池内轮询，
-   * 冷却成员实时过滤（filter 版，非循环跳过）。池全冷却/无缓存 → 返回 null（调用方兜底）。
+   * auto 文本兜底：按策略给可用模型打分，取 Top-3 池，池内轮询
+   * （autoPoolCursor 游标在池内循环，池变化时游标取模重置）。
+   * 候选实时过滤被限流的 provider/model（filter 而非循环跳过）。
+   * 池全冷却、无缓存或无候选 → 返回 null，由 resolveModel 回退到
+   * modelsCache 首项或抛出 "no model available for `auto`" 错误。
    */
   private pickFromScoredPool(): { provider: BaseProvider; modelId: string } | null {
     const cached = this.modelsCache?.models;

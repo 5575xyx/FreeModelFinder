@@ -373,6 +373,7 @@ describe('ProviderRegistry auto scored pool', () => {
   });
 
   it('default resolves defaultModel first (regression)', async () => {
+    resetAutoPoolCursor();
     const registry = catalogRegistry([smallModel, bigModel]);
     registry.updateConfig({ ...registry.getConfig(), defaultModel: 'openrouter:big-70b' });
     // updateConfig clears modelsCache; re-prime without touching providers
@@ -385,6 +386,6 @@ describe('ProviderRegistry auto scored pool', () => {
 
   it('auto throws when no provider catalog is available', () => {
     const registry = catalogRegistry([], undefined);
-    assert.throws(() => registry.resolveModel('auto'), /no default model available/);
+    assert.throws(() => registry.resolveModel('auto'), /no model available/);
   });
 });
