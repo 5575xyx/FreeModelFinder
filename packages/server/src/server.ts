@@ -565,6 +565,8 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         enabled?: boolean;
         baseUrl?: string;
         clearCredentials?: boolean;
+        appendKeys?: string[];
+        removeKeyIndex?: number;
         models?: Array<{ id: string; displayName?: string; contextWindow?: number }>;
         sources?: Array<{
           id: string;
@@ -573,10 +575,24 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           apiKey?: string;
           models?: Array<{ id: string; displayName?: string; contextWindow?: number }>;
         }>;
+        appendSourceKeys?: { sourceId: string; keys: string[] };
+        removeSourceKey?: { sourceId: string; index: number };
       };
     }>('/api/providers', async (req, reply) => {
-      const { provider, apiKey, apiKeys, enabled, baseUrl, clearCredentials, models, sources } =
-        req.body ?? {};
+      const {
+        provider,
+        apiKey,
+        apiKeys,
+        enabled,
+        baseUrl,
+        clearCredentials,
+        models,
+        sources,
+        appendKeys,
+        removeKeyIndex,
+        appendSourceKeys,
+        removeSourceKey,
+      } = req.body ?? {};
       if (!provider) return reply.code(400).send({ error: 'provider required' });
       const parsedProvider = ProviderIdSchema.safeParse(provider);
       if (!parsedProvider.success || parsedProvider.data === 'ollama') {
@@ -662,6 +678,80 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             })
             .filter((s): s is NonNullable<typeof s> => !!s)
         : undefined;
+      const cleanAppendKeys = Array.isArray(appendKeys)
+        ? appendKeys.map((k) => (typeof k === 'string' ? k.trim() : '')).filter((k) => !!k)
+        : undefined;
+      if (appendKeys !== undefined && (!cleanAppendKeys || cleanAppendKeys.length === 0)) {
+        return reply.code(400).send({ error: 'appendKeys must be non-empty' });
+      }
+      if (
+        removeKeyIndex !== undefined &&
+        (typeof removeKeyIndex !== 'number' ||
+          !Number.isInteger(removeKeyIndex) ||
+          removeKeyIndex < 0)
+      ) {
+        return reply.code(400).send({ error: 'removeKeyIndex must be a non-negative integer' });
+      }
+      if (
+        (appendSourceKeys !== undefined || removeSourceKey !== undefined) &&
+        providerId !== 'custom'
+      ) {
+        return reply.code(400).send({ error: 'source key ops require provider "custom"' });
+      }
+      const appendSourceKeyList =
+        appendSourceKeys && Array.isArray(appendSourceKeys.keys)
+          ? appendSourceKeys.keys
+              .map((k) => (typeof k === 'string' ? k.trim() : ''))
+              .filter((k) => !!k)
+          : undefined;
+      if (
+        appendSourceKeys !== undefined &&
+        (typeof appendSourceKeys.sourceId !== 'string' ||
+          !appendSourceKeys.sourceId.trim() ||
+          !appendSourceKeyList ||
+          appendSourceKeyList.length === 0)
+      ) {
+        return reply.code(400).send({ error: 'appendSourceKeys invalid' });
+      }
+      if (
+        removeSourceKey !== undefined &&
+        (typeof removeSourceKey.sourceId !== 'string' ||
+          !removeSourceKey.sourceId.trim() ||
+          typeof removeSourceKey.index !== 'number' ||
+          !Number.isInteger(removeSourceKey.index) ||
+          removeSourceKey.index < 0)
+      ) {
+        return reply.code(400).send({ error: 'removeSourceKey invalid' });
+      }
+      const curCfg = getRegistry().getConfig();
+      if (removeKeyIndex !== undefined && providerId !== 'custom') {
+        const pool = providerKeyPool(curCfg.providers[providerId]?.credentials);
+        if (removeKeyIndex >= pool.length) {
+          return reply.code(400).send({ error: 'removeKeyIndex out of range' });
+        }
+      }
+      if (removeSourceKey || appendSourceKeys) {
+        const customExtra = (curCfg.providers.custom?.credentials?.extra ?? {}) as {
+          sources?: Array<{ id?: string; apiKey?: string | string[] }>;
+        };
+        const list = Array.isArray(customExtra.sources) ? customExtra.sources : [];
+        if (removeSourceKey) {
+          const target = list.find((s) => s?.id === removeSourceKey.sourceId);
+          if (!target) {
+            return reply.code(404).send({ error: `unknown source: ${removeSourceKey.sourceId}` });
+          }
+          const pool = sourceKeyPool(target.apiKey);
+          if (removeSourceKey.index >= pool.length) {
+            return reply.code(400).send({ error: 'removeSourceKey index out of range' });
+          }
+        }
+        if (appendSourceKeys) {
+          const target = list.find((s) => s?.id === appendSourceKeys.sourceId);
+          if (!target) {
+            return reply.code(404).send({ error: `unknown source: ${appendSourceKeys.sourceId}` });
+          }
+        }
+      }
       try {
         const next = await updateConfig((cfg) => {
           const cur = (cfg.providers[providerId] ?? { enabled: false }) as {
@@ -692,6 +782,37 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             } else if (cleanModels !== undefined) {
               nextExtra.models = cleanModels;
             }
+            if (removeSourceKey || appendSourceKeys) {
+              const list = Array.isArray(nextExtra.sources)
+                ? (nextExtra.sources as Array<{
+                    id: string;
+                    apiKey?: string | string[];
+                    label?: string;
+                    baseUrl: string;
+                    models?: Array<{ id: string }>;
+                  }>)
+                : [];
+              if (removeSourceKey) {
+                const idx = list.findIndex((s) => s.id === removeSourceKey.sourceId);
+                if (idx >= 0) {
+                  const pool = sourceKeyPool(list[idx]?.apiKey);
+                  if (removeSourceKey.index < pool.length) {
+                    const nextPool = pool.filter((_, i) => i !== removeSourceKey.index);
+                    if (nextPool.length === 0) delete list[idx]!.apiKey;
+                    else list[idx]!.apiKey = nextPool.length === 1 ? nextPool[0] : nextPool;
+                    nextExtra.sources = list;
+                  }
+                }
+              }
+              if (appendSourceKeys) {
+                const idx = list.findIndex((s) => s.id === appendSourceKeys.sourceId);
+                if (idx >= 0 && appendSourceKeyList?.length) {
+                  const pool = [...sourceKeyPool(list[idx]?.apiKey), ...appendSourceKeyList];
+                  list[idx]!.apiKey = pool.length === 1 ? pool[0] : pool;
+                  nextExtra.sources = list;
+                }
+              }
+            }
             const topKey =
               cleanApiKey ?? cur.credentials?.apiKeys?.[0] ?? cur.credentials?.apiKey ?? '';
             const topApiKeys =
@@ -716,32 +837,54 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             ...prevExtra,
             ...(cleanModels !== undefined ? { models: cleanModels } : {}),
           };
-          const nextApiKeys =
+          let nextApiKeys =
             cleanApiKeys !== undefined
               ? cleanApiKeys
               : cleanApiKey
                 ? [cleanApiKey]
-                : cur.credentials?.apiKeys;
+                : (cur.credentials?.apiKeys ??
+                  (cur.credentials?.apiKey ? [cur.credentials.apiKey] : undefined));
+          if (removeKeyIndex !== undefined && !shouldClear) {
+            const base = nextApiKeys ?? providerKeyPool(cur.credentials);
+            if (removeKeyIndex < base.length) {
+              nextApiKeys = base.filter((_, i) => i !== removeKeyIndex);
+            }
+          }
+          if (cleanAppendKeys?.length && !shouldClear) {
+            nextApiKeys = [...(nextApiKeys ?? []), ...cleanAppendKeys];
+          }
+          const removeEmptiedKeys =
+            removeKeyIndex !== undefined &&
+            !shouldClear &&
+            Array.isArray(nextApiKeys) &&
+            nextApiKeys.length === 0;
           const nextKey = nextApiKeys?.[0] ?? cleanApiKey ?? '';
           cfg.providers[providerId] = {
             ...cur,
             enabled: enabled ?? cur.enabled,
             credentials: shouldClear
               ? undefined
-              : nextKey || (nextApiKeys?.length ?? 0) > 0
+              : removeEmptiedKeys
                 ? {
-                    apiKey: nextKey,
-                    ...(nextApiKeys?.length ? { apiKeys: nextApiKeys } : {}),
+                    apiKey: '',
                     baseUrl: cleanBaseUrl ?? cur.credentials?.baseUrl,
                     extra: nextExtra,
                   }
-                : cur.credentials
+                : nextKey || (nextApiKeys?.length ?? 0) > 0
                   ? {
-                      ...cur.credentials,
-                      baseUrl: cleanBaseUrl !== undefined ? cleanBaseUrl : cur.credentials.baseUrl,
+                      apiKey: nextKey,
+                      ...(nextApiKeys?.length ? { apiKeys: nextApiKeys } : {}),
+                      baseUrl: cleanBaseUrl ?? cur.credentials?.baseUrl,
                       extra: nextExtra,
                     }
-                  : undefined,
+                  : cur.credentials
+                    ? {
+                        ...cur.credentials,
+                        baseUrl:
+                          cleanBaseUrl !== undefined ? cleanBaseUrl : cur.credentials.baseUrl,
+                        extra: nextExtra,
+                      }
+                    : undefined,
           };
           return cfg;
         });
