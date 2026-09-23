@@ -30,7 +30,7 @@ export class SiliconFlowProvider extends OpenAICompatibleProvider {
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    const headers = { authorization: `Bearer ${this.ctx.credentials.apiKey}` };
+    const headers = { authorization: `Bearer ${this.nextKey()}` };
 
     // Always hit the unfiltered endpoint. The `sub_type=chat` filter has been
     // observed to intermittently drop free chat models due to upstream

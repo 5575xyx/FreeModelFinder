@@ -29,7 +29,38 @@ export abstract class BaseProvider {
   abstract readonly id: ProviderId;
   abstract readonly displayName: string;
 
+  private keyCursor = 0;
+
   constructor(protected ctx: ProviderContext) {}
+
+  /**
+   * Round-robin over `credentials.apiKeys` (falling back to the legacy single
+   * `apiKey`). Each call advances the cursor so consecutive requests spread
+   * across the pool.
+   */
+  protected nextKey(): string {
+    const key = this.optionalKey();
+    if (!key) {
+      throw new Error(`${this.id} API key not configured`);
+    }
+    this.keyCursor = (this.keyCursor + 1) % Math.max(this.keyPool().length, 1);
+    return key;
+  }
+
+  private keyPool(): string[] {
+    const cred = this.ctx.credentials;
+    const pool = (cred?.apiKeys?.filter((k) => !!k?.trim()) ?? []).slice();
+    if (pool.length === 0 && cred?.apiKey?.trim()) pool.push(cred.apiKey.trim());
+    return pool;
+  }
+
+  /** First usable key without advancing the round-robin cursor. */
+  protected optionalKey(): string | undefined {
+    const pool = this.keyPool();
+    if (pool.length === 0) return undefined;
+    const key = pool[this.keyCursor % pool.length];
+    return key?.trim() || pool[0];
+  }
 
   protected get fetch(): typeof fetch {
     return this.ctx.fetchImpl ?? globalThis.fetch;
@@ -63,6 +94,8 @@ export abstract class BaseProvider {
 }
 
 export function requireKey(cred: ProviderCredentials | undefined, provider: string): string {
+  const pool = cred?.apiKeys?.filter((k) => !!k?.trim()) ?? [];
+  if (pool.length > 0) return pool[0]!.trim();
   if (!cred?.apiKey) {
     throw new Error(`${provider} API key not configured`);
   }

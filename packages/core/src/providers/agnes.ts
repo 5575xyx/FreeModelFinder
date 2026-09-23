@@ -89,7 +89,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
   async listModels(): Promise<ModelInfo[]> {
     try {
       const res = await this.fetch(`${this.baseUrl()}/models`, {
-        headers: { authorization: `Bearer ${this.ctx.credentials.apiKey}` },
+        headers: { authorization: `Bearer ${this.nextKey()}` },
       });
       if (res.ok) {
         const data = (await res.json()) as { data: AgnesModel[] };
@@ -131,7 +131,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
   }
 
   override async generateImage(req: ImageGenerationRequest): Promise<ImageGenerationResponse> {
-    const key = this.ctx.credentials.apiKey;
+    const key = this.nextKey();
     if (!key) throw new Error('agnes API key not configured');
 
     const body: Record<string, unknown> = {
@@ -161,7 +161,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
   }
 
   override async generateVideo(req: VideoGenerationRequest): Promise<VideoGenerationResponse> {
-    const key = this.ctx.credentials.apiKey;
+    const key = this.nextKey();
     if (!key) throw new Error('agnes API key not configured');
 
     const modelId = (req.model || '').split(':').pop() ?? req.model;
@@ -250,7 +250,7 @@ export class AgnesProvider extends OpenAICompatibleProvider {
   }
 
   override async queryVideoStatus(videoId: string): Promise<VideoGenerationResponse> {
-    const key = this.ctx.credentials.apiKey;
+    const key = this.nextKey();
     if (!key) throw new Error('agnes API key not configured');
 
     const res = await this.fetch(

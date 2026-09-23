@@ -6,7 +6,7 @@ import type {
   ProviderId,
   StreamChunk,
 } from '../types.js';
-import { BaseProvider, requireKey } from './base.js';
+import { BaseProvider } from './base.js';
 
 interface GeminiContentPart {
   text: string;
@@ -104,7 +104,7 @@ export class GeminiProvider extends BaseProvider {
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    const key = requireKey(this.ctx.credentials, this.id);
+    const key = this.nextKey();
     const res = await this.fetch(`${this.baseUrl()}/models?key=${encodeURIComponent(key)}`);
     if (!res.ok) throw new Error(`gemini list models failed: ${res.status}`);
     const data = (await res.json()) as {
@@ -146,7 +146,7 @@ export class GeminiProvider extends BaseProvider {
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {
-    const key = requireKey(this.ctx.credentials, this.id);
+    const key = this.nextKey();
     const url = `${this.baseUrl()}/models/${encodeURIComponent(req.model)}:generateContent?key=${encodeURIComponent(key)}`;
     const res = this.observeResponse(
       req.model,
@@ -179,7 +179,7 @@ export class GeminiProvider extends BaseProvider {
   }
 
   async *stream(req: ChatRequest): AsyncIterable<StreamChunk> {
-    const key = requireKey(this.ctx.credentials, this.id);
+    const key = this.nextKey();
     const url = `${this.baseUrl()}/models/${encodeURIComponent(req.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`;
     const res = this.observeResponse(
       req.model,

@@ -86,6 +86,17 @@ export const defaultHandlers = [
       ok: true,
       hasKey: true,
       apiKey: 'fmf-generated-key',
+      keys: [
+        {
+          id: 'key-1',
+          label: null,
+          key: 'fmf-generated-key',
+          createdAt: 1_700_000_000_000,
+          expiresAt: null,
+          dailyRequestLimit: null,
+          dailyTokenLimit: null,
+        },
+      ],
       requireAuth: true,
     }),
   ),

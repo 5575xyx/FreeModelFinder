@@ -36,7 +36,7 @@ export class OpenRouterProvider extends OpenAICompatibleProvider {
     const [res, keyResult] = await Promise.all([
       this.fetch(`${this.baseUrl()}/models?output_modalities=text`),
       this.fetch(`${this.baseUrl()}/key`, {
-        headers: { authorization: `Bearer ${this.ctx.credentials.apiKey}` },
+        headers: { authorization: `Bearer ${this.nextKey()}` },
       }).catch(() => null),
     ]);
     if (!res.ok) throw new Error(`openrouter list models failed: ${res.status}`);

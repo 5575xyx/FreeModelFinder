@@ -5,10 +5,12 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import {
+  CallLogger,
   ProviderIdSchema,
   ProviderRegistry,
   loadConfig,
   updateConfig,
+  type GatewayKeyEntry,
 } from '@freemodelfinder/core';
 import { registerOpenAIRoutes } from './routes/openai.js';
 import { registerAnthropicRoutes } from './routes/anthropic.js';
@@ -177,6 +179,32 @@ function generateApiKey(): string {
   return `fmf-${randomBytes(24).toString('base64url')}`;
 }
 
+function generateKeyId(): string {
+  return `key-${randomBytes(6).toString('hex')}`;
+}
+
+function activeGatewayKeys(
+  gateway: { apiKey?: string; keys?: GatewayKeyEntry[] } | undefined,
+): GatewayKeyEntry[] {
+  if (gateway?.keys?.length) return gateway.keys;
+  if (gateway?.apiKey) return [{ id: 'default', key: gateway.apiKey, createdAt: 0 }];
+  return [];
+}
+
+function findMatchingGatewayKey(
+  provided: string | null,
+  keys: GatewayKeyEntry[],
+): GatewayKeyEntry | null {
+  if (!provided) return null;
+  const now = Date.now();
+  for (const entry of keys) {
+    if (!entry.key) continue;
+    if (entry.expiresAt && entry.expiresAt < now) continue;
+    if (keyMatches(provided, entry.key)) return entry;
+  }
+  return null;
+}
+
 function normalizeHttpsOrigin(value: string, label: string): string {
   let url: URL;
   try {
@@ -198,26 +226,37 @@ async function enforceServerGatewayAuth(
   persist: boolean,
 ): Promise<void> {
   const current = registry.getConfig();
-  if (current.gateway?.apiKey && current.gateway.requireAuth) return;
+  const hasKey =
+    activeGatewayKeys(current.gateway).length > 0 || !!current.gateway?.keys?.some((k) => k.key);
+  if (hasKey && current.gateway?.requireAuth) return;
   if (!persist) {
+    const key = generateApiKey();
     registry.updateConfig({
       ...current,
       gateway: {
         ...current.gateway,
-        apiKey: current.gateway?.apiKey || generateApiKey(),
+        apiKey: current.gateway?.apiKey || key,
+        keys: current.gateway?.keys?.length
+          ? current.gateway.keys
+          : [{ id: generateKeyId(), key, createdAt: Date.now() }],
         requireAuth: true,
       },
     });
     return;
   }
-  const next = await updateConfig((cfg) => ({
-    ...cfg,
-    gateway: {
+  const next = await updateConfig((cfg) => {
+    const existing = activeGatewayKeys(cfg.gateway);
+    const key = cfg.gateway?.apiKey || existing[0]?.key || generateApiKey();
+    cfg.gateway = {
       ...cfg.gateway,
-      apiKey: cfg.gateway?.apiKey || generateApiKey(),
+      apiKey: key,
+      keys: cfg.gateway?.keys?.length
+        ? cfg.gateway.keys
+        : [{ id: generateKeyId(), key, createdAt: Date.now() }],
       requireAuth: true,
-    },
-  }));
+    };
+    return cfg;
+  });
   registry.updateConfig(next);
 }
 
@@ -232,6 +271,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           'req.headers.x-goog-api-key',
           'req.headers.x-fmf-control-token',
           'req.body.apiKey',
+          'req.body.apiKeys',
           'req.body.credential.apiKey',
           'req.body.sources[*].apiKey',
         ],
@@ -262,6 +302,12 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
   }
 
   const getRegistry = () => opts.state.registry;
+  const callLogger = new CallLogger();
+  callLogger.cleanup().catch(() => {});
+
+  app.addHook('onClose', async () => {
+    await callLogger.flush();
+  });
 
   if (opts.ownsWatcher) {
     const watcher = new ModelWatcher({
@@ -299,17 +345,41 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
     if (opts.surface === 'gateway' && !isPublicGatewayRoute(req.method, url)) return;
     if (!PROTECTED_PREFIXES.some((p) => url.startsWith(p))) return;
     const gateway = getRegistry().getConfig().gateway;
-    if (opts.surface !== 'gateway' && (!gateway?.requireAuth || !gateway.apiKey)) return;
+    const hasAnyKey = activeGatewayKeys(gateway).length > 0;
+    if (opts.surface !== 'gateway' && (!gateway?.requireAuth || !hasAnyKey)) return;
     if (opts.surface !== 'gateway' && isTrustedUiRequest(req, opts.adminOrigin)) return;
     const provided = extractBearer(req);
-    if (keyMatches(provided, gateway?.apiKey)) return;
-    reply.code(401).send({
-      error: {
-        message: 'Missing or invalid API key. Include `Authorization: Bearer <key>`.',
-        type: 'invalid_request_error',
-        code: 'invalid_api_key',
-      },
-    });
+    const matchedKey = findMatchingGatewayKey(provided, activeGatewayKeys(gateway));
+    if (!matchedKey) {
+      return reply.code(401).send({
+        error: {
+          message: 'Missing or invalid API key. Include `Authorization: Bearer <key>`.',
+          type: 'invalid_request_error',
+          code: 'invalid_api_key',
+        },
+      });
+    }
+    if (matchedKey.dailyRequestLimit || matchedKey.dailyTokenLimit) {
+      const usage = await callLogger.usageForGatewayKey(matchedKey.id);
+      if (matchedKey.dailyRequestLimit && usage.requests >= matchedKey.dailyRequestLimit) {
+        return reply.code(429).send({
+          error: {
+            message: `Daily request limit reached for this key (${matchedKey.dailyRequestLimit}/day).`,
+            type: 'rate_limit_error',
+            code: 'daily_request_limit',
+          },
+        });
+      }
+      if (matchedKey.dailyTokenLimit && usage.tokens >= matchedKey.dailyTokenLimit) {
+        return reply.code(429).send({
+          error: {
+            message: `Daily token limit reached for this key (${matchedKey.dailyTokenLimit}/day).`,
+            type: 'rate_limit_error',
+            code: 'daily_token_limit',
+          },
+        });
+      }
+    }
   });
 
   app.get('/healthz', async () => ({
@@ -399,6 +469,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           label?: string;
           baseUrl: string;
           hasKey?: boolean;
+          apiKey?: string | string[];
           models?: Array<{ id: string; displayName?: string; contextWindow?: number }>;
         }>;
         models?: Array<{ id: string; displayName?: string; contextWindow?: number }>;
@@ -412,7 +483,9 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             id: String(s.id ?? ''),
             label: s.label ?? '',
             baseUrl: String(s.baseUrl ?? ''),
-            hasKey: !!(s as { apiKey?: string }).apiKey,
+            hasKey: !!(Array.isArray(s.apiKey)
+              ? s.apiKey.some((x) => typeof x === 'string' && x)
+              : s.apiKey),
             models: Array.isArray(s.models) ? s.models : [],
           }))
         : legacyBaseUrl
@@ -437,6 +510,9 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             {
               enabled: s?.enabled ?? false,
               hasKey: !!s?.credentials?.apiKey,
+              keyCount:
+                (s?.credentials?.apiKeys?.filter((k) => !!k?.trim()) ?? []).length ||
+                (s?.credentials?.apiKey ? 1 : 0),
               credentialError: s?.credentialError,
             },
           ]),
@@ -461,6 +537,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       Body: {
         provider: string;
         apiKey?: string;
+        apiKeys?: string[];
         enabled?: boolean;
         baseUrl?: string;
         clearCredentials?: boolean;
@@ -474,7 +551,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         }>;
       };
     }>('/api/providers', async (req, reply) => {
-      const { provider, apiKey, enabled, baseUrl, clearCredentials, models, sources } =
+      const { provider, apiKey, apiKeys, enabled, baseUrl, clearCredentials, models, sources } =
         req.body ?? {};
       if (!provider) return reply.code(400).send({ error: 'provider required' });
       const parsedProvider = ProviderIdSchema.safeParse(provider);
@@ -482,7 +559,17 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         return reply.code(400).send({ error: `unsupported provider: ${provider}` });
       }
       const providerId = parsedProvider.data;
-      const cleanApiKey = typeof apiKey === 'string' ? apiKey.trim() : apiKey;
+      const cleanApiKeys = Array.isArray(apiKeys)
+        ? (apiKeys
+            .map((k) => (typeof k === 'string' ? k.trim() : ''))
+            .filter((k) => !!k) as string[])
+        : undefined;
+      const cleanApiKey =
+        cleanApiKeys !== undefined
+          ? (cleanApiKeys[0] ?? '')
+          : typeof apiKey === 'string'
+            ? apiKey.trim()
+            : apiKey;
       const cleanBaseUrl = typeof baseUrl === 'string' ? baseUrl.trim() : baseUrl;
       const cleanModels = Array.isArray(models)
         ? models
@@ -505,7 +592,16 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
               const id = typeof s?.id === 'string' ? s.id.trim() : '';
               const bu = typeof s?.baseUrl === 'string' ? s.baseUrl.trim() : '';
               if (!id || !bu) return null;
-              const key = typeof s?.apiKey === 'string' ? s.apiKey.trim() : '';
+              const rawKey = s?.apiKey;
+              let key: string | string[] | undefined;
+              if (Array.isArray(rawKey)) {
+                const keys = rawKey
+                  .map((k) => (typeof k === 'string' ? k.trim() : ''))
+                  .filter((k) => !!k);
+                if (keys.length) key = keys.length === 1 ? keys[0] : keys;
+              } else if (typeof rawKey === 'string' && rawKey.trim()) {
+                key = rawKey.trim();
+              }
               const label =
                 typeof s?.label === 'string' && s.label.trim() ? s.label.trim() : undefined;
               const modelsList = Array.isArray(s?.models)
@@ -527,7 +623,16 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
                 id,
                 label,
                 baseUrl: bu.replace(/\/$/, ''),
-                apiKey: key || undefined,
+                ...(Array.isArray(rawKey)
+                  ? (() => {
+                      const keys = rawKey
+                        .map((k) => (typeof k === 'string' ? k.trim() : ''))
+                        .filter((k) => !!k);
+                      return keys.length ? { apiKey: keys.length === 1 ? keys[0] : keys } : {};
+                    })()
+                  : key
+                    ? { apiKey: key }
+                    : {}),
                 models: modelsList,
               };
             })
@@ -539,6 +644,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             enabled: boolean;
             credentials?: {
               apiKey: string;
+              apiKeys?: string[];
               baseUrl?: string;
               extra?: Record<string, unknown>;
             };
@@ -562,13 +668,19 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             } else if (cleanModels !== undefined) {
               nextExtra.models = cleanModels;
             }
-            const topKey = cleanApiKey ?? cur.credentials?.apiKey ?? '';
+            const topKey =
+              cleanApiKey ?? cur.credentials?.apiKeys?.[0] ?? cur.credentials?.apiKey ?? '';
+            const topApiKeys =
+              cleanApiKeys !== undefined
+                ? cleanApiKeys
+                : (cur.credentials?.apiKeys ?? (topKey ? [topKey] : []));
             const topBaseUrl = cleanBaseUrl !== undefined ? cleanBaseUrl : cur.credentials?.baseUrl;
             cfg.providers[providerId] = {
               ...cur,
               enabled: enabled ?? cur.enabled,
               credentials: {
-                apiKey: topKey,
+                apiKey: topApiKeys[0] ?? topKey,
+                ...(topApiKeys.length ? { apiKeys: topApiKeys } : {}),
                 baseUrl: topBaseUrl,
                 extra: nextExtra,
               },
@@ -580,14 +692,22 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             ...prevExtra,
             ...(cleanModels !== undefined ? { models: cleanModels } : {}),
           };
+          const nextApiKeys =
+            cleanApiKeys !== undefined
+              ? cleanApiKeys
+              : cleanApiKey
+                ? [cleanApiKey]
+                : cur.credentials?.apiKeys;
+          const nextKey = nextApiKeys?.[0] ?? cleanApiKey ?? '';
           cfg.providers[providerId] = {
             ...cur,
             enabled: enabled ?? cur.enabled,
             credentials: shouldClear
               ? undefined
-              : cleanApiKey
+              : nextKey || (nextApiKeys?.length ?? 0) > 0
                 ? {
-                    apiKey: cleanApiKey,
+                    apiKey: nextKey,
+                    ...(nextApiKeys?.length ? { apiKeys: nextApiKeys } : {}),
                     baseUrl: cleanBaseUrl ?? cur.credentials?.baseUrl,
                     extra: nextExtra,
                   }
@@ -733,12 +853,54 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       return { ok: true, cooldowns: router.listCooldowns() };
     });
 
+    app.get<{
+      Querystring: {
+        limit?: string;
+        model?: string;
+        provider?: string;
+        status?: string;
+        kind?: string;
+        since?: string;
+      };
+    }>('/api/logs', async (req) => {
+      const q = req.query ?? {};
+      const data = await callLogger.list({
+        limit: q.limit ? Number(q.limit) : undefined,
+        model: q.model,
+        provider: q.provider,
+        status:
+          q.status === 'success' || q.status === 'error' || q.status === 'rate_limited'
+            ? q.status
+            : undefined,
+        kind: q.kind === 'chat' || q.kind === 'image' || q.kind === 'video' ? q.kind : undefined,
+        since: q.since ? Number(q.since) : undefined,
+      });
+      return { data };
+    });
+
+    app.get<{ Querystring: { range?: string } }>('/api/stats', async (req) => {
+      const rangeRaw = req.query?.range;
+      const range =
+        rangeRaw === '7d' || rangeRaw === '30d' || rangeRaw === 'all' ? rangeRaw : 'today';
+      return await callLogger.aggregate(range);
+    });
+
     app.get('/api/gateway', async () => {
       const cfg = getRegistry().getConfig();
       const gw = cfg.gateway ?? {};
+      const keys = activeGatewayKeys(gw);
       return {
-        hasKey: !!gw.apiKey,
-        apiKey: gw.apiKey ?? null,
+        hasKey: keys.length > 0,
+        apiKey: gw.apiKey ?? keys[0]?.key ?? null,
+        keys: keys.map((k) => ({
+          id: k.id,
+          label: k.label ?? null,
+          key: k.key,
+          createdAt: k.createdAt,
+          expiresAt: k.expiresAt ?? null,
+          dailyRequestLimit: k.dailyRequestLimit ?? null,
+          dailyTokenLimit: k.dailyTokenLimit ?? null,
+        })),
         requireAuth: !!gw.requireAuth,
         port: opts.mode === 'server' ? opts.gatewayPort : cfg.port,
         mode: opts.mode,
@@ -749,57 +911,131 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       };
     });
 
-    app.post<{ Body: { action?: 'generate' | 'revoke' | 'update'; requireAuth?: boolean } }>(
-      '/api/gateway',
-      async (req, reply) => {
-        const { action, requireAuth } = req.body ?? {};
-        if (opts.mode === 'server' && (action === 'revoke' || requireAuth === false)) {
+    app.post<{
+      Body: {
+        action?: 'generate' | 'revoke' | 'update' | 'create' | 'delete';
+        requireAuth?: boolean;
+        id?: string;
+        label?: string;
+        expiresAt?: number | null;
+        dailyRequestLimit?: number | null;
+        dailyTokenLimit?: number | null;
+      };
+    }>('/api/gateway', async (req, reply) => {
+      const { action, requireAuth, id, label, expiresAt, dailyRequestLimit, dailyTokenLimit } =
+        req.body ?? {};
+      if (opts.mode === 'server' && (action === 'revoke' || requireAuth === false)) {
+        return reply.code(409).send({
+          error: 'gateway authentication is mandatory in server mode; rotate the key instead',
+        });
+      }
+      if (opts.mode === 'server' && action === 'delete' && id) {
+        const currentKeys = activeGatewayKeys(getRegistry().getConfig().gateway);
+        if (currentKeys.length <= 1) {
           return reply.code(409).send({
-            error: 'gateway authentication is mandatory in server mode; rotate the key instead',
+            error: 'cannot delete the last gateway key in server mode',
           });
         }
-        const next = await updateConfig((cfg) => {
-          const cur = cfg.gateway ?? {};
-          let apiKey = cur.apiKey;
-          if (action === 'generate') {
-            apiKey = generateApiKey();
-          } else if (action === 'revoke') {
-            apiKey = undefined;
-          }
-          cfg.gateway = {
-            ...cur,
-            apiKey,
-            requireAuth:
-              opts.mode === 'server'
-                ? true
-                : typeof requireAuth === 'boolean'
-                  ? requireAuth
-                  : action === 'revoke'
-                    ? false
-                    : action === 'generate'
-                      ? (cur.requireAuth ?? true)
-                      : cur.requireAuth,
+      }
+      const next = await updateConfig((cfg) => {
+        const cur = cfg.gateway ?? {};
+        const keys = [...activeGatewayKeys(cur)];
+        let requireAuthNext = cur.requireAuth;
+        if (action === 'generate' || action === 'create') {
+          const entry: GatewayKeyEntry = {
+            id: generateKeyId(),
+            key: generateApiKey(),
+            createdAt: Date.now(),
+            ...(label ? { label } : {}),
+            ...(typeof expiresAt === 'number' && expiresAt > 0 ? { expiresAt } : {}),
+            ...(typeof dailyRequestLimit === 'number' && dailyRequestLimit > 0
+              ? { dailyRequestLimit }
+              : {}),
+            ...(typeof dailyTokenLimit === 'number' && dailyTokenLimit > 0
+              ? { dailyTokenLimit }
+              : {}),
           };
-          return cfg;
-        });
-        getRegistry().updateConfig(next, { preserveModels: true });
-        const gw = next.gateway ?? {};
-        return {
-          ok: true,
-          hasKey: !!gw.apiKey,
-          apiKey: gw.apiKey ?? null,
-          requireAuth: !!gw.requireAuth,
-          mode: opts.mode,
-          adminPort: opts.adminPort,
-          gatewayPort: opts.gatewayPort,
-          publicBaseUrl: opts.publicUrl ?? null,
-          authLocked: opts.mode === 'server',
+          keys.push(entry);
+          if (action === 'generate') requireAuthNext = cur.requireAuth ?? true;
+        } else if (action === 'delete' && id) {
+          const idx = keys.findIndex((k) => k.id === id);
+          if (idx >= 0) keys.splice(idx, 1);
+        } else if (action === 'revoke') {
+          keys.length = 0;
+          requireAuthNext = false;
+        } else if (action === 'update' && id) {
+          const entry = keys.find((k) => k.id === id);
+          if (entry) {
+            if (typeof label === 'string') entry.label = label;
+            entry.expiresAt =
+              typeof expiresAt === 'number' && expiresAt > 0 ? expiresAt : undefined;
+            entry.dailyRequestLimit =
+              typeof dailyRequestLimit === 'number' && dailyRequestLimit > 0
+                ? dailyRequestLimit
+                : undefined;
+            entry.dailyTokenLimit =
+              typeof dailyTokenLimit === 'number' && dailyTokenLimit > 0
+                ? dailyTokenLimit
+                : undefined;
+          }
+        }
+        if (action === 'update' && typeof requireAuth === 'boolean' && !id) {
+          requireAuthNext = opts.mode === 'server' ? true : requireAuth;
+        } else if (action === 'generate') {
+          requireAuthNext =
+            opts.mode === 'server'
+              ? true
+              : typeof requireAuth === 'boolean'
+                ? requireAuth
+                : (requireAuthNext ?? true);
+        }
+        cfg.gateway = {
+          ...cur,
+          // Keep legacy apiKey synced with the first key for backward compat.
+          apiKey: keys[0]?.key,
+          keys,
+          requireAuth: opts.mode === 'server' ? true : requireAuthNext,
         };
-      },
-    );
+        return cfg;
+      });
+      if (opts.mode === 'server' && action === 'delete' && id) {
+        const remaining = activeGatewayKeys(next.gateway);
+        if (remaining.length === 0) {
+          return reply.code(409).send({
+            error: 'cannot delete the last gateway key in server mode',
+          });
+        }
+      }
+      getRegistry().updateConfig(next, { preserveModels: true });
+      const gw = next.gateway ?? {};
+      const keys = activeGatewayKeys(gw);
+      return {
+        ok: true,
+        hasKey: keys.length > 0,
+        apiKey: gw.apiKey ?? keys[0]?.key ?? null,
+        keys: keys.map((k) => ({
+          id: k.id,
+          label: k.label ?? null,
+          key: k.key,
+          createdAt: k.createdAt,
+          expiresAt: k.expiresAt ?? null,
+          dailyRequestLimit: k.dailyRequestLimit ?? null,
+          dailyTokenLimit: k.dailyTokenLimit ?? null,
+        })),
+        requireAuth: !!gw.requireAuth,
+        mode: opts.mode,
+        adminPort: opts.adminPort,
+        gatewayPort: opts.gatewayPort,
+        publicBaseUrl: opts.publicUrl ?? null,
+        authLocked: opts.mode === 'server',
+      };
+    });
   }
 
-  registerOpenAIRoutes(app, getRegistry, { includeManagement: opts.surface !== 'gateway' });
+  registerOpenAIRoutes(app, getRegistry, {
+    includeManagement: opts.surface !== 'gateway',
+    callLogger,
+  });
   registerAnthropicRoutes(app, getRegistry);
   registerGeminiRoutes(app, getRegistry);
 

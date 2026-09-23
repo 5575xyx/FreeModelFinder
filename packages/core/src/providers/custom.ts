@@ -42,6 +42,8 @@ export class CustomProvider extends BaseProvider {
   readonly id: ProviderId = 'custom';
   readonly displayName = 'Custom (自定义)';
 
+  private sourceCursors = new Map<string, number>();
+
   private loadSources(): CustomSource[] {
     const extra = (this.ctx.credentials.extra ?? {}) as {
       sources?: unknown;
@@ -66,7 +68,9 @@ export class CustomProvider extends BaseProvider {
       {
         id: 'default',
         label: 'Custom',
-        baseUrl: /\/v1\/?$/.test(legacyBaseUrl) ? legacyBaseUrl.replace(/\/$/, '') : `${legacyBaseUrl.replace(/\/$/, '')}/v1`,
+        baseUrl: /\/v1\/?$/.test(legacyBaseUrl)
+          ? legacyBaseUrl.replace(/\/$/, '')
+          : `${legacyBaseUrl.replace(/\/$/, '')}/v1`,
         apiKey: legacyKey || undefined,
         models: legacyModels,
       },
@@ -94,10 +98,27 @@ export class CustomProvider extends BaseProvider {
     return { sourceId: modelId.slice(0, sep), realModel: modelId.slice(sep + 1) };
   }
 
+  private sourceKeyPool(source: CustomSource): string[] {
+    const raw = source.apiKey;
+    const list = Array.isArray(raw) ? raw : typeof raw === 'string' && raw.trim() ? [raw] : [];
+    return list
+      .map((k) => (typeof k === 'string' ? k.trim() : ''))
+      .filter((k) => !!k && k !== 'sk-none');
+  }
+
+  private nextSourceKey(source: CustomSource): string | undefined {
+    const pool = this.sourceKeyPool(source);
+    if (pool.length === 0) return undefined;
+    const cursor = this.sourceCursors.get(source.id) ?? 0;
+    const key = pool[cursor % pool.length];
+    this.sourceCursors.set(source.id, (cursor + 1) % pool.length);
+    return key;
+  }
+
   private buildHeaders(source: CustomSource): Record<string, string> {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
-    const key = source.apiKey?.trim();
-    if (key && key !== 'sk-none') {
+    const key = this.nextSourceKey(source);
+    if (key) {
       headers['authorization'] = `Bearer ${key}`;
     }
     return headers;
@@ -233,12 +254,21 @@ function normalizeSource(input: Partial<CustomSource> | undefined): CustomSource
         typeof m?.contextWindow === 'number' && m.contextWindow > 0 ? m.contextWindow : undefined,
     }))
     .filter((m) => m.id);
+  const rawKey = input.apiKey;
+  let apiKey: string | string[] | undefined;
+  if (Array.isArray(rawKey)) {
+    const keys = rawKey.map((k) => (typeof k === 'string' ? k.trim() : '')).filter((k) => !!k);
+    if (keys.length) apiKey = keys.length === 1 ? keys[0] : keys;
+  } else if (typeof rawKey === 'string' && rawKey.trim()) {
+    apiKey = rawKey.trim();
+  }
   return {
     id,
     label: typeof input.label === 'string' && input.label.trim() ? input.label.trim() : undefined,
-    baseUrl: /\/v1\/?$/.test(baseUrl) ? baseUrl.replace(/\/$/, '') : `${baseUrl.replace(/\/$/, '')}/v1`,
-    apiKey:
-      typeof input.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : undefined,
+    baseUrl: /\/v1\/?$/.test(baseUrl)
+      ? baseUrl.replace(/\/$/, '')
+      : `${baseUrl.replace(/\/$/, '')}/v1`,
+    apiKey,
     models,
   };
 }

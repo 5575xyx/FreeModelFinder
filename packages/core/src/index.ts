@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './quota.js';
+export * from './call-logger.js';
 export * from './config/store.js';
 export * from './config/crypto.js';
 export * from './config/snapshot.js';

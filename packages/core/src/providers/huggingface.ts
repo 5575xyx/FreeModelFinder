@@ -59,7 +59,7 @@ export class HuggingFaceProvider extends OpenAICompatibleProvider {
 
   async listModels(): Promise<ModelInfo[]> {
     const res = await this.fetch(`${this.baseUrl()}/models`, {
-      headers: { authorization: `Bearer ${this.ctx.credentials.apiKey}` },
+      headers: { authorization: `Bearer ${this.nextKey()}` },
     });
     if (!res.ok) throw new Error(`huggingface list models failed: ${res.status}`);
     const data = (await res.json()) as { data?: HFRouterModel[] };

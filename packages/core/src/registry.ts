@@ -19,6 +19,7 @@ import {
 } from './providers/index.js';
 import type { ProviderContext } from './providers/base.js';
 import { QuotaTracker } from './quota.js';
+import { emitUsageCapture } from './call-logger.js';
 import { AutoRouter, parseRateLimitError } from './router/auto-router.js';
 import type {
   AppConfig,
@@ -123,7 +124,11 @@ export class ProviderRegistry {
     if (!settings?.enabled) {
       throw new Error(`provider ${id} is not enabled`);
     }
-    if (id !== 'custom' && !settings.credentials?.apiKey) {
+    if (
+      id !== 'custom' &&
+      !settings.credentials?.apiKey &&
+      !settings.credentials?.apiKeys?.length
+    ) {
       throw new Error(`provider ${id} is missing api key`);
     }
     if (id === 'ollama') {
@@ -134,7 +139,10 @@ export class ProviderRegistry {
     const instance = new Ctor({
       credentials,
       onResponse: (event) => this.quotaTracker.recordResponse(event),
-      onUsage: (event) => this.quotaTracker.recordUsage(event),
+      onUsage: (event) => {
+        this.quotaTracker.recordUsage(event);
+        emitUsageCapture(event.usage);
+      },
       onQuotaWindows: (event) =>
         this.quotaTracker.recordProviderWindows(event.provider, event.windows),
     });

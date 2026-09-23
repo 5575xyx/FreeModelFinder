@@ -20,7 +20,7 @@ export class GitHubModelsProvider extends OpenAICompatibleProvider {
   async listModels(): Promise<ModelInfo[]> {
     const res = await this.fetch('https://models.github.ai/catalog/models', {
       headers: {
-        authorization: `Bearer ${this.ctx.credentials.apiKey}`,
+        authorization: `Bearer ${this.nextKey()}`,
         accept: 'application/vnd.github+json',
       },
     });

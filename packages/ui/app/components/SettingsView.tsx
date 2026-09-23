@@ -54,6 +54,7 @@ type ConfigRes = {
     {
       enabled: boolean;
       hasKey: boolean;
+      keyCount?: number;
       credentialError?: string;
     }
   >;
@@ -76,9 +77,20 @@ type PingResult = {
   reply?: string;
 };
 
+type GatewayKeyInfo = {
+  id: string;
+  label: string | null;
+  key: string;
+  createdAt: number;
+  expiresAt: number | null;
+  dailyRequestLimit: number | null;
+  dailyTokenLimit: number | null;
+};
+
 type GatewayInfo = {
   hasKey: boolean;
   apiKey: string | null;
+  keys?: GatewayKeyInfo[];
   requireAuth: boolean;
   port?: number;
   mode?: 'local' | 'server';
@@ -114,10 +126,14 @@ export function SettingsView({
   const [ping, setPing] = useState<PingResult>({ state: 'idle' });
   const [gateway, setGateway] = useState<GatewayInfo | null>(null);
   const [gatewaySectionOpen, setGatewaySectionOpen] = useState(true);
-  const [gatewayKeyVisible, setGatewayKeyVisible] = useState(false);
+  const [gatewayKeyVisible, setGatewayKeyVisible] = useState<Record<string, boolean>>({});
   const [gatewayBusy, setGatewayBusy] = useState<'idle' | 'generating' | 'revoking' | 'saving'>(
     'idle',
   );
+  const [newKeyLabel, setNewKeyLabel] = useState('');
+  const [newKeyDailyRequests, setNewKeyDailyRequests] = useState('');
+  const [newKeyDailyTokens, setNewKeyDailyTokens] = useState('');
+  const [newKeyExpires, setNewKeyExpires] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
 
   const [customSectionOpen, setCustomSectionOpen] = useState(true);
@@ -172,13 +188,18 @@ export function SettingsView({
   async function saveAutoRoute(patch: Partial<AutoRouteInfo>): Promise<void> {
     setAutoRouteBusy(true);
     try {
-      const res = await fetch(`${GATEWAY}/api/auto-route`, withUiHeaders({
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(patch),
-      }));
+      const res = await fetch(
+        `${GATEWAY}/api/auto-route`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(patch),
+        }),
+      );
       if (!res.ok) throw new Error(`failed ${res.status}`);
-      const refreshed = await fetch(`${GATEWAY}/api/auto-route`, withUiHeaders()).then((r) => r.json());
+      const refreshed = await fetch(`${GATEWAY}/api/auto-route`, withUiHeaders()).then((r) =>
+        r.json(),
+      );
       setAutoRoute(refreshed);
       setToast({ kind: 'success', text: t('settings.autoRoute.saved') });
     } catch (err) {
@@ -194,12 +215,17 @@ export function SettingsView({
   async function clearAllCooldowns(): Promise<void> {
     setAutoRouteBusy(true);
     try {
-      await fetch(`${GATEWAY}/api/auto-route/clear-cooldown`, withUiHeaders({
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({}),
-      }));
-      const refreshed = await fetch(`${GATEWAY}/api/auto-route`, withUiHeaders()).then((r) => r.json());
+      await fetch(
+        `${GATEWAY}/api/auto-route/clear-cooldown`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        }),
+      );
+      const refreshed = await fetch(`${GATEWAY}/api/auto-route`, withUiHeaders()).then((r) =>
+        r.json(),
+      );
       setAutoRoute(refreshed);
     } finally {
       setAutoRouteBusy(false);
@@ -311,19 +337,27 @@ export function SettingsView({
   }
 
   async function save(providerId: string) {
-    const apiKey = keys[providerId];
-    if (!apiKey) return;
+    const raw = keys[providerId] ?? '';
+    const apiKeys = raw
+      .split(/[\s,;|]+/)
+      .map((k) => k.trim())
+      .filter(Boolean);
+    if (!apiKeys.length) return;
     setSaveStates((s) => ({ ...s, [providerId]: 'saving' }));
     try {
-      const res = await fetch(`${GATEWAY}/api/providers`, withUiHeaders({
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          provider: providerId,
-          apiKey,
-          enabled: true,
+      const res = await fetch(
+        `${GATEWAY}/api/providers`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            provider: providerId,
+            apiKey: apiKeys[0],
+            apiKeys,
+            enabled: true,
+          }),
         }),
-      }));
+      );
       if (res.ok) {
         setToast({
           kind: 'success',
@@ -458,11 +492,17 @@ export function SettingsView({
       [sourceId]: { loading: true, error: null, models: prev[sourceId]?.models ?? [] },
     }));
     try {
-      const resp = await fetch(`${GATEWAY}/api/custom/fetch-models`, withUiHeaders({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseUrl: source.baseUrl.trim(), apiKey: source.apiKey || undefined }),
-      }));
+      const resp = await fetch(
+        `${GATEWAY}/api/custom/fetch-models`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            baseUrl: source.baseUrl.trim(),
+            apiKey: source.apiKey || undefined,
+          }),
+        }),
+      );
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
         throw new Error(data.error ?? `HTTP ${resp.status}`);
@@ -527,14 +567,17 @@ export function SettingsView({
     setCustomSaveState('saving');
     try {
       const payloadSources = customSources.map((s) => {
-        const nextKey =
-          typeof s.apiKey === 'string' && s.apiKey.trim() ? s.apiKey.trim() : undefined;
+        const raw = typeof s.apiKey === 'string' ? s.apiKey.trim() : '';
+        const keys = raw
+          .split(/[\s,;|]+/)
+          .map((k) => k.trim())
+          .filter(Boolean);
         return {
           id: s.id,
           label: s.label,
           baseUrl: s.baseUrl.trim(),
           // If user did not type a new key but there was one before, keep it by omitting the field.
-          ...(nextKey !== undefined ? { apiKey: nextKey } : {}),
+          ...(keys.length ? { apiKey: keys.length === 1 ? keys[0] : keys } : {}),
           models: s.models,
         };
       });
@@ -543,11 +586,14 @@ export function SettingsView({
         enabled: true,
         sources: payloadSources,
       };
-      const res = await fetch(`${GATEWAY}/api/providers`, withUiHeaders({
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      }));
+      const res = await fetch(
+        `${GATEWAY}/api/providers`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      );
       if (!res.ok) {
         let detail = '';
         try {
@@ -590,15 +636,18 @@ export function SettingsView({
   async function clearCustomProvider() {
     setCustomSaveState('saving');
     try {
-      const res = await fetch(`${GATEWAY}/api/providers`, withUiHeaders({
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          provider: 'custom',
-          enabled: false,
-          clearCredentials: true,
+      const res = await fetch(
+        `${GATEWAY}/api/providers`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            provider: 'custom',
+            enabled: false,
+            clearCredentials: true,
+          }),
         }),
-      }));
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setToast({ kind: 'success', text: t('settings.custom.cleared') });
       setCustomSources([]);
@@ -623,11 +672,14 @@ export function SettingsView({
 
   async function callGateway(body: Record<string, unknown>): Promise<GatewayInfo | null> {
     try {
-      const res = await fetch(`${GATEWAY}/api/gateway`, withUiHeaders({
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      }));
+      const res = await fetch(
+        `${GATEWAY}/api/gateway`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as GatewayInfo;
       setGateway(data);
@@ -641,10 +693,34 @@ export function SettingsView({
 
   async function generateGatewayKey() {
     setGatewayBusy('generating');
-    const next = await callGateway({ action: 'generate' });
+    const body: Record<string, unknown> = { action: 'create' };
+    if (newKeyLabel.trim()) body.label = newKeyLabel.trim();
+    const dailyReq = Number(newKeyDailyRequests);
+    if (Number.isFinite(dailyReq) && dailyReq > 0) body.dailyRequestLimit = dailyReq;
+    const dailyTok = Number(newKeyDailyTokens);
+    if (Number.isFinite(dailyTok) && dailyTok > 0) body.dailyTokenLimit = dailyTok;
+    if (newKeyExpires) {
+      const exp = Date.parse(`${newKeyExpires}T23:59:59`);
+      if (Number.isFinite(exp) && exp > Date.now()) body.expiresAt = exp;
+    }
+    const next = await callGateway(body);
     if (next) {
-      setGatewayKeyVisible(true);
+      const created = next.keys?.[next.keys.length - 1];
+      if (created) setGatewayKeyVisible((v) => ({ ...v, [created.id]: true }));
+      setNewKeyLabel('');
+      setNewKeyDailyRequests('');
+      setNewKeyDailyTokens('');
+      setNewKeyExpires('');
       setToast({ kind: 'success', text: t('settings.gateway.generated') });
+    }
+    setGatewayBusy('idle');
+  }
+
+  async function deleteGatewayKey(id: string) {
+    setGatewayBusy('revoking');
+    const next = await callGateway({ action: 'delete', id });
+    if (next) {
+      setToast({ kind: 'success', text: t('settings.gateway.deleted') });
     }
     setGatewayBusy('idle');
   }
@@ -653,7 +729,7 @@ export function SettingsView({
     setGatewayBusy('revoking');
     const next = await callGateway({ action: 'revoke' });
     if (next) {
-      setGatewayKeyVisible(false);
+      setGatewayKeyVisible({});
       setToast({ kind: 'success', text: t('settings.gateway.revoked') });
     }
     setGatewayBusy('idle');
@@ -676,7 +752,8 @@ export function SettingsView({
   }
 
   const gatewayBaseUrl = (gateway?.publicBaseUrl || GATEWAY).replace(/\/$/, '');
-  const displayKey = gateway?.apiKey ?? '';
+  const gatewayKeys = gateway?.keys ?? [];
+  const displayKey = gateway?.apiKey ?? gatewayKeys[0]?.key ?? '';
   const curlExampleKey = displayKey || 'YOUR_API_KEY';
   const curlOpenAI = useMemo(
     () =>
@@ -1040,7 +1117,11 @@ export function SettingsView({
                   [
                     { key: 'simple', label: t('settings.autoRoute.textTiers.simple'), icon: '⚡' },
                     { key: 'medium', label: t('settings.autoRoute.textTiers.medium'), icon: '⚖️' },
-                    { key: 'complex', label: t('settings.autoRoute.textTiers.complex'), icon: '🧠' },
+                    {
+                      key: 'complex',
+                      label: t('settings.autoRoute.textTiers.complex'),
+                      icon: '🧠',
+                    },
                   ] as const
                 ).map((tier) => (
                   <div key={tier.key} className="space-y-1.5">
@@ -1229,41 +1310,132 @@ export function SettingsView({
                   {gateway?.authLocked && t('settings.gateway.locked')}
                 </label>
               </div>
-              {gateway?.hasKey && displayKey ? (
-                <div className="flex items-center gap-2 rounded-md border border-input bg-surface-muted/40 px-3 py-2">
-                  <code className="flex-1 truncate font-mono text-sm text-foreground">
-                    {gatewayKeyVisible ? displayKey : '•'.repeat(Math.min(displayKey.length, 36))}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => setGatewayKeyVisible((v) => !v)}
-                    aria-label={gatewayKeyVisible ? t('settings.hideKey') : t('settings.showKey')}
-                    className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {gatewayKeyVisible ? (
-                      <EyeOff size={13} strokeWidth={1.75} />
-                    ) : (
-                      <Eye size={13} strokeWidth={1.75} />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void copyText(displayKey, 'apiKey')}
-                    aria-label={t('settings.copy.apiKey')}
-                    className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {copied === 'apiKey' ? (
-                      <Check size={13} strokeWidth={2} className="text-success" />
-                    ) : (
-                      <Copy size={13} strokeWidth={1.75} />
-                    )}
-                  </button>
+              {gatewayKeys.length > 0 ? (
+                <div className="space-y-2">
+                  {gatewayKeys.map((entry) => {
+                    const visibleKey = !!gatewayKeyVisible[entry.id];
+                    const expired = !!entry.expiresAt && entry.expiresAt < Date.now();
+                    return (
+                      <div
+                        key={entry.id}
+                        className="rounded-md border border-border bg-surface-muted/40 px-3 py-2.5 space-y-1.5"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={classNames(
+                              'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                              expired
+                                ? 'bg-destructive/10 text-destructive'
+                                : 'bg-primary/10 text-primary',
+                            )}
+                          >
+                            {entry.label || entry.id}
+                          </span>
+                          {expired && (
+                            <span className="text-[10px] text-destructive">
+                              {t('settings.gateway.expired')}
+                            </span>
+                          )}
+                          <code className="flex-1 truncate font-mono text-xs text-foreground">
+                            {visibleKey ? entry.key : '•'.repeat(Math.min(entry.key.length, 36))}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setGatewayKeyVisible((v) => ({ ...v, [entry.id]: !visibleKey }))
+                            }
+                            aria-label={visibleKey ? t('settings.hideKey') : t('settings.showKey')}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {visibleKey ? (
+                              <EyeOff size={13} strokeWidth={1.75} />
+                            ) : (
+                              <Eye size={13} strokeWidth={1.75} />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void copyText(entry.key, `gwkey-${entry.id}`)}
+                            aria-label={t('settings.copy.apiKey')}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {copied === `gwkey-${entry.id}` ? (
+                              <Check size={13} strokeWidth={2} className="text-success" />
+                            ) : (
+                              <Copy size={13} strokeWidth={1.75} />
+                            )}
+                          </button>
+                          {!gateway?.authLocked && (
+                            <button
+                              type="button"
+                              onClick={() => void deleteGatewayKey(entry.id)}
+                              disabled={gatewayBusy !== 'idle'}
+                              aria-label={t('settings.gateway.delete')}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                            >
+                              <Trash2 size={13} strokeWidth={1.75} />
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground">
+                          <span>
+                            {t('settings.gateway.meta.requests')}:{' '}
+                            {entry.dailyRequestLimit ?? t('settings.gateway.meta.unlimited')}
+                          </span>
+                          <span>
+                            {t('settings.gateway.meta.tokens')}:{' '}
+                            {entry.dailyTokenLimit ?? t('settings.gateway.meta.unlimited')}
+                          </span>
+                          <span>
+                            {t('settings.gateway.meta.expires')}:{' '}
+                            {entry.expiresAt
+                              ? new Date(entry.expiresAt).toLocaleDateString()
+                              : t('settings.gateway.meta.never')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="rounded-md border border-dashed border-border bg-surface-muted/30 px-3 py-3 text-xs text-muted-foreground">
                   {t('settings.gateway.noKey')}
                 </div>
               )}
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  type="text"
+                  value={newKeyLabel}
+                  onChange={(e) => setNewKeyLabel(e.target.value)}
+                  placeholder={t('settings.gateway.newLabel')}
+                  className="rounded-md border border-input bg-surface px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <input
+                  type="date"
+                  value={newKeyExpires}
+                  onChange={(e) => setNewKeyExpires(e.target.value)}
+                  aria-label={t('settings.gateway.newExpires')}
+                  className="rounded-md border border-input bg-surface px-3 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <input
+                  type="number"
+                  min={1}
+                  value={newKeyDailyRequests}
+                  onChange={(e) => setNewKeyDailyRequests(e.target.value)}
+                  placeholder={t('settings.gateway.newDailyRequests')}
+                  aria-label={t('settings.gateway.newDailyRequests')}
+                  className="rounded-md border border-input bg-surface px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <input
+                  type="number"
+                  min={1}
+                  value={newKeyDailyTokens}
+                  onChange={(e) => setNewKeyDailyTokens(e.target.value)}
+                  placeholder={t('settings.gateway.newDailyTokens')}
+                  aria-label={t('settings.gateway.newDailyTokens')}
+                  className="rounded-md border border-input bg-surface px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -1276,7 +1448,7 @@ export function SettingsView({
                   ) : (
                     <RefreshCw size={13} strokeWidth={1.75} />
                   )}
-                  {gateway?.hasKey ? t('settings.gateway.regen') : t('settings.gateway.gen')}
+                  {gateway?.hasKey ? t('settings.gateway.addKey') : t('settings.gateway.gen')}
                 </button>
                 {gateway?.hasKey && !gateway.authLocked && (
                   <button
@@ -1347,7 +1519,6 @@ export function SettingsView({
           </div>
         )}
       </section>
-
       <section
         aria-label={t('settings.aria.sources')}
         className="space-y-3 rounded-lg border border-border/60 bg-section-b p-3"
@@ -1421,6 +1592,11 @@ export function SettingsView({
                           <Badge tone="neutral">
                             <Dot tone="neutral" />
                             {t('settings.sources.notConfigured')}
+                          </Badge>
+                        )}
+                        {(state?.keyCount ?? 0) > 1 && (
+                          <Badge tone="neutral">
+                            {t('settings.sources.keyCount', { n: state?.keyCount ?? 0 })}
                           </Badge>
                         )}
                       </div>
@@ -2025,9 +2201,7 @@ export function SettingsView({
                         <code className="flex-1 truncate font-mono text-sm text-foreground">
                           {modelId}
                         </code>
-                        {alreadyAdded && (
-                          <Badge tone="success">{t('settings.custom.added')}</Badge>
-                        )}
+                        {alreadyAdded && <Badge tone="success">{t('settings.custom.added')}</Badge>}
                       </li>
                     );
                   })}

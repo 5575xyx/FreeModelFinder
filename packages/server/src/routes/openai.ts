@@ -5,8 +5,13 @@ import {
   parseRateLimitError,
   scoreModel,
   streamChunkToOpenAI,
+  usageCaptureStore,
+  type CallLogEntry,
+  type CallLogger,
+  type CallStatus,
   type ChatRequest,
   type ChatResponse,
+  type GatewayKeyEntry,
   type ImageGenerationRequest,
   type OpenAIChatCompletionRequest,
   type ProviderId,
@@ -14,6 +19,50 @@ import {
   type SwitchNotice,
   type VideoGenerationRequest,
 } from '@freemodelfinder/core';
+
+function extractBearer(req: FastifyRequest): string | null {
+  const auth = req.headers['authorization'];
+  if (typeof auth === 'string' && auth.toLowerCase().startsWith('bearer ')) {
+    return auth.slice(7).trim();
+  }
+  const xKey = req.headers['x-api-key'];
+  if (typeof xKey === 'string' && xKey.trim()) return xKey.trim();
+  const googKey = req.headers['x-goog-api-key'];
+  if (typeof googKey === 'string' && googKey.trim()) return googKey.trim();
+  return null;
+}
+
+function keysEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && left.equals(right);
+}
+
+function resolveGatewayKeyId(reg: ProviderRegistry, req: FastifyRequest): string | undefined {
+  const provided = extractBearer(req);
+  if (!provided) return undefined;
+  const gw = reg.getConfig().gateway;
+  const keys: GatewayKeyEntry[] = gw?.keys?.length
+    ? gw.keys
+    : gw?.apiKey
+      ? [{ id: 'default', key: gw.apiKey, createdAt: 0 }]
+      : [];
+  const now = Date.now();
+  for (const entry of keys) {
+    if (entry.expiresAt && entry.expiresAt < now) continue;
+    if (keysEqual(provided, entry.key)) return entry.id;
+  }
+  return undefined;
+}
+
+function classifyStatus(err: unknown): { status: CallStatus; httpStatus?: number } {
+  const parsed = parseRateLimitError(err);
+  if (parsed.isRateLimit) return { status: 'rate_limited', httpStatus: 429 };
+  const msg = err instanceof Error ? err.message : String(err);
+  const match = msg.match(/failed\s+(\d{3})/i);
+  const upstream = match ? Number(match[1]) : undefined;
+  return { status: 'error', httpStatus: upstream };
+}
 
 function extractProviderIdFromError(chatReq: ChatRequest, reg: ProviderRegistry): string {
   try {
@@ -102,9 +151,7 @@ async function dispatchWithAutoRoute(
 
 type RequestModality = 'text' | 'image' | 'video';
 
-function detectRequestModality(
-  messages: OpenAIChatCompletionRequest['messages'],
-): RequestModality {
+function detectRequestModality(messages: OpenAIChatCompletionRequest['messages']): RequestModality {
   const VIDEO_KEYWORDS =
     /\b(生成|制作|创建|做一段?|来一段?|画一段?)(视频|动画|短片|影片|动态|视频片段)\b/i;
   for (const msg of messages) {
@@ -142,8 +189,33 @@ function classifyTextComplexity(text: string): TextTier {
 export function registerOpenAIRoutes(
   app: FastifyInstance,
   getRegistry: () => ProviderRegistry,
-  options: { includeManagement?: boolean } = {},
+  options: { includeManagement?: boolean; callLogger?: CallLogger } = {},
 ) {
+  const callLogger = options.callLogger;
+
+  const record = (
+    req: FastifyRequest,
+    t0: number,
+    fields: Omit<CallLogEntry, 'ts' | 'latencyMs' | 'gatewayKeyId'> &
+      Partial<Pick<CallLogEntry, 'gatewayKeyId'>>,
+  ): void => {
+    if (!callLogger) return;
+    callLogger.record({
+      ...fields,
+      ts: Date.now(),
+      latencyMs: Date.now() - t0,
+      gatewayKeyId: fields.gatewayKeyId ?? resolveGatewayKeyId(getRegistry(), req),
+    });
+  };
+
+  const resolvePM = (reg: ProviderRegistry, model: string): { provider: string; model: string } => {
+    try {
+      return { provider: reg.resolveModel(model).provider.id, model };
+    } catch {
+      return { provider: 'unknown', model };
+    }
+  };
+
   app.get('/v1/models', async (_req, reply) => {
     const reg = getRegistry();
     const { models, succeededProviders, failedProviders } = await reg.listAllModels();
@@ -205,6 +277,7 @@ export function registerOpenAIRoutes(
       if (!body?.model || !Array.isArray(body?.messages)) {
         return reply.code(400).send({ error: 'model and messages are required' });
       }
+      const t0 = Date.now();
       const reg = getRegistry();
       const chatReq = openAIToChatRequest(body);
 
@@ -245,9 +318,13 @@ export function registerOpenAIRoutes(
         };
         try {
           const { response } = await reg.generateImage(imageReq);
-          const content = response.data
-            .map((d) => d.url ?? d.b64_json ?? '[image]')
-            .join('\n');
+          const content = response.data.map((d) => d.url ?? d.b64_json ?? '[image]').join('\n');
+          record(req, t0, {
+            kind: 'image',
+            ...resolvePM(reg, chatReq.model),
+            status: 'success',
+            httpStatus: 200,
+          });
           const payload = {
             id: `chatcmpl-img-${Date.now()}`,
             object: 'chat.completion',
@@ -289,6 +366,14 @@ export function registerOpenAIRoutes(
           return reply.send(payload);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
+          const { status, httpStatus } = classifyStatus(err);
+          record(req, t0, {
+            kind: 'image',
+            ...resolvePM(reg, chatReq.model),
+            status,
+            httpStatus,
+            error: msg,
+          });
           return reply.code(502).send({ error: { message: msg, type: 'image_generation_error' } });
         }
       }
@@ -307,6 +392,12 @@ export function registerOpenAIRoutes(
           const content = response.video_id
             ? `视频任务已提交，video_id: ${response.video_id}，状态: ${response.status}。请使用 GET /v1/videos/${response.video_id}?provider=${chatReq.model.split(':')[0]} 查询进度。`
             : '视频任务提交失败';
+          record(req, t0, {
+            kind: 'video',
+            ...resolvePM(reg, chatReq.model),
+            status: 'success',
+            httpStatus: 200,
+          });
           const payload = {
             id: `chatcmpl-vid-${Date.now()}`,
             object: 'chat.completion',
@@ -348,13 +439,27 @@ export function registerOpenAIRoutes(
           return reply.send(payload);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
+          const { status, httpStatus } = classifyStatus(err);
+          record(req, t0, {
+            kind: 'video',
+            ...resolvePM(reg, chatReq.model),
+            status,
+            httpStatus,
+            error: msg,
+          });
           return reply.code(502).send({ error: { message: msg, type: 'video_generation_error' } });
         }
       }
 
       if (!chatReq.stream) {
+        let usage: ChatResponse['usage'] | undefined;
         try {
-          const { response, notices, finalModel } = await dispatchWithAutoRoute(reg, chatReq);
+          const { response, notices, finalModel } = await usageCaptureStore.run(
+            (u) => {
+              usage = u;
+            },
+            async () => dispatchWithAutoRoute(reg, chatReq),
+          );
           const payload = chatResponseToOpenAI(response) as Record<string, unknown> & {
             model?: string;
           };
@@ -362,11 +467,29 @@ export function registerOpenAIRoutes(
           if (notices.length > 0) {
             (payload as Record<string, unknown>).fmf_route_notices = notices;
           }
+          const finalUsage = usage ?? response.usage;
+          record(req, t0, {
+            kind: 'chat',
+            ...resolvePM(reg, finalModel),
+            status: 'success',
+            httpStatus: 200,
+            promptTokens: finalUsage?.prompt_tokens,
+            completionTokens: finalUsage?.completion_tokens,
+            cachedTokens: finalUsage?.prompt_tokens_details?.cached_tokens,
+          });
           return reply.send(payload);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           const match = msg.match(/failed\s+(\d{3})/i);
           const upstream = match ? Number(match[1]) : undefined;
+          const { status, httpStatus } = classifyStatus(err);
+          record(req, t0, {
+            kind: 'chat',
+            ...resolvePM(reg, chatReq.model),
+            status,
+            httpStatus: httpStatus ?? upstream,
+            error: msg,
+          });
           return reply
             .code(upstream && upstream >= 400 && upstream < 600 ? upstream : 502)
             .send({ error: { message: msg, type: 'upstream_error', upstream } });
@@ -403,6 +526,13 @@ export function registerOpenAIRoutes(
         realModelId = resolved.modelId;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        record(req, t0, {
+          kind: 'chat',
+          provider: 'unknown',
+          model: chatReq.model,
+          status: 'error',
+          error: msg,
+        });
         return reply.code(400).send({ error: { message: msg, type: 'resolve_error' } });
       }
       const dispatchReq: ChatRequest = { ...chatReq, model: realModelId };
@@ -422,11 +552,19 @@ export function registerOpenAIRoutes(
         );
       }
 
+      let streamUsage: ChatResponse['usage'] | undefined;
       try {
-        for await (const chunk of provider.stream(dispatchReq)) {
-          const payload = streamChunkToOpenAI(chunk);
-          reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
-        }
+        await usageCaptureStore.run(
+          (u) => {
+            streamUsage = u;
+          },
+          async () => {
+            for await (const chunk of provider.stream(dispatchReq)) {
+              const payload = streamChunkToOpenAI(chunk);
+              reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+            }
+          },
+        );
         // Post-stream: if we were on a fallback and preferred is free again,
         // emit a switch-back notice (applied on the NEXT request).
         const switchBack = await router.maybeSwitchBack(chatReq.model);
@@ -436,6 +574,15 @@ export function registerOpenAIRoutes(
           );
         }
         reply.raw.write('data: [DONE]\n\n');
+        record(req, t0, {
+          kind: 'chat',
+          ...resolvePM(reg, chatReq.model),
+          status: 'success',
+          httpStatus: 200,
+          promptTokens: streamUsage?.prompt_tokens,
+          completionTokens: streamUsage?.completion_tokens,
+          cachedTokens: streamUsage?.prompt_tokens_details?.cached_tokens,
+        });
       } catch (err) {
         const parsed = parseRateLimitError(err);
         if (parsed.isRateLimit && router.isEnabled()) {
@@ -447,6 +594,14 @@ export function registerOpenAIRoutes(
           router.rememberPreference(originalRequested);
         }
         const msg = err instanceof Error ? err.message : String(err);
+        const { status, httpStatus } = classifyStatus(err);
+        record(req, t0, {
+          kind: 'chat',
+          ...resolvePM(reg, chatReq.model),
+          status,
+          httpStatus,
+          error: msg,
+        });
         reply.raw.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
       } finally {
         reply.raw.end();
@@ -459,19 +614,32 @@ export function registerOpenAIRoutes(
     async (req: FastifyRequest<{ Body: ImageGenerationRequest }>, reply: FastifyReply) => {
       const body = req.body;
       if (!body?.model || !body?.prompt) {
-        return reply
-          .code(400)
-          .send({ error: { message: 'model and prompt are required' } });
+        return reply.code(400).send({ error: { message: 'model and prompt are required' } });
       }
+      const t0 = Date.now();
       const reg = getRegistry();
       try {
         const { response } = await reg.generateImage(body);
+        record(req, t0, {
+          kind: 'image',
+          ...resolvePM(reg, body.model),
+          status: 'success',
+          httpStatus: 200,
+        });
         return reply.send({
           ...response,
           model: body.model,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        const { status, httpStatus } = classifyStatus(err);
+        record(req, t0, {
+          kind: 'image',
+          ...resolvePM(reg, body.model),
+          status,
+          httpStatus,
+          error: message,
+        });
         return reply.code(500).send({ error: { message } });
       }
     },
@@ -482,19 +650,32 @@ export function registerOpenAIRoutes(
     async (req: FastifyRequest<{ Body: VideoGenerationRequest }>, reply: FastifyReply) => {
       const body = req.body;
       if (!body?.model || !body?.prompt) {
-        return reply
-          .code(400)
-          .send({ error: { message: 'model and prompt are required' } });
+        return reply.code(400).send({ error: { message: 'model and prompt are required' } });
       }
+      const t0 = Date.now();
       const reg = getRegistry();
       try {
         const { response } = await reg.generateVideo(body);
+        record(req, t0, {
+          kind: 'video',
+          ...resolvePM(reg, body.model),
+          status: 'success',
+          httpStatus: 200,
+        });
         return reply.send({
           ...response,
           model: body.model,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        const { status, httpStatus } = classifyStatus(err);
+        record(req, t0, {
+          kind: 'video',
+          ...resolvePM(reg, body.model),
+          status,
+          httpStatus,
+          error: message,
+        });
         return reply.code(500).send({ error: { message } });
       }
     },
@@ -508,14 +689,10 @@ export function registerOpenAIRoutes(
     ) => {
       const { video_id, provider: providerId } = req.body ?? {};
       if (!video_id) {
-        return reply
-          .code(400)
-          .send({ error: { message: 'video_id is required' } });
+        return reply.code(400).send({ error: { message: 'video_id is required' } });
       }
       if (!providerId) {
-        return reply
-          .code(400)
-          .send({ error: { message: 'provider is required' } });
+        return reply.code(400).send({ error: { message: 'provider is required' } });
       }
       const reg = getRegistry();
       try {
@@ -530,21 +707,14 @@ export function registerOpenAIRoutes(
 
   app.get<{ Params: { video_id: string } }>(
     '/v1/videos/:video_id',
-    async (
-      req: FastifyRequest<{ Params: { video_id: string } }>,
-      reply: FastifyReply,
-    ) => {
+    async (req: FastifyRequest<{ Params: { video_id: string } }>, reply: FastifyReply) => {
       const { video_id } = req.params;
       if (!video_id) {
-        return reply
-          .code(400)
-          .send({ error: { message: 'video_id is required' } });
+        return reply.code(400).send({ error: { message: 'video_id is required' } });
       }
       const providerId = (req.query as Record<string, string>).provider;
       if (!providerId) {
-        return reply
-          .code(400)
-          .send({ error: { message: 'provider query parameter is required' } });
+        return reply.code(400).send({ error: { message: 'provider query parameter is required' } });
       }
       const reg = getRegistry();
       try {
@@ -576,9 +746,7 @@ export function registerOpenAIRoutes(
         const apiKey =
           (provider as unknown as { ctx?: { credentials?: { apiKey?: string } } }).ctx?.credentials
             ?.apiKey ?? '';
-        const headers: Record<string, string> = apiKey
-          ? { Authorization: `Bearer ${apiKey}` }
-          : {};
+        const headers: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
         const upstream = await fetch(videoUrl, {
           headers,
           signal: AbortSignal.timeout(300_000),
@@ -596,7 +764,9 @@ export function registerOpenAIRoutes(
           'Cache-Control': 'public, max-age=3600',
           'Access-Control-Allow-Origin': '*',
         });
-        const body = upstream.body as unknown as { pipe: (w: NodeJS.WritableStream) => void } | null;
+        const body = upstream.body as unknown as {
+          pipe: (w: NodeJS.WritableStream) => void;
+        } | null;
         if (body && typeof body.pipe === 'function') {
           body.pipe(reply.raw);
         } else {

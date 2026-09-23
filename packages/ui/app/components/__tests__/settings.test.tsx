@@ -53,7 +53,7 @@ describe('SettingsView', () => {
     const generate = await screen.findByRole('button', { name: '生成 API Key' });
     await user.click(generate);
     expect(await screen.findByRole('button', { name: '隐藏 Key' })).toBeTruthy();
-    expect(screen.getByText(/重新生成 Key/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '添加 Key' })).toBeTruthy();
   });
 
   it('shows the public URL and locks authentication controls in server mode', async () => {

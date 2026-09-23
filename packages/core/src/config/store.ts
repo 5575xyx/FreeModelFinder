@@ -4,7 +4,7 @@ import { closeSync, existsSync, mkdirSync, openSync, unlinkSync } from 'node:fs'
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { ProviderIdSchema } from '../types.js';
-import type { AppConfig, ProviderId, ProviderSettings } from '../types.js';
+import type { AppConfig, GatewayKeyEntry, ProviderId, ProviderSettings } from '../types.js';
 import { decryptString, encryptString, looksEncrypted } from './crypto.js';
 
 function decryptSecret(payload: string, masterKey: Buffer): string {
@@ -145,12 +145,61 @@ function mapCustomSourceKeys(
     sources: sources.map((source) => {
       if (!source || typeof source !== 'object') return source;
       const clone = { ...(source as Record<string, unknown>) };
-      if (typeof clone.apiKey === 'string' && clone.apiKey) {
+      if (Array.isArray(clone.apiKey)) {
+        clone.apiKey = (clone.apiKey as unknown[]).map((key) =>
+          typeof key === 'string' && key ? transform(key) : key,
+        );
+      } else if (typeof clone.apiKey === 'string' && clone.apiKey) {
         clone.apiKey = transform(clone.apiKey);
       }
       return clone;
     }),
   };
+}
+
+function mapKeyArray(
+  keys: string[] | undefined,
+  transform: (value: string) => string,
+): string[] | undefined {
+  if (!Array.isArray(keys)) return keys;
+  return keys.map((key) => (key ? transform(key) : key));
+}
+
+function encryptGatewayKeys(
+  keys: GatewayKeyEntry[] | undefined,
+  masterKey: Buffer,
+): GatewayKeyEntry[] | undefined {
+  if (!Array.isArray(keys)) return keys;
+  return keys.map((entry) =>
+    entry && typeof entry.key === 'string' && entry.key
+      ? { ...entry, key: encryptString(entry.key, masterKey) }
+      : entry,
+  );
+}
+
+function decryptGatewayKeys(
+  keys: GatewayKeyEntry[] | undefined,
+  masterKey: Buffer,
+): { keys: GatewayKeyEntry[] | undefined; failed: boolean } {
+  if (!Array.isArray(keys)) return { keys, failed: false };
+  let failed = false;
+  const out = keys.map((entry) => {
+    if (!entry || typeof entry.key !== 'string' || !entry.key) return entry;
+    try {
+      return { ...entry, key: decryptSecret(entry.key, masterKey) };
+    } catch (err) {
+      if (looksEncrypted(entry.key)) {
+        failed = true;
+        const reason = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[config] gateway key ${entry.id} decryption failed (${reason}); removed from memory`,
+        );
+        return { ...entry, key: '' };
+      }
+      return entry;
+    }
+  });
+  return { keys: out, failed };
 }
 
 function encryptProviders(config: AppConfig, masterKey: Buffer): AppConfig {
@@ -167,6 +216,7 @@ function encryptProviders(config: AppConfig, masterKey: Buffer): AppConfig {
         apiKey: clone.credentials.apiKey
           ? encryptString(clone.credentials.apiKey, masterKey)
           : clone.credentials.apiKey,
+        apiKeys: mapKeyArray(clone.credentials.apiKeys, (value) => encryptString(value, masterKey)),
         extra: mapCustomSourceKeys(clone.credentials.extra, (value) =>
           encryptString(value, masterKey),
         ),
@@ -178,6 +228,7 @@ function encryptProviders(config: AppConfig, masterKey: Buffer): AppConfig {
     ? {
         ...config.gateway,
         apiKey: config.gateway.apiKey ? encryptString(config.gateway.apiKey, masterKey) : undefined,
+        keys: encryptGatewayKeys(config.gateway.keys, masterKey),
       }
     : undefined;
   return { ...config, version: 2, providers, gateway };
@@ -222,6 +273,31 @@ function decryptProviders(
         // If it doesn't look encrypted, treat as plaintext (older configs).
       }
     }
+    if (clone.credentials?.apiKeys) {
+      try {
+        clone.credentials = {
+          ...clone.credentials,
+          apiKeys: mapKeyArray(clone.credentials.apiKeys, (value) =>
+            decryptSecret(value, masterKey),
+          ),
+        };
+      } catch (err) {
+        failed = true;
+        const reason = err instanceof Error ? err.message : String(err);
+        clone.credentialError = `apiKeys decryption failed: ${reason}. Please re-enter the API key in Settings.`;
+        clone.credentials = {
+          ...clone.credentials,
+          apiKeys: mapKeyArray(clone.credentials.apiKeys, () => ''),
+        };
+      }
+    }
+    // Legacy single key → pool migration: keep apiKey as apiKeys[0].
+    if (clone.credentials && !clone.credentials.apiKeys?.length && clone.credentials.apiKey) {
+      clone.credentials = {
+        ...clone.credentials,
+        apiKeys: [clone.credentials.apiKey],
+      };
+    }
     if (clone.credentials?.extra) {
       try {
         clone.credentials = {
@@ -257,6 +333,24 @@ function decryptProviders(
         );
       }
     }
+  }
+  if (gateway?.keys?.length) {
+    const decryptedKeys = decryptGatewayKeys(gateway.keys, masterKey);
+    if (decryptedKeys.failed) failed = true;
+    gateway = { ...gateway, keys: decryptedKeys.keys };
+  }
+  // Legacy single gateway key → keys[] migration.
+  if (gateway && !gateway.keys?.length && gateway.apiKey) {
+    gateway = {
+      ...gateway,
+      keys: [
+        {
+          id: 'default',
+          key: gateway.apiKey,
+          createdAt: 0,
+        },
+      ],
+    };
   }
   return { config: { ...config, version: 2, providers, gateway }, failed };
 }

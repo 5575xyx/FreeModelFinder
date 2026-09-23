@@ -29,7 +29,7 @@ export interface CustomSource {
   id: string;
   label?: string;
   baseUrl: string;
-  apiKey?: string;
+  apiKey?: string | string[];
   models: CustomModelEntry[];
 }
 
@@ -65,6 +65,7 @@ export interface ChatResponse {
     prompt_tokens?: number;
     completion_tokens?: number;
     total_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
   };
 }
 
@@ -208,7 +209,10 @@ export interface SwitchNotice {
 }
 
 export interface ProviderCredentials {
+  /** Legacy / single key. Kept in sync with `apiKeys[0]` for backward compat. */
   apiKey: string;
+  /** Multi-key pool; round-robined by the provider when present. */
+  apiKeys?: string[];
   baseUrl?: string;
   extra?: Record<string, unknown>;
 }
@@ -219,8 +223,23 @@ export interface ProviderSettings {
   credentialError?: string;
 }
 
+export interface GatewayKeyEntry {
+  id: string;
+  key: string;
+  label?: string;
+  createdAt: number;
+  /** Epoch ms; omit for no expiry. */
+  expiresAt?: number;
+  /** Max requests per calendar day (local timezone). */
+  dailyRequestLimit?: number;
+  /** Max total tokens per calendar day (local timezone). */
+  dailyTokenLimit?: number;
+}
+
 export interface GatewaySettings {
+  /** Legacy single key. Migrated into `keys[0]` on load. */
   apiKey?: string;
+  keys?: GatewayKeyEntry[];
   requireAuth?: boolean;
 }
 
@@ -228,6 +247,28 @@ export interface OnboardingState {
   completedAt?: number;
   dismissedAt?: number;
   primaryProvider?: ProviderId;
+}
+
+// ── Call Log ─────────────────────────────────────────────────────
+
+export type CallKind = 'chat' | 'image' | 'video';
+export type CallStatus = 'success' | 'error' | 'rate_limited';
+
+export interface CallLogEntry {
+  /** Epoch ms. */
+  ts: number;
+  kind: CallKind;
+  provider: string;
+  model: string;
+  status: CallStatus;
+  httpStatus?: number;
+  latencyMs: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  cachedTokens?: number;
+  /** Gateway key id that authorized the request, when auth was used. */
+  gatewayKeyId?: string;
+  error?: string;
 }
 
 export interface AppConfig {

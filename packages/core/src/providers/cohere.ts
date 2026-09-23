@@ -29,7 +29,7 @@ export class CohereProvider extends OpenAICompatibleProvider {
 
   async listModels(): Promise<ModelInfo[]> {
     const res = await this.fetch('https://api.cohere.com/v1/models?page_size=1000', {
-      headers: { authorization: `Bearer ${this.ctx.credentials.apiKey}` },
+      headers: { authorization: `Bearer ${this.nextKey()}` },
     });
     if (!res.ok) throw new Error(`cohere list models failed: ${res.status}`);
     const data = (await res.json()) as { models?: CohereModel[] };

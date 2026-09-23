@@ -1,5 +1,5 @@
 import type { ChatRequest, ChatResponse, ModelInfo, ProviderId, StreamChunk } from '../types.js';
-import { BaseProvider, requireKey } from './base.js';
+import { BaseProvider } from './base.js';
 
 interface OpenAILikeChoice {
   index: number;
@@ -37,7 +37,7 @@ export abstract class OpenAICompatibleProvider extends BaseProvider {
   }
 
   private buildHeaders(): Record<string, string> {
-    const key = requireKey(this.ctx.credentials, this.id).trim();
+    const key = this.nextKey().trim();
     if (!key) {
       throw new Error(`${this.id} API key not configured`);
     }

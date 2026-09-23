@@ -1,11 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { KeyRound, Image, MessageSquare, RefreshCw, Search, Video, Wifi, WifiOff } from 'lucide-react';
+import {
+  Activity,
+  KeyRound,
+  Image,
+  MessageSquare,
+  RefreshCw,
+  Search,
+  Video,
+  Wifi,
+  WifiOff,
+} from 'lucide-react';
 import { FinderView } from './components/FinderView';
 import { ImageGeneratorView } from './components/ImageGeneratorView';
 import { OnboardingWizard, type OnboardingResult } from './components/OnboardingWizard';
 import { SettingsView } from './components/SettingsView';
+import { StatsView } from './components/StatsView';
 import { TesterView, type Msg } from './components/TesterView';
 import { VideoGeneratorView } from './components/VideoGeneratorView';
 import { BottomNav, type SegmentedItem } from './components/SegmentedTabs';
@@ -20,7 +31,7 @@ import {
 } from './lib/models';
 import { GATEWAY, classNames, withUiHeaders } from './lib/utils';
 
-type TabKey = 'finder' | 'tester' | 'imagegen' | 'videogen' | 'settings';
+type TabKey = 'stats' | 'finder' | 'tester' | 'imagegen' | 'videogen' | 'settings';
 type OnboardingMode = 'loading' | 'required' | 'dismissed' | 'complete';
 
 type ConfigPayload = {
@@ -40,6 +51,7 @@ type DesktopState = {
 
 const TAB_DEFS: readonly { key: TabKey; icon: SegmentedItem<TabKey>['Icon']; labelKey: string }[] =
   [
+    { key: 'stats', icon: Activity, labelKey: 'app.tab.stats' },
     { key: 'finder', icon: Search, labelKey: 'app.tab.finder' },
     { key: 'tester', icon: MessageSquare, labelKey: 'app.tab.tester' },
     { key: 'imagegen', icon: Image, labelKey: 'app.tab.imagegen' },
@@ -48,6 +60,7 @@ const TAB_DEFS: readonly { key: TabKey; icon: SegmentedItem<TabKey>['Icon']; lab
   ];
 
 const PAGE_COPY_KEYS: Record<TabKey, { title: string; description: string }> = {
+  stats: { title: 'app.page.stats.title', description: 'app.page.stats.desc' },
   finder: { title: 'app.page.finder.title', description: 'app.page.finder.desc' },
   tester: { title: 'app.page.tester.title', description: 'app.page.tester.desc' },
   imagegen: { title: 'app.page.imagegen.title', description: 'app.page.imagegen.desc' },
@@ -618,7 +631,9 @@ export default function Home() {
           )}
 
           <div className="min-h-0 flex-1 overflow-hidden">
-            {tab === 'finder' ? (
+            {tab === 'stats' ? (
+              <StatsView />
+            ) : tab === 'finder' ? (
               <div className="h-full overflow-y-auto">
                 <FinderView
                   models={models}
@@ -651,17 +666,9 @@ export default function Home() {
                 onClear={() => setMessages([])}
               />
             ) : tab === 'imagegen' ? (
-              <ImageGeneratorView
-                models={models}
-                model={model}
-                onModelChange={selectModel}
-              />
+              <ImageGeneratorView models={models} model={model} onModelChange={selectModel} />
             ) : tab === 'videogen' ? (
-              <VideoGeneratorView
-                models={models}
-                model={model}
-                onModelChange={selectModel}
-              />
+              <VideoGeneratorView models={models} model={model} onModelChange={selectModel} />
             ) : (
               <div className="h-full overflow-y-auto">
                 <SettingsView

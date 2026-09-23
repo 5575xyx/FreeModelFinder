@@ -121,7 +121,7 @@ export class ModelScopeProvider extends OpenAICompatibleProvider {
   async listModels(): Promise<ModelInfo[]> {
     const staticSnapshot = MS_FREE_ALLOW_LIST.map((entry) => toModelInfo(entry, this.id));
 
-    const apiKey = this.ctx.credentials.apiKey?.trim();
+    const apiKey = this.optionalKey();
     if (!apiKey) {
       return staticSnapshot;
     }
