@@ -313,8 +313,9 @@ export function registerOpenAIRoutes(
         const ar = cfg.autoRoute;
         const detectedModality = detectRequestModality(body.messages);
         if (detectedModality === 'image') {
-          if (ar?.imageModel) {
-            chatReq.model = ar.imageModel;
+          const preferredImage = ar?.imageModel?.[0];
+          if (preferredImage) {
+            chatReq.model = preferredImage;
             forcedImageModality = true;
           } else {
             const discovered = await findImageModelId(reg);
@@ -324,12 +325,13 @@ export function registerOpenAIRoutes(
             }
             // 未发现则保持 auto → 原文本链路
           }
-        } else if (detectedModality === 'video' && ar?.videoModel) {
-          chatReq.model = ar.videoModel;
+        } else if (detectedModality === 'video') {
+          const preferredVideo = ar?.videoModel?.[0];
+          if (preferredVideo) chatReq.model = preferredVideo;
         } else if (detectedModality === 'text' && ar?.textTiers) {
           const prompt = chatReq.messages.map((m) => m.content).join('\n');
           const tier = classifyTextComplexity(prompt);
-          const tierModel = ar.textTiers[tier];
+          const tierModel = ar.textTiers[tier]?.[0];
           if (tierModel) chatReq.model = tierModel;
         }
       }

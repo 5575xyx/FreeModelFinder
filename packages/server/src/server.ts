@@ -8,6 +8,7 @@ import {
   CallLogger,
   ProviderIdSchema,
   ProviderRegistry,
+  asModelList,
   loadConfig,
   updateConfig,
   type GatewayKeyEntry,
@@ -987,9 +988,13 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         strategy: ar.strategy,
         profiles: ar.profiles ?? [],
         fallbackChain: ar.fallbackChain ?? [],
-        imageModel: ar.imageModel,
-        videoModel: ar.videoModel,
-        textTiers: ar.textTiers,
+        imageModel: asModelList(ar.imageModel),
+        videoModel: asModelList(ar.videoModel),
+        textTiers: {
+          simple: asModelList(ar.textTiers?.simple),
+          medium: asModelList(ar.textTiers?.medium),
+          complex: asModelList(ar.textTiers?.complex),
+        },
         cooldowns: router.listCooldowns(),
         rememberedPreference: router.getRememberedPreference(),
         recentNotices: getRegistry().peekNotices(),
@@ -1002,9 +1007,13 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         strategy?: 'capability' | 'speed' | 'rate-limit';
         fallbackChain?: string[];
         profiles?: unknown;
-        imageModel?: string;
-        videoModel?: string;
-        textTiers?: { simple?: string; medium?: string; complex?: string };
+        imageModel?: string[] | string;
+        videoModel?: string[] | string;
+        textTiers?: {
+          simple?: string[] | string;
+          medium?: string[] | string;
+          complex?: string[] | string;
+        };
       };
     }>('/api/auto-route', async (req, reply) => {
       const { enabled, strategy, fallbackChain, profiles, imageModel, videoModel, textTiers } =
@@ -1020,15 +1029,30 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           strategy: strategy ?? cur.strategy,
           fallbackChain: Array.isArray(fallbackChain) ? fallbackChain : cur.fallbackChain,
           profiles: Array.isArray(profiles) ? (profiles as never) : cur.profiles,
-          imageModel: typeof imageModel === 'string' ? imageModel : cur.imageModel,
-          videoModel: typeof videoModel === 'string' ? videoModel : cur.videoModel,
+          imageModel: imageModel !== undefined ? asModelList(imageModel) : cur.imageModel,
+          videoModel: videoModel !== undefined ? asModelList(videoModel) : cur.videoModel,
           textTiers: textTiers
             ? {
-                simple: textTiers.simple ?? prevTiers?.simple,
-                medium: textTiers.medium ?? prevTiers?.medium,
-                complex: textTiers.complex ?? prevTiers?.complex,
+                simple:
+                  textTiers.simple !== undefined
+                    ? asModelList(textTiers.simple)
+                    : asModelList(prevTiers?.simple),
+                medium:
+                  textTiers.medium !== undefined
+                    ? asModelList(textTiers.medium)
+                    : asModelList(prevTiers?.medium),
+                complex:
+                  textTiers.complex !== undefined
+                    ? asModelList(textTiers.complex)
+                    : asModelList(prevTiers?.complex),
               }
-            : prevTiers,
+            : prevTiers
+              ? {
+                  simple: asModelList(prevTiers.simple),
+                  medium: asModelList(prevTiers.medium),
+                  complex: asModelList(prevTiers.complex),
+                }
+              : prevTiers,
         };
         return cfg;
       });

@@ -166,7 +166,7 @@ describe('auto modality HTTP routing', () => {
         autoRoute: {
           enabled: false,
           strategy: 'capability',
-          imageModel: 'custom:img-model',
+          imageModel: ['custom:img-model'],
         },
         models: [textOnlyModel],
       },
@@ -195,7 +195,7 @@ describe('auto modality HTTP routing', () => {
         autoRoute: {
           enabled: false,
           strategy: 'capability',
-          imageModel: 'custom:img-model',
+          imageModel: ['custom:img-model'],
         },
         models: [textOnlyModel],
       },
