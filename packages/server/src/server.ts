@@ -1010,7 +1010,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         sources?: Array<{
           id: string;
           label?: string;
-          models?: Array<{ id: string; displayName?: string; contextWindow?: number }>;
+          models?: Array<{ id: string; displayName?: string }>;
         }>;
       };
       const sources = Array.isArray(extra.sources) ? extra.sources : [];
@@ -1040,11 +1040,10 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       for (const src of sources) {
         const srcId = String(src.id ?? '');
         if (!srcId) continue;
-        for (const m of src.models ?? []) {
+        for (const m of Array.isArray(src.models) ? src.models : []) {
           const bare = typeof m?.id === 'string' ? m.id.trim() : '';
           if (!bare) continue;
-          const composed =
-            bare.includes(':') && bare.startsWith('custom:') ? bare : `custom:${srcId}:${bare}`;
+          const composed = bare.startsWith('custom:') ? bare : `custom:${srcId}:${bare}`;
           push({
             id: composed,
             provider: 'custom',

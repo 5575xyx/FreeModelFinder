@@ -53,6 +53,8 @@ const PROVIDER_CTORS: Record<
   custom: CustomProvider,
 };
 
+const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export interface RegistryOptions {
   config?: AppConfig;
 }
@@ -168,8 +170,7 @@ export class ProviderRegistry {
   }
 
   async listAllModels(force = false): Promise<ListAllModelsResult> {
-    const ttl = 5 * 60 * 1000;
-    if (!force && this.modelsCache && Date.now() - this.cacheAt < ttl) {
+    if (!force && this.modelsCache && Date.now() - this.cacheAt < MODELS_CACHE_TTL_MS) {
       return this.modelsCache;
     }
     const enabled = this.listEnabledProviders();
@@ -225,9 +226,8 @@ export class ProviderRegistry {
    * Never calls provider listModels().
    */
   async peekLocalModels(): Promise<ModelInfo[]> {
-    const ttl = 5 * 60 * 1000;
-    if (this.modelsCache && Date.now() - this.cacheAt < ttl) {
-      return this.modelsCache.models;
+    if (this.modelsCache && Date.now() - this.cacheAt < MODELS_CACHE_TTL_MS) {
+      return [...this.modelsCache.models];
     }
     const snapshot = await this.loadModelSnapshot();
     return snapshot.models.map((m) => ({

@@ -23,7 +23,23 @@ function configWithCustomModels(): AppConfig {
                 models: [
                   { id: 'plain-chat', displayName: 'Plain' },
                   { id: 'sora-image', displayName: 'Img' },
+                  { id: '', displayName: 'Empty' },
+                  { id: '   ', displayName: 'Whitespace' },
                 ],
+              },
+              {
+                id: 'dup',
+                label: 'Dup',
+                baseUrl: 'https://dup.invalid/v1',
+                apiKey: 'k',
+                models: [{ id: 'x', displayName: 'Dup A' }],
+              },
+              {
+                id: 'mirror',
+                label: 'Mirror',
+                baseUrl: 'https://mirror.invalid/v1',
+                apiKey: 'k',
+                models: [{ id: 'custom:dup:x', displayName: 'Dup B' }],
               },
             ],
           },
@@ -87,17 +103,43 @@ describe('GET /api/auto-route/model-options', () => {
     });
   });
 
-  it('dedupes and omits empty ids', async () => {
+  it('omits empty and whitespace-only ids from config sources', async () => {
     await withApp(async (app) => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/auto-route/model-options',
         headers: localUiHeaders,
       });
+      assert.equal(res.statusCode, 200);
       const body = res.json() as { models: Array<{ id: string }> };
       const ids = body.models.map((m) => m.id);
-      assert.equal(new Set(ids).size, ids.length);
-      assert.ok(ids.every((id) => id.length > 0));
+      assert.ok(!ids.includes(''), ids.join(','));
+      assert.ok(!ids.includes('   '), ids.join(','));
+      assert.ok(!ids.includes('custom:fixture:'), ids.join(','));
+      assert.ok(ids.every((id) => id.trim().length > 0));
+      assert.ok(ids.includes('custom:fixture:plain-chat'), ids.join(','));
+    });
+  });
+
+  it('dedupes duplicate composed ids across config sources', async () => {
+    await withApp(async (app) => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/auto-route/model-options',
+        headers: localUiHeaders,
+      });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as { models: Array<{ id: string }> };
+      const ids = body.models.map((m) => m.id);
+      assert.equal(new Set(ids).size, ids.length, ids.join(','));
+      assert.equal(
+        ids.filter((id) => id === 'custom:dup:x').length,
+        1,
+        `expected one custom:dup:x, got: ${ids.join(',')}`,
+      );
+      assert.ok(ids.includes('custom:fixture:plain-chat'), ids.join(','));
+      assert.ok(ids.includes('custom:fixture:sora-image'), ids.join(','));
+      assert.ok(ids.includes('custom:dup:x'), ids.join(','));
     });
   });
 });
