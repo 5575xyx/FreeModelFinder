@@ -293,6 +293,8 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           'req.headers.x-fmf-control-token',
           'req.body.apiKey',
           'req.body.apiKeys',
+          'req.body.appendKeys',
+          'req.body.appendSourceKeys.keys',
           'req.body.credential.apiKey',
           'req.body.sources[*].apiKey',
         ],

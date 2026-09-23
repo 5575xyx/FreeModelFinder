@@ -157,7 +157,7 @@ export function detectRequestModality(
   const VIDEO_KEYWORDS =
     /(生成|制作|创建|做一段?|来一段?|画一段?)[^。\n]{0,12}?(视频|动画|短片|影片|动态|视频片段)/i;
   const IMAGE_TEXT =
-    /((生成|绘制|画|创作|做|来一张|来个|帮我画|给我画)(一|张|幅|点)?[^。\n]{0,12}(图|图片|图像|照片|插画|插图|壁纸|头像|海报|图画|画像))|(generate|draw|create|make)\s+(an?\s+)?[\w\s-]{0,20}(image|picture|photo|illustration|wallpaper|avatar|poster)/i;
+    /((生成|绘制|画|创作|做|来一张|来个|帮我画|给我画)[^。\n]{0,12}(图片|图像|照片|插画|插图|壁纸|头像|海报|图画|画像))|((画|做|生成|绘制|创作|来|帮我画|给我画)一?[张幅][^。\n]{0,6}(?<!地)图(?!形))|(generate|draw|create|make)\s+(an?\s+)?[\w\s-]{0,20}(image|picture|photo|illustration|wallpaper|avatar|poster)/i;
   for (const msg of messages) {
     const content = msg.content;
     if (Array.isArray(content)) {

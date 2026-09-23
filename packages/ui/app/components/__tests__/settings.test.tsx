@@ -124,6 +124,27 @@ describe('SettingsView', () => {
     expect(writes[0]).toMatchObject({ provider: 'openrouter', removeKeyIndex: 0 });
   });
 
+  it('removes a custom source key via removeSourceKey', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () => HttpResponse.json(configPayload)),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    expect((await screen.findAllByText('…a1b2')).length).toBeGreaterThan(0);
+    const customSection = screen.getByLabelText('自定义模型');
+    await user.click(within(customSection).getByRole('button', { name: '删除 Key 1' }));
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    expect(writes[0]).toMatchObject({
+      provider: 'custom',
+      removeSourceKey: { sourceId: 'fixture-source', index: 0 },
+    });
+  });
+
   it('re-entry guard: double Enter produces a single appendKeys write', async () => {
     const writes: Array<Record<string, unknown>> = [];
     server.use(

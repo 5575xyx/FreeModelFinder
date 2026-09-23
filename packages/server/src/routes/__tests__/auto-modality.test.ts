@@ -19,12 +19,19 @@ describe('detectRequestModality image text intent', () => {
   it('detects Chinese image generation prompts', () => {
     assert.equal(detectRequestModality([textMsg('生成小猫图片')]), 'image');
     assert.equal(detectRequestModality([textMsg('帮我画一张风景插画')]), 'image');
+    assert.equal(detectRequestModality([textMsg('画一张图')]), 'image');
     assert.equal(detectRequestModality([textMsg('generate an image of a cat')]), 'image');
   });
 
   it('does not flag ordinary chat', () => {
     assert.equal(detectRequestModality([textMsg('介绍一下 OpenRouter')]), 'text');
     assert.equal(detectRequestModality([textMsg('这张地图怎么走')]), 'text');
+  });
+
+  it('does not flag map/GUI/diagram questions as image intent', () => {
+    assert.equal(detectRequestModality([textMsg('画地图')]), 'text');
+    assert.equal(detectRequestModality([textMsg('做个图形界面')]), 'text');
+    assert.equal(detectRequestModality([textMsg('make a diagram')]), 'text');
   });
 
   it('keeps video keyword priority over image text', () => {
