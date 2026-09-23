@@ -1005,7 +1005,7 @@ export function ModelMultiSelect({
                     {opt.displayName && (
                       <span className="truncate text-muted-foreground">{opt.displayName}</span>
                     )}
-                    {checked && <Check size={12} className="ml-auto text-ok" />}
+                    {checked && <Check size={12} className="ml-auto text-success" />}
                   </label>
                 </li>
               );
@@ -1034,7 +1034,7 @@ export function ModelMultiSelect({
 }
 ```
 
-若 `text-ok` / `text-warning` 类名不存在，改用现有 `text-muted-foreground` / `text-warning`（以 `Badge` 已用类为准；grep `text-ok` 无结果则用 `text-emerald-500` 或仅去色）。
+类名使用现有 token：`text-success`（成功勾选）、`text-warning`（离线已选）；不要用不存在的 `text-ok`。
 
 - [ ] **Step 3: lint 组件（暂不接线）**
 
