@@ -189,6 +189,34 @@ describe('auto modality HTTP routing', () => {
     );
   });
 
+  it('routes legacy string imageModel without truncating to its first character', async () => {
+    await withApp(
+      {
+        autoRoute: {
+          enabled: false,
+          strategy: 'capability',
+          imageModel: 'custom:img-model' as unknown as string[],
+        },
+        models: [textOnlyModel],
+      },
+      async (app) => {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'auto',
+            messages: [{ role: 'user', content: '生成小猫图片' }],
+            stream: false,
+          },
+        });
+        assert.equal(res.statusCode, 200);
+        const body = res.json();
+        assert.equal(body.model, 'custom:img-model');
+        assert.match(body.choices[0].message.content, /cat\.png/);
+      },
+    );
+  });
+
   it('keeps auto text intent on the text path', async () => {
     await withApp(
       {

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
+  asModelList,
   chatResponseToOpenAI,
   openAIToChatRequest,
   parseRateLimitError,
@@ -313,9 +314,10 @@ export function registerOpenAIRoutes(
         const ar = cfg.autoRoute;
         const detectedModality = detectRequestModality(body.messages);
         if (detectedModality === 'image') {
-          const preferredImage = ar?.imageModel?.[0];
-          if (preferredImage) {
-            chatReq.model = preferredImage;
+          const pool = asModelList(ar?.imageModel);
+          const picked = pool[0];
+          if (picked) {
+            chatReq.model = picked;
             forcedImageModality = true;
           } else {
             const discovered = await findImageModelId(reg);
@@ -326,13 +328,13 @@ export function registerOpenAIRoutes(
             // 未发现则保持 auto → 原文本链路
           }
         } else if (detectedModality === 'video') {
-          const preferredVideo = ar?.videoModel?.[0];
-          if (preferredVideo) chatReq.model = preferredVideo;
+          const videoPool = asModelList(ar?.videoModel);
+          if (videoPool[0]) chatReq.model = videoPool[0];
         } else if (detectedModality === 'text' && ar?.textTiers) {
           const prompt = chatReq.messages.map((m) => m.content).join('\n');
           const tier = classifyTextComplexity(prompt);
-          const tierModel = ar.textTiers[tier]?.[0];
-          if (tierModel) chatReq.model = tierModel;
+          const tierPool = asModelList(ar.textTiers[tier]);
+          if (tierPool[0]) chatReq.model = tierPool[0];
         }
       }
 

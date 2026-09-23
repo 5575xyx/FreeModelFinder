@@ -1029,8 +1029,10 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           strategy: strategy ?? cur.strategy,
           fallbackChain: Array.isArray(fallbackChain) ? fallbackChain : cur.fallbackChain,
           profiles: Array.isArray(profiles) ? (profiles as never) : cur.profiles,
-          imageModel: imageModel !== undefined ? asModelList(imageModel) : cur.imageModel,
-          videoModel: videoModel !== undefined ? asModelList(videoModel) : cur.videoModel,
+          imageModel:
+            imageModel !== undefined ? asModelList(imageModel) : asModelList(cur.imageModel),
+          videoModel:
+            videoModel !== undefined ? asModelList(videoModel) : asModelList(cur.videoModel),
           textTiers: textTiers
             ? {
                 simple:
