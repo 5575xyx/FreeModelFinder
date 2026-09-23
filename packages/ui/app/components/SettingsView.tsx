@@ -340,6 +340,8 @@ export function SettingsView({
   }
 
   async function save(providerId: string) {
+    if (saveStates[providerId] === 'saving') return;
+    if (!cfg) return;
     const appendKeys = (keyDrafts[providerId] ?? []).map((k) => k.trim()).filter(Boolean);
     if (!appendKeys.length) return;
     setSaveStates((s) => ({ ...s, [providerId]: 'saving' }));
@@ -374,7 +376,10 @@ export function SettingsView({
         setTimeout(() => setSaveStates((s) => ({ ...s, [providerId]: 'idle' })), 1600);
         fetch(`${GATEWAY}/api/config`, withUiHeaders())
           .then((r) => r.json())
-          .then(setCfg);
+          .then(setCfg)
+          .catch(() => {
+            /* ignore refresh errors */
+          });
         if (onModelsRefresh) {
           try {
             const refreshed = await onModelsRefresh();
@@ -434,9 +439,12 @@ export function SettingsView({
         }),
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      fetch(`${GATEWAY}/api/config`, withUiHeaders())
+      await fetch(`${GATEWAY}/api/config`, withUiHeaders())
         .then((r) => r.json())
-        .then(setCfg);
+        .then((c: ConfigRes) => setCfg(c))
+        .catch(() => {
+          /* refresh failure must not leave the UI stuck in saving */
+        });
       setSaveStates((s) => ({ ...s, [providerId]: 'idle' }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1701,14 +1709,19 @@ export function SettingsView({
                               })
                             }
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter' && draft.trim()) {
+                              if (e.key === 'Enter' && draft.trim() && saveState !== 'saving') {
                                 e.preventDefault();
                                 void save(p.id);
                               }
                             }}
-                            aria-label={t('settings.providerApiKeyAria', {
-                              provider: displayLabel,
-                            })}
+                            aria-label={
+                              di > 0
+                                ? `${t('settings.providerApiKeyAria', {
+                                    provider: displayLabel,
+                                  })} ${di + 1}`
+                                : t('settings.providerApiKeyAria', { provider: displayLabel })
+                            }
+                            disabled={saveState === 'saving'}
                             autoComplete="off"
                             spellCheck={false}
                           />
