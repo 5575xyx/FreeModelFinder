@@ -257,6 +257,7 @@ const zh: Dict = {
   'settings.autoRoute.textTiers.mediumPh': '例如 custom:grok:gpt-4o',
   'settings.autoRoute.textTiers.complex': '复杂（推理/代码/数学）',
   'settings.autoRoute.textTiers.complexPh': '例如 custom:grok:gpt-5.5',
+  'settings.autoRoute.roundRobinHint': '多个模型将按顺序轮流使用',
 
   'modelMultiSelect.placeholder': '选择模型…',
   'modelMultiSelect.clear': '清空',
@@ -724,6 +725,7 @@ const en: Dict = {
   'settings.autoRoute.textTiers.mediumPh': 'e.g. custom:grok:gpt-4o',
   'settings.autoRoute.textTiers.complex': 'Complex (reasoning / code / math)',
   'settings.autoRoute.textTiers.complexPh': 'e.g. custom:grok:gpt-5.5',
+  'settings.autoRoute.roundRobinHint': 'Multiple models take turns (round-robin)',
 
   'modelMultiSelect.placeholder': 'Select models…',
   'modelMultiSelect.clear': 'Clear',

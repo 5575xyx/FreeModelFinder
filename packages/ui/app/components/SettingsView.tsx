@@ -25,6 +25,7 @@ import {
 import { Badge, Dot } from './Badge';
 import { StatCard } from './StatCard';
 import { ModelChangesBanner } from './ModelChangesBanner';
+import { ModelMultiSelect, type ModelOption } from './ModelMultiSelect';
 import { classNames, GATEWAY, withUiHeaders } from '../lib/utils';
 import { SETTINGS_PROVIDERS, providerHintKey, providerLabelKey } from '../lib/platforms';
 import { useI18n } from '../i18n';
@@ -175,9 +176,9 @@ export function SettingsView({
     enabled: boolean;
     strategy: 'capability' | 'speed' | 'rate-limit';
     fallbackChain?: string[];
-    imageModel?: string;
-    videoModel?: string;
-    textTiers?: { simple?: string; medium?: string; complex?: string };
+    imageModel?: string[];
+    videoModel?: string[];
+    textTiers?: { simple?: string[]; medium?: string[]; complex?: string[] };
     cooldowns?: { model: string; provider: string; resetAt: number }[];
     rememberedPreference?: string | null;
     recentNotices?: {
@@ -191,6 +192,22 @@ export function SettingsView({
   const [autoRoute, setAutoRoute] = useState<AutoRouteInfo | null>(null);
   const [autoRouteBusy, setAutoRouteBusy] = useState(false);
   const [autoRouteOpen, setAutoRouteOpen] = useState(true);
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${GATEWAY}/api/auto-route/model-options`, withUiHeaders())
+      .then((r) => (r.ok ? r.json() : { models: [] }))
+      .then((d: { models?: ModelOption[] }) => {
+        if (!cancelled) setModelOptions(Array.isArray(d?.models) ? d.models : []);
+      })
+      .catch(() => {
+        /* offline: empty list, selected still show as chips */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const refresh = () =>
@@ -1241,46 +1258,32 @@ export function SettingsView({
                 {t('settings.autoRoute.modality.desc')}
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground">
-                    {t('settings.autoRoute.modality.imageModel')}
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full rounded-md border border-input bg-surface px-3 py-1.5 font-mono text-xs text-foreground shadow-sm outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
-                    placeholder={t('settings.autoRoute.modality.imageModelPh')}
-                    value={autoRoute?.imageModel ?? ''}
-                    onChange={(e) =>
-                      setAutoRoute((prev) =>
-                        prev ? { ...prev, imageModel: e.target.value } : prev,
-                      )
-                    }
-                    onBlur={() => {
-                      if (autoRoute) void saveAutoRoute({ imageModel: autoRoute.imageModel });
-                    }}
-                    disabled={autoRouteBusy}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground">
-                    {t('settings.autoRoute.modality.videoModel')}
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full rounded-md border border-input bg-surface px-3 py-1.5 font-mono text-xs text-foreground shadow-sm outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
-                    placeholder={t('settings.autoRoute.modality.videoModelPh')}
-                    value={autoRoute?.videoModel ?? ''}
-                    onChange={(e) =>
-                      setAutoRoute((prev) =>
-                        prev ? { ...prev, videoModel: e.target.value } : prev,
-                      )
-                    }
-                    onBlur={() => {
-                      if (autoRoute) void saveAutoRoute({ videoModel: autoRoute.videoModel });
-                    }}
-                    disabled={autoRouteBusy}
-                  />
-                </div>
+                <ModelMultiSelect
+                  label={t('settings.autoRoute.modality.imageModel')}
+                  hint={t('settings.autoRoute.roundRobinHint')}
+                  placeholder={t('settings.autoRoute.modality.imageModelPh')}
+                  value={autoRoute?.imageModel ?? []}
+                  onChange={(next) => {
+                    setAutoRoute((prev) => (prev ? { ...prev, imageModel: next } : prev));
+                    void saveAutoRoute({ imageModel: next });
+                  }}
+                  filterCapability="image"
+                  options={modelOptions}
+                  disabled={autoRouteBusy}
+                />
+                <ModelMultiSelect
+                  label={t('settings.autoRoute.modality.videoModel')}
+                  hint={t('settings.autoRoute.roundRobinHint')}
+                  placeholder={t('settings.autoRoute.modality.videoModelPh')}
+                  value={autoRoute?.videoModel ?? []}
+                  onChange={(next) => {
+                    setAutoRoute((prev) => (prev ? { ...prev, videoModel: next } : prev));
+                    void saveAutoRoute({ videoModel: next });
+                  }}
+                  filterCapability="video"
+                  options={modelOptions}
+                  disabled={autoRouteBusy}
+                />
               </div>
             </div>
 
@@ -1303,31 +1306,21 @@ export function SettingsView({
                     },
                   ] as const
                 ).map((tier) => (
-                  <div key={tier.key} className="space-y-1.5">
-                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <span>{tier.icon}</span> {tier.label}
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full rounded-md border border-input bg-surface px-3 py-1.5 font-mono text-xs text-foreground shadow-sm outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
-                      placeholder={t(`settings.autoRoute.textTiers.${tier.key}Ph` as never)}
-                      value={autoRoute?.textTiers?.[tier.key] ?? ''}
-                      onChange={(e) =>
-                        setAutoRoute((prev) =>
-                          prev
-                            ? {
-                                ...prev,
-                                textTiers: { ...prev.textTiers, [tier.key]: e.target.value },
-                              }
-                            : prev,
-                        )
-                      }
-                      onBlur={() => {
-                        if (autoRoute) void saveAutoRoute({ textTiers: autoRoute.textTiers });
-                      }}
-                      disabled={autoRouteBusy}
-                    />
-                  </div>
+                  <ModelMultiSelect
+                    key={tier.key}
+                    label={`${tier.icon} ${tier.label}`}
+                    hint={t('settings.autoRoute.roundRobinHint')}
+                    placeholder={t(`settings.autoRoute.textTiers.${tier.key}Ph` as never)}
+                    value={autoRoute?.textTiers?.[tier.key] ?? []}
+                    onChange={(next) => {
+                      const textTiers = { ...autoRoute?.textTiers, [tier.key]: next };
+                      setAutoRoute((prev) => (prev ? { ...prev, textTiers } : prev));
+                      void saveAutoRoute({ textTiers });
+                    }}
+                    filterCapability="text"
+                    options={modelOptions}
+                    disabled={autoRouteBusy}
+                  />
                 ))}
               </div>
             </div>

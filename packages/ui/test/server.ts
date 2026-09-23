@@ -72,8 +72,36 @@ export const defaultHandlers = [
       enabled: false,
       strategy: 'capability',
       fallbackChain: [],
+      imageModel: ['custom:img'],
+      videoModel: [],
+      textTiers: { simple: [], medium: [], complex: [] },
       cooldowns: [],
       recentNotices: [],
+    }),
+  ),
+  http.get(`${gateway}/api/auto-route/model-options`, () =>
+    HttpResponse.json({
+      models: [
+        {
+          id: 'custom:fixture:img-a',
+          provider: 'custom',
+          displayName: 'Img A',
+          capabilities: ['image'],
+        },
+        {
+          id: 'custom:fixture:vid-a',
+          provider: 'custom',
+          displayName: 'Vid A',
+          capabilities: ['video'],
+        },
+        {
+          id: 'custom:fixture:chat-1',
+          provider: 'custom',
+          displayName: 'Chat 1',
+          capabilities: ['text'],
+        },
+        { id: 'custom:fixture:legacy', provider: 'custom', displayName: 'Legacy' },
+      ],
     }),
   ),
   http.post(`${gateway}/api/auto-route`, () => HttpResponse.json({ ok: true })),
