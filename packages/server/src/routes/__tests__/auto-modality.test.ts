@@ -38,6 +38,35 @@ describe('detectRequestModality image text intent', () => {
     assert.equal(detectRequestModality([textMsg('生成一段小猫视频')]), 'video');
   });
 
+  it('uses the latest user message, not earlier image history', () => {
+    assert.equal(
+      detectRequestModality([textMsg('生成小猫图片'), textMsg('生成小猫卖萌视频')]),
+      'video',
+    );
+    assert.equal(
+      detectRequestModality([
+        textMsg('帮我画一张风景插画'),
+        { role: 'assistant' as const, content: 'done' },
+        textMsg('生成小猫卖萌视频'),
+      ]),
+      'video',
+    );
+  });
+
+  it('prefers latest image intent over earlier video history', () => {
+    assert.equal(
+      detectRequestModality([textMsg('生成一段小猫视频'), textMsg('生成小猫图片')]),
+      'image',
+    );
+  });
+
+  it('treats latest plain chat as text even after earlier image intent', () => {
+    assert.equal(
+      detectRequestModality([textMsg('生成小猫图片'), textMsg('介绍一下 OpenRouter')]),
+      'text',
+    );
+  });
+
   it('keeps uploaded image parts as image', () => {
     const imagePart = { type: 'image_url', image_url: { url: 'http://x/y.png' } } as {
       type: string;
@@ -86,6 +115,7 @@ function modalityConfig(autoRoute: AppConfig['autoRoute']): AppConfig {
 function modalityRegistry(options: { autoRoute: AppConfig['autoRoute']; models: ModelInfo[] }): {
   registry: ProviderRegistry;
   imageCallCount: () => number;
+  videoCallCount: () => number;
 } {
   const registry = new ProviderRegistry(modalityConfig(options.autoRoute));
   const response: ChatResponse = {
@@ -97,6 +127,7 @@ function modalityRegistry(options: { autoRoute: AppConfig['autoRoute']; models: 
     usage: { prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 },
   };
   let imageCalls = 0;
+  let videoCalls = 0;
   const provider = {
     id: 'custom',
     async chat(_request: ChatRequest): Promise<ChatResponse> {
@@ -118,6 +149,14 @@ function modalityRegistry(options: { autoRoute: AppConfig['autoRoute']; models: 
         data: [{ url: 'https://example.invalid/cat.png' }],
       };
     },
+    async generateVideo() {
+      videoCalls++;
+      return {
+        video_id: 'vid_fixture123',
+        status: 'submitted' as const,
+        provider: 'custom',
+      };
+    },
   };
   registry.resolveModel = () => ({ provider: provider as never, modelId: 'fixture-model' });
   registry.listAllModels = async () => ({
@@ -125,7 +164,11 @@ function modalityRegistry(options: { autoRoute: AppConfig['autoRoute']; models: 
     succeededProviders: ['custom' as const],
     failedProviders: [],
   });
-  return { registry, imageCallCount: () => imageCalls };
+  return {
+    registry,
+    imageCallCount: () => imageCalls,
+    videoCallCount: () => videoCalls,
+  };
 }
 
 async function withApp(
@@ -298,6 +341,41 @@ describe('auto modality HTTP routing', () => {
         const body = res.json();
         assert.equal(body.model, 'image-fixture-1');
         assert.match(body.choices[0].message.content, /cat\.png/);
+      },
+    );
+  });
+
+  it('routes video intent to videoModel even after earlier image history', async () => {
+    await withApp(
+      {
+        autoRoute: {
+          enabled: false,
+          strategy: 'capability',
+          imageModel: ['custom:img-model'],
+          videoModel: ['custom:vid-model'],
+        },
+        models: [textOnlyModel],
+      },
+      async (app) => {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'auto',
+            messages: [
+              { role: 'user', content: '生成小猫图片' },
+              { role: 'assistant', content: 'done' },
+              { role: 'user', content: '生成小猫卖萌视频' },
+            ],
+            stream: false,
+          },
+        });
+        assert.equal(res.statusCode, 200);
+        const body = res.json();
+        assert.equal(body.model, 'custom:vid-model');
+        assert.equal(body.fmf_image_response, undefined);
+        assert.equal(body.fmf_video_response?.video_id, 'vid_fixture123');
+        assert.match(body.choices[0].message.content, /vid_fixture123/);
       },
     );
   });

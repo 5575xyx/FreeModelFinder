@@ -159,7 +159,9 @@ export function detectRequestModality(
     /(生成|制作|创建|做一段?|来一段?|画一段?)[^。\n]{0,12}?(视频|动画|短片|影片|动态|视频片段)/i;
   const IMAGE_TEXT =
     /((生成|绘制|画|创作|做|来一张|来个|帮我画|给我画)[^。\n]{0,12}(图片|图像|照片|插画|插图|壁纸|头像|海报|图画|画像))|((画|做|生成|绘制|创作|来|帮我画|给我画)一?[张幅][^。\n]{0,6}(?<!地)图(?!形))|(generate|draw|create|make)\s+(an?\s+)?[\w\s-]{0,20}(image|picture|photo|illustration|wallpaper|avatar|poster)/i;
-  for (const msg of messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]!;
+    if (msg.role !== 'user') continue;
     const content = msg.content;
     if (Array.isArray(content)) {
       for (const part of content) {
@@ -167,14 +169,19 @@ export function detectRequestModality(
       }
       const text = content
         .map((p) => (p.type === 'text' && typeof p.text === 'string' ? p.text : ''))
-        .join('\n');
-      if (text) {
-        if (VIDEO_KEYWORDS.test(text)) return 'video';
-        if (IMAGE_TEXT.test(text)) return 'image';
-      }
-    } else if (typeof content === 'string') {
-      if (VIDEO_KEYWORDS.test(content)) return 'video';
-      if (IMAGE_TEXT.test(content)) return 'image';
+        .join('\n')
+        .trim();
+      if (!text) continue;
+      if (VIDEO_KEYWORDS.test(text)) return 'video';
+      if (IMAGE_TEXT.test(text)) return 'image';
+      return 'text';
+    }
+    if (typeof content === 'string') {
+      const text = content.trim();
+      if (!text) continue;
+      if (VIDEO_KEYWORDS.test(text)) return 'video';
+      if (IMAGE_TEXT.test(text)) return 'image';
+      return 'text';
     }
   }
   return 'text';
@@ -356,7 +363,7 @@ export function registerOpenAIRoutes(
 
       // Fast-path: infer capabilities from model ID without async calls
       const rawModelId = chatReq.model.split(':').pop() ?? chatReq.model;
-      const inferredCaps: ('text' | 'image' | 'video')[] = /video/i.test(rawModelId)
+      const inferredCaps: ('text' | 'image' | 'video')[] = /vid(eo)?/i.test(rawModelId)
         ? ['video']
         : /image/i.test(rawModelId) || forcedImageModality
           ? ['image']

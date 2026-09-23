@@ -70,6 +70,9 @@ function rrRegistry(autoRoute: AppConfig['autoRoute']) {
     async generateImage(req: { model: string }) {
       return { created: 1, data: [{ url: `https://example.invalid/${req.model}.png` }] };
     },
+    async generateVideo(req: { model: string }) {
+      return { video_id: `vid-${req.model}`, status: 'submitted' as const, provider: 'custom' };
+    },
   };
   registry.resolveModel = (modelId: string) => {
     const sep = modelId.indexOf(':');
