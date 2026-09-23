@@ -243,7 +243,7 @@ const zh: Dict = {
   'settings.autoRoute.saved': '智能路由配置已更新',
   'settings.autoRoute.modality.title': '模态路由（Auto 模式）',
   'settings.autoRoute.modality.desc':
-    '当 model 为 auto 时，根据请求内容自动选择合适的模型。检测到图片走图片模型，检测到视频关键词走视频模型，其余走默认文本模型。',
+    '当 model 为 auto 时，根据请求内容自动选择合适的模型。检测到图片（含「生成xx图片」等文本意图）走图片模型；检测到视频关键词走视频模型；其余走默认文本模型。未配置图片模型时会自动发现可用生图模型。',
   'settings.autoRoute.modality.imageModel': '图片生成模型',
   'settings.autoRoute.modality.imageModelPh': '例如 custom:grok:claude-sonnet-4-6',
   'settings.autoRoute.modality.videoModel': '视频生成模型',
@@ -705,7 +705,7 @@ const en: Dict = {
   'settings.autoRoute.saved': 'Smart routing configuration updated',
   'settings.autoRoute.modality.title': 'Modality routing (Auto mode)',
   'settings.autoRoute.modality.desc':
-    'When model is auto, routes to the appropriate model based on request content. Images go to image model, video keywords go to video model, everything else uses the default text model.',
+    'When model is auto, selects a suitable model from the request. Detected images (including text intent like "generate a cat image") use the image model; video keywords use the video model; otherwise the default text model. If no image model is configured, an available image-generation model is discovered automatically.',
   'settings.autoRoute.modality.imageModel': 'Image generation model',
   'settings.autoRoute.modality.imageModelPh': 'e.g. custom:grok:claude-sonnet-4-6',
   'settings.autoRoute.modality.videoModel': 'Video generation model',
