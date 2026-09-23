@@ -151,17 +151,30 @@ async function dispatchWithAutoRoute(
 
 type RequestModality = 'text' | 'image' | 'video';
 
-function detectRequestModality(messages: OpenAIChatCompletionRequest['messages']): RequestModality {
+export function detectRequestModality(
+  messages: OpenAIChatCompletionRequest['messages'],
+): RequestModality {
   const VIDEO_KEYWORDS =
-    /\b(生成|制作|创建|做一段?|来一段?|画一段?)(视频|动画|短片|影片|动态|视频片段)\b/i;
+    /(生成|制作|创建|做一段?|来一段?|画一段?)[^。\n]{0,12}?(视频|动画|短片|影片|动态|视频片段)/i;
+  const IMAGE_TEXT =
+    /((生成|绘制|画|创作|做|来一张|来个|帮我画|给我画)(一|张|幅|点)?[^。\n]{0,12}(图|图片|图像|照片|插画|插图|壁纸|头像|海报|图画|画像))|(generate|draw|create|make)\s+(an?\s+)?[\w\s-]{0,20}(image|picture|photo|illustration|wallpaper|avatar|poster)/i;
   for (const msg of messages) {
     const content = msg.content;
     if (Array.isArray(content)) {
       for (const part of content) {
         if (part.type === 'image_url' || part.type === 'image') return 'image';
       }
+      const text = content
+        .map((p) => (p.type === 'text' && typeof p.text === 'string' ? p.text : ''))
+        .join('\n');
+      if (text) {
+        if (VIDEO_KEYWORDS.test(text)) return 'video';
+        if (IMAGE_TEXT.test(text)) return 'image';
+      }
+    } else if (typeof content === 'string') {
+      if (VIDEO_KEYWORDS.test(content)) return 'video';
+      if (IMAGE_TEXT.test(content)) return 'image';
     }
-    if (typeof content === 'string' && VIDEO_KEYWORDS.test(content)) return 'video';
   }
   return 'text';
 }
