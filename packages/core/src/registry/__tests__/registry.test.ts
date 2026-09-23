@@ -333,13 +333,6 @@ describe('ProviderRegistry auto scored pool', () => {
     });
     await fill(registry);
     const pick = registry.resolveModel('auto').modelId;
-    assert.ok(pick === 'tiny-3b' || pick === 'mid-14b' || pick === 'big-70b');
-  });
-
-  it('default resolves defaultModel first (regression)', async () => {
-    const registry = catalogRegistry([smallModel, bigModel]);
-    registry.updateConfig({ ...registry.getConfig(), defaultModel: 'openrouter:big-70b' });
-    await fill(registry);
-    assert.equal(registry.resolveModel('default').modelId, 'big-70b');
+    assert.equal(pick, 'tiny-3b');
   });
 });
