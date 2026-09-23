@@ -222,6 +222,10 @@ function nextFromPool(slot: string, pool: string[]): string | undefined {
   return pick;
 }
 
+export function resetModalityCursors(): void {
+  modalityCursor.clear();
+}
+
 export function registerOpenAIRoutes(
   app: FastifyInstance,
   getRegistry: () => ProviderRegistry,

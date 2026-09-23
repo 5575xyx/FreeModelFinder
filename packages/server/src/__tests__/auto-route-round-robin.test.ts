@@ -9,6 +9,7 @@ import {
 } from '@freemodelfinder/core';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../server.js';
+import { resetModalityCursors } from '../routes/openai.js';
 
 function textMsg(content: string) {
   return { role: 'user' as const, content };
@@ -43,7 +44,6 @@ function rrConfig(autoRoute: AppConfig['autoRoute']): AppConfig {
 }
 
 function rrRegistry(autoRoute: AppConfig['autoRoute']) {
-  const seen: string[] = [];
   const registry = new ProviderRegistry(rrConfig(autoRoute));
   const response: ChatResponse = {
     id: 'r',
@@ -72,8 +72,9 @@ function rrRegistry(autoRoute: AppConfig['autoRoute']) {
     },
   };
   registry.resolveModel = (modelId: string) => {
-    seen.push(modelId);
-    return { provider: provider as never, modelId };
+    const sep = modelId.indexOf(':');
+    const real = sep > 0 ? modelId.slice(sep + 1) : modelId;
+    return { provider: provider as never, modelId: real };
   };
   registry.listAllModels = async () => ({
     models: [
@@ -87,20 +88,20 @@ function rrRegistry(autoRoute: AppConfig['autoRoute']) {
     succeededProviders: ['custom' as const],
     failedProviders: [],
   });
-  return { registry, seen };
+  return registry;
 }
 
 async function withApp(
   autoRoute: AppConfig['autoRoute'],
-  fn: (app: FastifyInstance, seen: string[]) => Promise<void>,
+  fn: (app: FastifyInstance) => Promise<void>,
 ): Promise<void> {
-  const { registry, seen } = rrRegistry(autoRoute);
+  const registry = rrRegistry(autoRoute);
   const { app } = await createServer({
     registry,
     watchIntervalMs: 60 * 60 * 1000,
   });
   try {
-    await fn(app, seen);
+    await fn(app);
   } finally {
     await app.close();
   }
@@ -129,18 +130,18 @@ describe('auto-route multi-model round robin', () => {
         imageModel: ['custom:fixture:img-a', 'custom:fixture:img-b'],
       },
       async (app) => {
+        resetModalityCursors();
         const models: string[] = [];
         for (let i = 0; i < 4; i++) {
           const body = (await postImage(app)) as { model?: string };
           models.push(body.model ?? '');
         }
-        const unique = new Set(models);
-        assert.equal(unique.size, 2, `expected 2 distinct models, got ${models.join(',')}`);
-        assert.ok(models.includes('custom:fixture:img-a'));
-        assert.ok(models.includes('custom:fixture:img-b'));
-        for (let i = 1; i < models.length; i++) {
-          assert.notEqual(models[i], models[i - 1]);
-        }
+        assert.deepEqual(models, [
+          'custom:fixture:img-a',
+          'custom:fixture:img-b',
+          'custom:fixture:img-a',
+          'custom:fixture:img-b',
+        ]);
       },
     );
   });
@@ -184,6 +185,11 @@ describe('auto-route multi-model round robin', () => {
         textTiers: { simple: ['custom:fixture:s0', 'custom:fixture:s1'] },
       },
       async (app) => {
+        resetModalityCursors();
+
+        const iFirst = (await postImage(app)) as { model?: string };
+        assert.equal(iFirst.model, 'custom:fixture:img-a');
+
         const t1 = (
           await app.inject({
             method: 'POST',
@@ -198,13 +204,41 @@ describe('auto-route multi-model round robin', () => {
             payload: { model: 'auto', messages: [textMsg('hello')], stream: false },
           })
         ).json() as { model?: string };
-        assert.notEqual(t1.model, t2.model);
+        assert.equal(t1.model, 'custom:fixture:s0');
+        assert.equal(t2.model, 'custom:fixture:s1');
 
-        const i1 = (await postImage(app)) as { model?: string };
-        const i2 = (await postImage(app)) as { model?: string };
-        assert.ok(i1.model === 'custom:fixture:img-a' || i1.model === 'custom:fixture:img-b');
-        assert.ok(i2.model === 'custom:fixture:img-a' || i2.model === 'custom:fixture:img-b');
-        assert.notEqual(i1.model, i2.model);
+        const iSecond = (await postImage(app)) as { model?: string };
+        assert.equal(iSecond.model, 'custom:fixture:img-b');
+      },
+    );
+  });
+
+  it('round-robins videoModel pool', async () => {
+    await withApp(
+      {
+        enabled: false,
+        strategy: 'capability',
+        videoModel: ['custom:fixture:vid-a', 'custom:fixture:vid-b'],
+      },
+      async (app) => {
+        resetModalityCursors();
+        const postVideo = async () => {
+          const res = await app.inject({
+            method: 'POST',
+            url: '/v1/chat/completions',
+            payload: {
+              model: 'auto',
+              messages: [textMsg('生成一段小猫视频')],
+              stream: false,
+            },
+          });
+          assert.equal(res.statusCode, 200);
+          return res.json() as { model?: string };
+        };
+        const a = await postVideo();
+        const b = await postVideo();
+        assert.equal(a.model, 'custom:fixture:vid-a');
+        assert.equal(b.model, 'custom:fixture:vid-b');
       },
     );
   });
