@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+// Chip remove spans stay nested inside the trigger button (established pattern
+// with e.stopPropagation); structural extraction deferred to Task 6/7 if needed.
 import { Check, ChevronDown, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { classNames } from '../lib/utils';
@@ -17,22 +19,30 @@ interface ModelMultiSelectProps {
   hint?: string;
   value: string[];
   onChange: (next: string[]) => void;
-  /** capability key to filter options: 'image' | 'video' | 'text' */
-  filterCapability?: string;
+  filterCapability?: 'image' | 'video' | 'text';
   placeholder?: string;
-  /** options loader — parent supplies; component fetches once on mount */
-  loadOptions: () => Promise<ModelOption[]>;
+  /** options supplied by parent (Task 6 fetches once and shares) */
+  options: ModelOption[];
   disabled?: boolean;
 }
 
-function matchesCapability(option: ModelOption, filter?: string): boolean {
+export function matchesCapability(
+  option: ModelOption,
+  filter?: 'image' | 'video' | 'text',
+): boolean {
   if (!filter) return true;
   const caps = option.capabilities;
-  if (!caps || caps.length === 0) return true;
-  if (filter === 'text') {
-    return !caps.includes('image') && !caps.includes('video');
+  const hasCaps = Array.isArray(caps) && caps.length > 0;
+  const bare = `${option.id} ${option.displayName ?? ''}`;
+  if (filter === 'image') {
+    return hasCaps ? caps!.includes('image') : /image/i.test(bare);
   }
-  return caps.includes(filter);
+  if (filter === 'video') {
+    return hasCaps ? caps!.includes('video') : /video/i.test(bare);
+  }
+  // text: multimodal text-capable models OK; exclude only pure image/video
+  if (!hasCaps) return !/image|video/i.test(bare);
+  return caps!.includes('text') || (!caps!.includes('image') && !caps!.includes('video'));
 }
 
 export function ModelMultiSelect({
@@ -42,27 +52,12 @@ export function ModelMultiSelect({
   onChange,
   filterCapability,
   placeholder,
-  loadOptions,
+  options,
   disabled = false,
 }: ModelMultiSelectProps) {
   const { t } = useI18n();
-  const [options, setOptions] = useState<ModelOption[]>([]);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void loadOptions()
-      .then((next) => {
-        if (!cancelled) setOptions(next);
-      })
-      .catch(() => {
-        /* keep empty list on load failure */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -73,6 +68,15 @@ export function ModelMultiSelect({
     }
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, [open]);
 
   const filtered = useMemo(
@@ -120,6 +124,7 @@ export function ModelMultiSelect({
         <button
           type="button"
           disabled={disabled}
+          aria-label={label}
           aria-expanded={open}
           aria-haspopup="listbox"
           onClick={() => setOpen((v) => !v)}
