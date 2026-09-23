@@ -140,12 +140,12 @@ export interface AutoRouteSettings {
   strategy: AutoRouteStrategy;
   profiles?: ModelRoutingProfile[];
   fallbackChain?: string[];
-  imageModel?: string;
-  videoModel?: string;
+  imageModel?: string[];
+  videoModel?: string[];
   textTiers?: {
-    simple?: string;
-    medium?: string;
-    complex?: string;
+    simple?: string[];
+    medium?: string[];
+    complex?: string[];
   };
 }
 
