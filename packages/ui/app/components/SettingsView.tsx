@@ -193,6 +193,9 @@ export function SettingsView({
   const [autoRouteBusy, setAutoRouteBusy] = useState(false);
   const [autoRouteOpen, setAutoRouteOpen] = useState(true);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const autoRouteBusyRef = useRef(false);
+  const autoRouteSeqRef = useRef(0);
+  const autoRoutePendingRef = useRef<Partial<AutoRouteInfo> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,21 +212,47 @@ export function SettingsView({
     };
   }, []);
 
+  function applyAutoRouteState(data: AutoRouteInfo): void {
+    const pending = autoRoutePendingRef.current;
+    setAutoRoute(pending ? { ...data, ...pending } : data);
+  }
+
+  function releaseAutoRouteLock(): void {
+    autoRouteBusyRef.current = false;
+    setAutoRouteBusy(false);
+    const pending = autoRoutePendingRef.current;
+    autoRoutePendingRef.current = null;
+    if (pending) void saveAutoRoute(pending);
+  }
+
   useEffect(() => {
-    const refresh = () =>
+    const refresh = () => {
+      if (autoRouteBusyRef.current) return;
+      const seq = autoRouteSeqRef.current;
       fetch(`${GATEWAY}/api/auto-route`, withUiHeaders())
         .then((r) => r.json())
-        .then((d) => setAutoRoute(d))
+        .then((d) => {
+          if (autoRouteBusyRef.current) return;
+          if (seq !== autoRouteSeqRef.current) return;
+          setAutoRoute(d);
+        })
         .catch(() => {
           /* ignore when gateway offline */
         });
+    };
     void refresh();
-    const t = setInterval(refresh, 5000);
-    return () => clearInterval(t);
+    const timer = setInterval(refresh, 5000);
+    return () => clearInterval(timer);
   }, []);
 
   async function saveAutoRoute(patch: Partial<AutoRouteInfo>): Promise<void> {
+    if (autoRouteBusyRef.current) {
+      autoRoutePendingRef.current = { ...(autoRoutePendingRef.current ?? {}), ...patch };
+      return;
+    }
+    autoRouteBusyRef.current = true;
     setAutoRouteBusy(true);
+    autoRouteSeqRef.current += 1;
     try {
       const res = await fetch(
         `${GATEWAY}/api/auto-route`,
@@ -234,23 +263,36 @@ export function SettingsView({
         }),
       );
       if (!res.ok) throw new Error(`failed ${res.status}`);
+      const seq = autoRouteSeqRef.current;
       const refreshed = await fetch(`${GATEWAY}/api/auto-route`, withUiHeaders()).then((r) =>
         r.json(),
       );
-      setAutoRoute(refreshed);
-      setToast({ kind: 'success', text: t('settings.autoRoute.saved') });
+      if (seq === autoRouteSeqRef.current) applyAutoRouteState(refreshed);
     } catch (err) {
+      autoRouteSeqRef.current += 1;
+      try {
+        const seq = autoRouteSeqRef.current;
+        const serverState = await fetch(`${GATEWAY}/api/auto-route`, withUiHeaders()).then((r) =>
+          r.json(),
+        );
+        if (seq === autoRouteSeqRef.current) applyAutoRouteState(serverState);
+      } catch {
+        /* gateway offline: keep local state until poll recovers */
+      }
       setToast({
         kind: 'error',
         text: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      setAutoRouteBusy(false);
+      releaseAutoRouteLock();
     }
   }
 
   async function clearAllCooldowns(): Promise<void> {
+    if (autoRouteBusyRef.current) return;
+    autoRouteBusyRef.current = true;
     setAutoRouteBusy(true);
+    autoRouteSeqRef.current += 1;
     try {
       await fetch(
         `${GATEWAY}/api/auto-route/clear-cooldown`,
@@ -260,12 +302,15 @@ export function SettingsView({
           body: JSON.stringify({}),
         }),
       );
+      const seq = autoRouteSeqRef.current;
       const refreshed = await fetch(`${GATEWAY}/api/auto-route`, withUiHeaders()).then((r) =>
         r.json(),
       );
-      setAutoRoute(refreshed);
+      if (seq === autoRouteSeqRef.current) applyAutoRouteState(refreshed);
+    } catch {
+      /* ignore cooldown clear failures */
     } finally {
-      setAutoRouteBusy(false);
+      releaseAutoRouteLock();
     }
   }
 
@@ -1257,10 +1302,12 @@ export function SettingsView({
               <p className="text-[11px] text-muted-foreground">
                 {t('settings.autoRoute.modality.desc')}
               </p>
+              <p className="text-[11px] text-muted-foreground">
+                {t('settings.autoRoute.roundRobinHint')}
+              </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <ModelMultiSelect
                   label={t('settings.autoRoute.modality.imageModel')}
-                  hint={t('settings.autoRoute.roundRobinHint')}
                   placeholder={t('settings.autoRoute.modality.imageModelPh')}
                   value={autoRoute?.imageModel ?? []}
                   onChange={(next) => {
@@ -1269,11 +1316,9 @@ export function SettingsView({
                   }}
                   filterCapability="image"
                   options={modelOptions}
-                  disabled={autoRouteBusy}
                 />
                 <ModelMultiSelect
                   label={t('settings.autoRoute.modality.videoModel')}
-                  hint={t('settings.autoRoute.roundRobinHint')}
                   placeholder={t('settings.autoRoute.modality.videoModelPh')}
                   value={autoRoute?.videoModel ?? []}
                   onChange={(next) => {
@@ -1282,7 +1327,6 @@ export function SettingsView({
                   }}
                   filterCapability="video"
                   options={modelOptions}
-                  disabled={autoRouteBusy}
                 />
               </div>
             </div>
@@ -1293,6 +1337,9 @@ export function SettingsView({
               </div>
               <p className="text-[11px] text-muted-foreground">
                 {t('settings.autoRoute.textTiers.desc')}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {t('settings.autoRoute.roundRobinHint')}
               </p>
               <div className="grid gap-3 sm:grid-cols-3">
                 {(
@@ -1309,17 +1356,19 @@ export function SettingsView({
                   <ModelMultiSelect
                     key={tier.key}
                     label={`${tier.icon} ${tier.label}`}
-                    hint={t('settings.autoRoute.roundRobinHint')}
                     placeholder={t(`settings.autoRoute.textTiers.${tier.key}Ph` as never)}
                     value={autoRoute?.textTiers?.[tier.key] ?? []}
                     onChange={(next) => {
+                      setAutoRoute((prev) =>
+                        prev
+                          ? { ...prev, textTiers: { ...prev.textTiers, [tier.key]: next } }
+                          : prev,
+                      );
                       const textTiers = { ...autoRoute?.textTiers, [tier.key]: next };
-                      setAutoRoute((prev) => (prev ? { ...prev, textTiers } : prev));
                       void saveAutoRoute({ textTiers });
                     }}
                     filterCapability="text"
                     options={modelOptions}
-                    disabled={autoRouteBusy}
                   />
                 ))}
               </div>
