@@ -385,4 +385,158 @@ describe('multi-key management', () => {
     });
     assert.equal(cfg.json().providers.openrouter.keyMeta.length, 0);
   });
+
+  it('preserves source keys when a full sources payload omits apiKey', async () => {
+    const before = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    assert.equal(before.statusCode, 200);
+    assert.equal(before.json().custom.sources[0].keyMeta.length, 2);
+
+    const preserve = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: {
+        provider: 'custom',
+        enabled: true,
+        sources: [
+          {
+            id: 'fixture',
+            label: 'Fixture Renamed',
+            baseUrl: 'https://fixture.invalid/v1',
+            models: [{ id: 'fixture-model' }],
+          },
+          {
+            id: 'string-src',
+            label: 'String Src',
+            baseUrl: 'https://string.invalid/v1',
+          },
+        ],
+      },
+    });
+    assert.equal(preserve.statusCode, 200);
+
+    let cfg = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    const preserved = cfg.json().custom.sources;
+    assert.equal(preserved[0].label, 'Fixture Renamed');
+    assert.equal(preserved[0].keyMeta.length, 2);
+    assert.equal(preserved[1].keyMeta.length, 1);
+    assert.ok(!cfg.body.includes('src-two-2222'));
+
+    const replace = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: {
+        provider: 'custom',
+        enabled: true,
+        sources: [
+          {
+            id: 'fixture',
+            label: 'Fixture Renamed',
+            baseUrl: 'https://fixture.invalid/v1',
+            apiKey: 'new-key-9999',
+            models: [{ id: 'fixture-model' }],
+          },
+          {
+            id: 'string-src',
+            label: 'String Src',
+            baseUrl: 'https://string.invalid/v1',
+          },
+        ],
+      },
+    });
+    assert.equal(replace.statusCode, 200);
+
+    cfg = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    const replaced = cfg.json().custom.sources;
+    assert.equal(replaced[0].keyMeta.length, 1);
+    assert.equal(replaced[0].keyMeta[0].hint, '…9999');
+    assert.equal(replaced[1].keyMeta.length, 1);
+    assert.ok(!cfg.body.includes('new-key-9999'));
+  });
+
+  it('uses the stored source key for fetch-models when sourceId is provided', async () => {
+    const setKey = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: {
+        provider: 'custom',
+        enabled: true,
+        sources: [
+          {
+            id: 'fixture',
+            label: 'Fixture Renamed',
+            baseUrl: 'https://fixture.invalid/v1',
+            apiKey: 'stored-lookup-7777',
+            models: [{ id: 'fixture-model' }],
+          },
+          { id: 'string-src', label: 'String Src', baseUrl: 'https://string.invalid/v1' },
+        ],
+      },
+    });
+    assert.equal(setKey.statusCode, 200);
+
+    const originalFetch = globalThis.fetch;
+    let lastUrl = '';
+    let lastAuth: string | undefined;
+    globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+      const [input, init] = args;
+      lastUrl = String(input);
+      lastAuth = new Headers(init?.headers).get('authorization') ?? undefined;
+      return new Response(JSON.stringify({ data: [{ id: 'upstream-model', object: 'model' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const stored = await app.inject({
+        method: 'POST',
+        url: '/api/custom/fetch-models',
+        headers: localUiHeaders,
+        payload: { baseUrl: 'https://stored.invalid/v1', sourceId: 'fixture' },
+      });
+      assert.equal(stored.statusCode, 200);
+      assert.deepEqual(stored.json().models, [{ id: 'upstream-model' }]);
+      assert.equal(lastUrl, 'https://stored.invalid/v1/models');
+      assert.equal(lastAuth, 'Bearer stored-lookup-7777');
+
+      const override = await app.inject({
+        method: 'POST',
+        url: '/api/custom/fetch-models',
+        headers: localUiHeaders,
+        payload: {
+          baseUrl: 'https://stored.invalid/v1',
+          sourceId: 'fixture',
+          apiKey: 'draft-override-1234',
+        },
+      });
+      assert.equal(override.statusCode, 200);
+      assert.equal(lastAuth, 'Bearer draft-override-1234');
+
+      const unknown = await app.inject({
+        method: 'POST',
+        url: '/api/custom/fetch-models',
+        headers: localUiHeaders,
+        payload: { baseUrl: 'https://stored.invalid/v1', sourceId: 'unknown-source' },
+      });
+      assert.equal(unknown.statusCode, 200);
+      assert.equal(lastAuth, undefined);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

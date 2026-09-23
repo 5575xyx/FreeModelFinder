@@ -626,6 +626,17 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             }))
             .filter((m) => m.id)
         : undefined;
+      const curCfg = getRegistry().getConfig();
+      const prevSourcesExtra = (curCfg.providers[providerId]?.credentials?.extra ?? {}) as {
+        sources?: Array<{ id?: string; apiKey?: string | string[] }>;
+      };
+      const prevSourceList = Array.isArray(prevSourcesExtra.sources)
+        ? prevSourcesExtra.sources
+        : [];
+      const prevSourceById = new Map<string, { apiKey?: string | string[] }>();
+      for (const ps of prevSourceList) {
+        if (typeof ps?.id === 'string' && ps.id) prevSourceById.set(ps.id, ps);
+      }
       const cleanSources = Array.isArray(sources)
         ? sources
             .map((s) => {
@@ -634,7 +645,15 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
               if (!id || !bu) return null;
               const rawKey = s?.apiKey;
               let key: string | string[] | undefined;
-              if (Array.isArray(rawKey)) {
+              if (rawKey === undefined) {
+                const prevKey = prevSourceById.get(id)?.apiKey;
+                if (Array.isArray(prevKey)) {
+                  const keys = prevKey.filter((k) => typeof k === 'string' && !!k.trim());
+                  if (keys.length) key = keys.length === 1 ? keys[0] : keys;
+                } else if (typeof prevKey === 'string' && prevKey.trim()) {
+                  key = prevKey.trim();
+                }
+              } else if (Array.isArray(rawKey)) {
                 const keys = rawKey
                   .map((k) => (typeof k === 'string' ? k.trim() : ''))
                   .filter((k) => !!k);
@@ -663,16 +682,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
                 id,
                 label,
                 baseUrl: bu.replace(/\/$/, ''),
-                ...(Array.isArray(rawKey)
-                  ? (() => {
-                      const keys = rawKey
-                        .map((k) => (typeof k === 'string' ? k.trim() : ''))
-                        .filter((k) => !!k);
-                      return keys.length ? { apiKey: keys.length === 1 ? keys[0] : keys } : {};
-                    })()
-                  : key
-                    ? { apiKey: key }
-                    : {}),
+                ...(key !== undefined ? { apiKey: key } : {}),
                 models: modelsList,
               };
             })
@@ -728,7 +738,6 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       ) {
         return reply.code(400).send({ error: 'removeSourceKey invalid' });
       }
-      const curCfg = getRegistry().getConfig();
       if (removeKeyIndex !== undefined && providerId !== 'custom') {
         const pool = providerKeyPool(curCfg.providers[providerId]?.credentials);
         if (removeKeyIndex >= pool.length) {
@@ -910,11 +919,22 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       }
     });
 
-    app.post<{ Body: { baseUrl: string; apiKey?: string } }>(
+    app.post<{ Body: { baseUrl: string; apiKey?: string; sourceId?: string } }>(
       '/api/custom/fetch-models',
       async (req, reply) => {
-        const { baseUrl: rawBaseUrl, apiKey } = req.body ?? {};
+        const { baseUrl: rawBaseUrl, apiKey: bodyApiKey, sourceId } = req.body ?? {};
         if (!rawBaseUrl) return reply.code(400).send({ error: 'baseUrl required' });
+        let apiKey =
+          typeof bodyApiKey === 'string' && bodyApiKey.trim() ? bodyApiKey.trim() : undefined;
+        if (!apiKey && typeof sourceId === 'string' && sourceId.trim()) {
+          const cfg = getRegistry().getConfig();
+          const extra = (cfg.providers.custom?.credentials?.extra ?? {}) as {
+            sources?: Array<{ id?: string; apiKey?: string | string[] }>;
+          };
+          const list = Array.isArray(extra.sources) ? extra.sources : [];
+          const found = list.find((s) => s?.id === sourceId.trim());
+          apiKey = sourceKeyPool(found?.apiKey)[0];
+        }
         const base = rawBaseUrl.replace(/\/+$/, '');
         const modelsPath = /\/v1\/?$/.test(base) ? `${base}/models` : `${base}/v1/models`;
         const url = modelsPath;

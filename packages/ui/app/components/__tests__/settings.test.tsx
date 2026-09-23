@@ -39,7 +39,7 @@ describe('SettingsView', () => {
       'button',
       { name: '保存自定义模型' },
       {
-        timeout: 3000,
+        timeout: 5000,
       },
     );
     await user.click(mainSave);

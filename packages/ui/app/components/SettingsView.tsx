@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   ChevronDown,
@@ -79,6 +79,22 @@ type PingResult = {
   reply?: string;
 };
 
+function mergeSourceKeyMeta(
+  local: CustomSourceDef[],
+  serverSources: CustomSourceDef[],
+): CustomSourceDef[] {
+  const byId = new Map(serverSources.map((s) => [s.id, s]));
+  return local.map((entry) => {
+    const srv = byId.get(entry.id);
+    if (!srv) return entry;
+    return {
+      ...entry,
+      hasKey: srv.hasKey ?? entry.hasKey,
+      keyMeta: srv.keyMeta ?? entry.keyMeta,
+    };
+  });
+}
+
 type GatewayKeyInfo = {
   id: string;
   label: string | null;
@@ -143,6 +159,7 @@ export function SettingsView({
   const [customSources, setCustomSources] = useState<CustomSourceDef[]>([]);
   const [customKeyVisible, setCustomKeyVisible] = useState<Record<string, boolean>>({});
   const [customSaveState, setCustomSaveState] = useState<SaveState>('idle');
+  const customBusyRef = useRef(false);
   const [customNewSourceName, setCustomNewSourceName] = useState('');
   const [customModelDraft, setCustomModelDraft] = useState<
     Record<string, { id: string; name: string; ctx: string }>
@@ -531,6 +548,7 @@ export function SettingsView({
       ...prev,
       [sourceId]: { loading: true, error: null, models: prev[sourceId]?.models ?? [] },
     }));
+    const draftKey = (srcKeyDrafts[sourceId] ?? []).map((k) => k.trim()).find(Boolean);
     try {
       const resp = await fetch(
         `${GATEWAY}/api/custom/fetch-models`,
@@ -539,7 +557,8 @@ export function SettingsView({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             baseUrl: source.baseUrl.trim(),
-            apiKey: source.apiKey || undefined,
+            sourceId,
+            apiKey: source.apiKey || draftKey || undefined,
           }),
         }),
       );
@@ -584,28 +603,30 @@ export function SettingsView({
   }
 
   async function saveCustomProvider() {
-    if (customSources.length === 0) {
-      setToast({ kind: 'error', text: t('settings.custom.errorNoSource') });
-      return;
-    }
-    for (const s of customSources) {
-      if (!s.baseUrl.trim()) {
-        setToast({
-          kind: 'error',
-          text: t('settings.custom.errorNoBase', { name: s.label || s.id }),
-        });
-        return;
-      }
-      if (s.models.length === 0) {
-        setToast({
-          kind: 'error',
-          text: t('settings.custom.errorNoModel', { name: s.label || s.id }),
-        });
-        return;
-      }
-    }
-    setCustomSaveState('saving');
+    if (customBusyRef.current) return;
+    customBusyRef.current = true;
     try {
+      if (customSources.length === 0) {
+        setToast({ kind: 'error', text: t('settings.custom.errorNoSource') });
+        return;
+      }
+      for (const s of customSources) {
+        if (!s.baseUrl.trim()) {
+          setToast({
+            kind: 'error',
+            text: t('settings.custom.errorNoBase', { name: s.label || s.id }),
+          });
+          return;
+        }
+        if (s.models.length === 0) {
+          setToast({
+            kind: 'error',
+            text: t('settings.custom.errorNoModel', { name: s.label || s.id }),
+          });
+          return;
+        }
+      }
+      setCustomSaveState('saving');
       const payloadSources = customSources.map((s) => ({
         id: s.id,
         label: s.label,
@@ -638,16 +659,17 @@ export function SettingsView({
       setToast({ kind: 'success', text: t('settings.custom.saved') });
       setCustomSaveState('saved');
       setTimeout(() => setCustomSaveState('idle'), 1600);
-      const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
-        (r) => r.json() as Promise<ConfigRes>,
-      );
-      setCfg(refreshed);
-      if (refreshed.custom) {
-        const list =
-          Array.isArray(refreshed.custom.sources) && refreshed.custom.sources.length > 0
-            ? refreshed.custom.sources
-            : [];
-        setCustomSources(list.map((s) => ({ ...s, apiKey: '', models: s.models ?? [] })));
+      try {
+        const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
+          (r) => r.json() as Promise<ConfigRes>,
+        );
+        setCfg(refreshed);
+        const serverSources = refreshed.custom?.sources;
+        if (serverSources) {
+          setCustomSources((prev) => mergeSourceKeyMeta(prev, serverSources));
+        }
+      } catch {
+        /* refresh failure must not surface as a save failure */
       }
       if (onModelsRefresh) {
         try {
@@ -661,13 +683,16 @@ export function SettingsView({
       setToast({ kind: 'error', text: t('settings.custom.saveFailed', { msg }) });
       setCustomSaveState('error');
       setTimeout(() => setCustomSaveState('idle'), 1800);
+    } finally {
+      customBusyRef.current = false;
     }
   }
 
   async function saveSourceDrafts(sourceId: string) {
-    if (customSaveState === 'saving') return;
+    if (customBusyRef.current) return;
     const append = (srcKeyDrafts[sourceId] ?? []).map((k) => k.trim()).filter(Boolean);
     if (!append.length) return;
+    customBusyRef.current = true;
     setCustomSaveState('saving');
     try {
       const res = await fetch(
@@ -683,27 +708,36 @@ export function SettingsView({
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSrcKeyDrafts((d) => ({ ...d, [sourceId]: [] }));
-      setToast({ kind: 'success', text: t('settings.custom.saved') });
-      const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
-        (r) => r.json() as Promise<ConfigRes>,
-      );
-      setCfg(refreshed);
-      if (refreshed.custom?.sources) {
-        setCustomSources(
-          refreshed.custom.sources.map((s) => ({ ...s, apiKey: '', models: s.models ?? [] })),
-        );
-      }
+      setToast({
+        kind: 'success',
+        text: t('settings.sources.savedToast', { provider: sourceId }),
+      });
       setCustomSaveState('saved');
       setTimeout(() => setCustomSaveState('idle'), 1600);
+      try {
+        const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
+          (r) => r.json() as Promise<ConfigRes>,
+        );
+        setCfg(refreshed);
+        const serverSources = refreshed.custom?.sources;
+        if (serverSources) {
+          setCustomSources((prev) => mergeSourceKeyMeta(prev, serverSources));
+        }
+      } catch {
+        /* refresh failure must not surface as an append failure */
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setToast({ kind: 'error', text: msg });
       setCustomSaveState('idle');
+    } finally {
+      customBusyRef.current = false;
     }
   }
 
   async function removeSourceKey(sourceId: string, index: number) {
-    if (customSaveState === 'saving') return;
+    if (customBusyRef.current) return;
+    customBusyRef.current = true;
     setCustomSaveState('saving');
     try {
       const res = await fetch(
@@ -718,24 +752,31 @@ export function SettingsView({
         }),
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
-        (r) => r.json() as Promise<ConfigRes>,
-      );
-      setCfg(refreshed);
-      if (refreshed.custom?.sources) {
-        setCustomSources(
-          refreshed.custom.sources.map((s) => ({ ...s, apiKey: '', models: s.models ?? [] })),
-        );
-      }
       setCustomSaveState('idle');
+      try {
+        const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
+          (r) => r.json() as Promise<ConfigRes>,
+        );
+        setCfg(refreshed);
+        const serverSources = refreshed.custom?.sources;
+        if (serverSources) {
+          setCustomSources((prev) => mergeSourceKeyMeta(prev, serverSources));
+        }
+      } catch {
+        /* refresh failure must not surface as a removal failure */
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setToast({ kind: 'error', text: msg });
       setCustomSaveState('idle');
+    } finally {
+      customBusyRef.current = false;
     }
   }
 
   async function clearCustomProvider() {
+    if (customBusyRef.current) return;
+    customBusyRef.current = true;
     setCustomSaveState('saving');
     try {
       const res = await fetch(
@@ -754,10 +795,14 @@ export function SettingsView({
       setToast({ kind: 'success', text: t('settings.custom.cleared') });
       setCustomSources([]);
       setCustomSaveState('idle');
-      const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
-        (r) => r.json() as Promise<ConfigRes>,
-      );
-      setCfg(refreshed);
+      try {
+        const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
+          (r) => r.json() as Promise<ConfigRes>,
+        );
+        setCfg(refreshed);
+      } catch {
+        /* refresh failure must not surface as a clear failure */
+      }
       if (onModelsRefresh) {
         try {
           await onModelsRefresh();
@@ -769,6 +814,8 @@ export function SettingsView({
       const msg = err instanceof Error ? err.message : String(err);
       setToast({ kind: 'error', text: t('settings.custom.clearFailed', { msg }) });
       setCustomSaveState('idle');
+    } finally {
+      customBusyRef.current = false;
     }
   }
 
