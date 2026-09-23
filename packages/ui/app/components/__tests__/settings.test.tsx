@@ -24,14 +24,31 @@ describe('SettingsView', () => {
     expect(providerControls).not.toBeNull();
     await user.click(within(providerControls!).getByRole('button', { name: '保存' }));
 
-    const sourceKey = await screen.findByPlaceholderText(/留空则保持不变/);
+    const sourceKey = await screen.findByPlaceholderText(/粘贴 API Key（本地无鉴权可留空）/);
     await user.type(sourceKey, 'custom-secret');
-    await user.click(screen.getByRole('button', { name: '保存自定义模型' }));
-
+    const sourceCard = sourceKey.closest('li');
+    expect(sourceCard).not.toBeNull();
+    await user.click(within(sourceCard as HTMLElement).getByRole('button', { name: '保存' }));
     await waitFor(() => expect(writes.length).toBeGreaterThanOrEqual(2));
+    expect(writes[1]).toMatchObject({
+      provider: 'custom',
+      appendSourceKeys: { sourceId: 'fixture-source', keys: ['custom-secret'] },
+    });
+
+    const mainSave = await screen.findByRole(
+      'button',
+      { name: '保存自定义模型' },
+      {
+        timeout: 3000,
+      },
+    );
+    await user.click(mainSave);
+    await waitFor(() => expect(writes.length).toBeGreaterThanOrEqual(3));
     expect(writes[0]).toMatchObject({ provider: 'openrouter', apiKey: 'provider-secret' });
-    expect(writes[1]).toMatchObject({ provider: 'custom' });
-    expect(JSON.stringify(writes[1])).toContain('custom-secret');
+    expect(writes[2]).toMatchObject({ provider: 'custom' });
+    expect(JSON.stringify(writes[2])).not.toContain('custom-secret');
+    const mainSources = (writes[2]?.sources ?? []) as Array<Record<string, unknown>>;
+    expect(mainSources.every((s) => !('apiKey' in s))).toBe(true);
   });
 
   it('generates and displays a gateway key', async () => {
@@ -53,7 +70,8 @@ describe('SettingsView', () => {
     const generate = await screen.findByRole('button', { name: '生成 API Key' });
     await user.click(generate);
     expect(await screen.findByRole('button', { name: '隐藏 Key' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '添加 Key' })).toBeTruthy();
+    const gatewaySection = screen.getByLabelText('对外接口');
+    expect(within(gatewaySection).getByRole('button', { name: '添加 Key' })).toBeTruthy();
   });
 
   it('shows the public URL and locks authentication controls in server mode', async () => {

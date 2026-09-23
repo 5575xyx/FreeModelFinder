@@ -118,7 +118,7 @@ export function SettingsView({
   const { t } = useI18n();
   const [cfg, setCfg] = useState<ConfigRes | null>(null);
   const [keyDrafts, setKeyDrafts] = useState<Record<string, string[]>>({});
-  const [_srcKeyDrafts, _setSrcKeyDrafts] = useState<Record<string, string[]>>({});
+  const [srcKeyDrafts, setSrcKeyDrafts] = useState<Record<string, string[]>>({});
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
   const [toast, setToast] = useState<Toast>(null);
@@ -606,21 +606,12 @@ export function SettingsView({
     }
     setCustomSaveState('saving');
     try {
-      const payloadSources = customSources.map((s) => {
-        const raw = typeof s.apiKey === 'string' ? s.apiKey.trim() : '';
-        const keys = raw
-          .split(/[\s,;|]+/)
-          .map((k) => k.trim())
-          .filter(Boolean);
-        return {
-          id: s.id,
-          label: s.label,
-          baseUrl: s.baseUrl.trim(),
-          // If user did not type a new key but there was one before, keep it by omitting the field.
-          ...(keys.length ? { apiKey: keys.length === 1 ? keys[0] : keys } : {}),
-          models: s.models,
-        };
-      });
+      const payloadSources = customSources.map((s) => ({
+        id: s.id,
+        label: s.label,
+        baseUrl: s.baseUrl.trim(),
+        models: s.models,
+      }));
       const body: Record<string, unknown> = {
         provider: 'custom',
         enabled: true,
@@ -670,6 +661,77 @@ export function SettingsView({
       setToast({ kind: 'error', text: t('settings.custom.saveFailed', { msg }) });
       setCustomSaveState('error');
       setTimeout(() => setCustomSaveState('idle'), 1800);
+    }
+  }
+
+  async function saveSourceDrafts(sourceId: string) {
+    if (customSaveState === 'saving') return;
+    const append = (srcKeyDrafts[sourceId] ?? []).map((k) => k.trim()).filter(Boolean);
+    if (!append.length) return;
+    setCustomSaveState('saving');
+    try {
+      const res = await fetch(
+        `${GATEWAY}/api/providers`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            provider: 'custom',
+            appendSourceKeys: { sourceId, keys: append },
+          }),
+        }),
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSrcKeyDrafts((d) => ({ ...d, [sourceId]: [] }));
+      setToast({ kind: 'success', text: t('settings.custom.saved') });
+      const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
+        (r) => r.json() as Promise<ConfigRes>,
+      );
+      setCfg(refreshed);
+      if (refreshed.custom?.sources) {
+        setCustomSources(
+          refreshed.custom.sources.map((s) => ({ ...s, apiKey: '', models: s.models ?? [] })),
+        );
+      }
+      setCustomSaveState('saved');
+      setTimeout(() => setCustomSaveState('idle'), 1600);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setToast({ kind: 'error', text: msg });
+      setCustomSaveState('idle');
+    }
+  }
+
+  async function removeSourceKey(sourceId: string, index: number) {
+    if (customSaveState === 'saving') return;
+    setCustomSaveState('saving');
+    try {
+      const res = await fetch(
+        `${GATEWAY}/api/providers`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            provider: 'custom',
+            removeSourceKey: { sourceId, index },
+          }),
+        }),
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
+        (r) => r.json() as Promise<ConfigRes>,
+      );
+      setCfg(refreshed);
+      if (refreshed.custom?.sources) {
+        setCustomSources(
+          refreshed.custom.sources.map((s) => ({ ...s, apiKey: '', models: s.models ?? [] })),
+        );
+      }
+      setCustomSaveState('idle');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setToast({ kind: 'error', text: msg });
+      setCustomSaveState('idle');
     }
   }
 
@@ -1889,6 +1951,10 @@ export function SettingsView({
                   const draft = customModelDraft[src.id] ?? { id: '', name: '', ctx: '' };
                   const isKeyVisible = !!customKeyVisible[src.id];
                   const modelIdInputId = `custom-model-id-${src.id}`;
+                  const storedSrcDrafts = srcKeyDrafts[src.id];
+                  const srcDraftRows: string[] =
+                    storedSrcDrafts && storedSrcDrafts.length > 0 ? storedSrcDrafts : [''];
+                  const savedSrcKeyCount = src.keyMeta?.length ?? 0;
                   return (
                     <li
                       key={src.id}
@@ -1946,37 +2012,137 @@ export function SettingsView({
                           <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                             <KeyRound size={12} strokeWidth={1.75} /> API Key
                           </div>
-                          <div className="relative">
-                            <input
-                              type={isKeyVisible ? 'text' : 'password'}
-                              className="w-full rounded-md border border-input bg-surface px-3 py-2 pr-9 font-mono text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
-                              placeholder={
-                                src.hasKey
-                                  ? t('settings.custom.apiKeyExisting')
-                                  : t('settings.custom.apiKeyPlaceholder')
-                              }
-                              value={src.apiKey ?? ''}
-                              onChange={(e) =>
-                                patchCustomSource(src.id, { apiKey: e.target.value })
-                              }
-                              autoComplete="off"
-                              spellCheck={false}
-                            />
+                          {(src.keyMeta ?? []).map((row, idx) => (
+                            <div
+                              key={row.id}
+                              className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
+                            >
+                              <code className="flex-1 truncate font-mono text-xs text-foreground">
+                                {row.hint}
+                              </code>
+                              <span className="sr-only">
+                                {t('settings.custom.keyRow', { n: idx + 1, hint: row.hint })}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => void removeSourceKey(src.id, idx)}
+                                disabled={customSaveState === 'saving'}
+                                aria-label={t('settings.custom.removeKey', { n: idx + 1 })}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                              >
+                                <Trash2 size={13} strokeWidth={1.75} />
+                              </button>
+                            </div>
+                          ))}
+                          {srcDraftRows.map((srcDraft, di) => (
+                            <div key={`sd-${di}`} className="relative">
+                              <input
+                                type={isKeyVisible ? 'text' : 'password'}
+                                className="w-full rounded-md border border-input bg-surface px-3 py-2 pr-16 font-mono text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+                                placeholder={t('settings.custom.apiKeyPlaceholder')}
+                                value={srcDraft}
+                                onChange={(e) =>
+                                  setSrcKeyDrafts((d) => {
+                                    const list = [...(d[src.id] ?? [])];
+                                    list[di] = e.target.value;
+                                    return { ...d, [src.id]: list };
+                                  })
+                                }
+                                onKeyDown={(e) => {
+                                  if (
+                                    e.key === 'Enter' &&
+                                    srcDraft.trim() &&
+                                    customSaveState !== 'saving'
+                                  ) {
+                                    e.preventDefault();
+                                    void saveSourceDrafts(src.id);
+                                  }
+                                }}
+                                aria-label={`${t('settings.custom.apiKey')} ${src.label || src.id}${
+                                  di > 0 ? ` ${di + 1}` : ''
+                                }`}
+                                disabled={customSaveState === 'saving'}
+                                autoComplete="off"
+                                spellCheck={false}
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCustomKeyVisible((v) => ({ ...v, [src.id]: !v[src.id] }))
+                                }
+                                aria-label={
+                                  isKeyVisible ? t('settings.hideKey') : t('settings.showKey')
+                                }
+                                className="absolute right-8 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                {isKeyVisible ? (
+                                  <EyeOff size={13} strokeWidth={1.75} />
+                                ) : (
+                                  <Eye size={13} strokeWidth={1.75} />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSrcKeyDrafts((d) => ({
+                                    ...d,
+                                    [src.id]: (d[src.id] ?? []).filter((_, i) => i !== di),
+                                  }))
+                                }
+                                disabled={customSaveState === 'saving'}
+                                aria-label={t('settings.custom.removeKey', {
+                                  n: savedSrcKeyCount + di + 1,
+                                })}
+                                className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                              >
+                                <X size={13} strokeWidth={1.75} />
+                              </button>
+                            </div>
+                          ))}
+                          <div className="flex flex-wrap items-center gap-2">
                             <button
                               type="button"
                               onClick={() =>
-                                setCustomKeyVisible((v) => ({ ...v, [src.id]: !v[src.id] }))
+                                setSrcKeyDrafts((d) => ({
+                                  ...d,
+                                  [src.id]: [...(d[src.id] ?? []), ''],
+                                }))
                               }
-                              aria-label={
-                                isKeyVisible ? t('settings.hideKey') : t('settings.showKey')
-                              }
-                              className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              disabled={customSaveState === 'saving'}
+                              aria-label={t('settings.custom.addKey')}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              {isKeyVisible ? (
-                                <EyeOff size={13} strokeWidth={1.75} />
-                              ) : (
-                                <Eye size={13} strokeWidth={1.75} />
+                              <Plus size={12} strokeWidth={2} />
+                              {t('settings.custom.addKey')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void saveSourceDrafts(src.id)}
+                              disabled={
+                                !(srcKeyDrafts[src.id] ?? []).some((k) => k.trim()) ||
+                                customSaveState === 'saving'
+                              }
+                              className={classNames(
+                                'inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-1.5 text-xs font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                customSaveState === 'error'
+                                  ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                                  : customSaveState === 'saved'
+                                    ? 'bg-success text-primary-foreground'
+                                    : 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground',
                               )}
+                            >
+                              {customSaveState === 'saving' && (
+                                <Loader2 size={13} strokeWidth={2} className="animate-spin" />
+                              )}
+                              {customSaveState === 'saved' && <Check size={13} strokeWidth={2} />}
+                              {customSaveState === 'error' && <X size={13} strokeWidth={2} />}
+                              {customSaveState === 'saving'
+                                ? t('settings.sources.saving')
+                                : customSaveState === 'saved'
+                                  ? t('settings.sources.saved')
+                                  : customSaveState === 'error'
+                                    ? t('settings.sources.retry')
+                                    : t('settings.sources.save')}
                             </button>
                           </div>
                         </div>
