@@ -51,6 +51,34 @@ describe('SettingsView', () => {
     expect(mainSources.every((s) => !('apiKey' in s))).toBe(true);
   });
 
+  it('main save also flushes pending source key drafts', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () => HttpResponse.json(configPayload)),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    const sourceKey = await screen.findByPlaceholderText(/粘贴 API Key（本地无鉴权可留空）/);
+    await user.type(sourceKey, 'flush-me-key');
+    const mainSave = await screen.findByRole(
+      'button',
+      { name: '保存自定义模型' },
+      { timeout: 5000 },
+    );
+    await user.click(mainSave);
+    await waitFor(() => expect(writes.length).toBeGreaterThanOrEqual(2));
+    expect(writes[0]).toMatchObject({ provider: 'custom' });
+    expect(JSON.stringify(writes[0])).not.toContain('flush-me-key');
+    expect(writes[1]).toMatchObject({
+      provider: 'custom',
+      appendSourceKeys: { sourceId: 'fixture-source', keys: ['flush-me-key'] },
+    });
+  });
+
   it('adds a key draft and saves with appendKeys', async () => {
     const writes: Array<Record<string, unknown>> = [];
     server.use(

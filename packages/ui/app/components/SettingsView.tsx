@@ -656,6 +656,36 @@ export function SettingsView({
         }
         throw new Error(`HTTP ${res.status}${detail}`);
       }
+      const pendingKeys = customSources
+        .map((s) => ({
+          sourceId: s.id,
+          keys: (srcKeyDrafts[s.id] ?? []).map((k) => k.trim()).filter(Boolean),
+        }))
+        .filter((x) => x.keys.length > 0);
+      for (const { sourceId, keys } of pendingKeys) {
+        const keyRes = await fetch(
+          `${GATEWAY}/api/providers`,
+          withUiHeaders({
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              provider: 'custom',
+              appendSourceKeys: { sourceId, keys },
+            }),
+          }),
+        );
+        if (!keyRes.ok) {
+          let detail = '';
+          try {
+            const j = (await keyRes.json()) as { error?: string };
+            if (j?.error) detail = `: ${j.error}`;
+          } catch {
+            /* ignore */
+          }
+          throw new Error(`key save HTTP ${keyRes.status}${detail}`);
+        }
+        setSrcKeyDrafts((d) => ({ ...d, [sourceId]: [] }));
+      }
       setToast({ kind: 'success', text: t('settings.custom.saved') });
       setCustomSaveState('saved');
       setTimeout(() => setCustomSaveState('idle'), 1600);
