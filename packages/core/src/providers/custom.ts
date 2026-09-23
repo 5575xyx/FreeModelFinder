@@ -174,7 +174,7 @@ export class CustomProvider extends BaseProvider {
     const content = primary || reasoning;
     return {
       id: data.id,
-      model: `${sourceId}:${data.model}`,
+      model: req.model,
       created: data.created,
       content,
       finish_reason: (choice?.finish_reason ?? 'stop') as ChatResponse['finish_reason'],
@@ -224,7 +224,7 @@ export class CustomProvider extends BaseProvider {
           const delta = primaryDelta || reasoningDelta;
           yield {
             id: json.id,
-            model: `${sourceId}:${json.model}`,
+            model: req.model,
             created: json.created,
             delta,
             finish_reason: (choice?.finish_reason ?? null) as StreamChunk['finish_reason'],

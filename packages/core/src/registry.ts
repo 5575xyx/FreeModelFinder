@@ -299,6 +299,20 @@ export class ProviderRegistry {
         return { provider: this.getProvider(providerId), modelId: real };
       }
     }
+    // Bare custom source id ("cpa:Qwen3.8-27B"): if the first segment is a
+    // known custom source id, route to the custom provider verbatim.
+    if (sep > 0) {
+      const sourceId = modelId.slice(0, sep);
+      const extra = this.config.providers.custom?.credentials?.extra as
+        { sources?: Array<{ id?: unknown }> } | undefined;
+      if (Array.isArray(extra?.sources) && extra!.sources!.some((s) => s?.id === sourceId)) {
+        try {
+          return { provider: this.getProvider('custom'), modelId };
+        } catch {
+          // custom provider not enabled/usable; fallthrough
+        }
+      }
+    }
     // heuristic
     if (modelId.startsWith('gemini') || modelId.startsWith('models/gemini')) {
       return { provider: this.getProvider('gemini'), modelId: modelId.replace(/^models\//, '') };

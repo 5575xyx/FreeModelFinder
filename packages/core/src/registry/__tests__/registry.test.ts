@@ -26,6 +26,102 @@ describe('ProviderRegistry model catalog', () => {
     assert.deepEqual(registry.listEnabledProviders(), []);
   });
 
+  it('resolves two-segment custom source ids to the custom provider', () => {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        custom: {
+          enabled: true,
+          credentials: {
+            apiKey: '',
+            extra: {
+              sources: [
+                {
+                  id: 'cpa',
+                  label: 'cpa',
+                  baseUrl: 'https://cpa.example/v1',
+                  models: [{ id: 'Qwen3.8-27B' }],
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+
+    const resolved = registry.resolveModel('cpa:Qwen3.8-27B');
+    assert.equal(resolved.provider.id, 'custom');
+    assert.equal(resolved.modelId, 'cpa:Qwen3.8-27B');
+  });
+
+  it('keeps three-segment custom ids working', () => {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        custom: {
+          enabled: true,
+          credentials: {
+            apiKey: '',
+            extra: {
+              sources: [
+                {
+                  id: 'cpa',
+                  label: 'cpa',
+                  baseUrl: 'https://cpa.example/v1',
+                  models: [{ id: 'Qwen3.8-27B' }],
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+
+    const resolved = registry.resolveModel('custom:cpa:Qwen3.8-27B');
+    assert.equal(resolved.provider.id, 'custom');
+    assert.equal(resolved.modelId, 'cpa:Qwen3.8-27B');
+  });
+
+  it('does not hijack real built-in provider prefixes for unknown custom sources', () => {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        openrouter: { enabled: true, credentials: { apiKey: 'k' } },
+        custom: {
+          enabled: true,
+          credentials: {
+            apiKey: '',
+            extra: {
+              sources: [{ id: 'cpa', baseUrl: 'https://cpa.example/v1', models: [] }],
+            },
+          },
+        },
+      }),
+    );
+
+    // 'cpa:...' must not be treated as an openrouter model
+    const resolved = registry.resolveModel('cpa:Qwen3.8-27B');
+    assert.equal(resolved.provider.id, 'custom');
+  });
+
+  it('still falls back to openrouter for unknown non-source segments', () => {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        openrouter: { enabled: true, credentials: { apiKey: 'k' } },
+        custom: {
+          enabled: true,
+          credentials: {
+            apiKey: '',
+            extra: {
+              sources: [{ id: 'cpa', baseUrl: 'https://cpa.example/v1', models: [] }],
+            },
+          },
+        },
+      }),
+    );
+
+    // 'xyz:foo' where xyz is neither a known provider nor a custom source id
+    const resolved = registry.resolveModel('xyz:foo-model');
+    assert.equal(resolved.provider.id, 'openrouter');
+  });
+
   it('filters paid entries and deduplicates provider/model ids', async () => {
     const registry = new ProviderRegistry(
       configWithProviders({
@@ -71,6 +167,27 @@ describe('ProviderRegistry model catalog', () => {
     assert.equal(result.models[0]?.displayName, 'Duplicate');
     assert.deepEqual(result.succeededProviders, ['openrouter']);
     assert.deepEqual(result.failedProviders, []);
+  });
+
+  it('resolves bare custom source ids even when openrouter is enabled', () => {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        openrouter: { enabled: true, credentials: { apiKey: 'k' } },
+        custom: {
+          enabled: true,
+          credentials: {
+            apiKey: '',
+            extra: {
+              sources: [{ id: 'cpa', baseUrl: 'https://cpa.example/v1', models: [] }],
+            },
+          },
+        },
+      }),
+    );
+
+    const resolved = registry.resolveModel('cpa:Qwen3.8-27B');
+    assert.equal(resolved.provider.id, 'custom');
+    assert.equal(resolved.modelId, 'cpa:Qwen3.8-27B');
   });
 
   it('keeps the last successful models when a provider refresh fails', async () => {

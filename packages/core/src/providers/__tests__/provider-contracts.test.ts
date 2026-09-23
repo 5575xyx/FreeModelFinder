@@ -165,13 +165,33 @@ describe('built-in provider chat contracts', () => {
       ['fixture:fixture-model'],
     );
     const customRequest = { ...chatRequest, model: 'fixture:fixture-model' };
-    assert.equal((await provider.chat(customRequest)).content, 'hello world');
-    assert.equal(
-      (await collect(provider.stream({ ...customRequest, stream: true })))
-        .map((chunk) => chunk.delta)
-        .join(''),
-      'hello world',
-    );
+    const aliasFetch = (async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const res = await openAiChatFetch()(input, init);
+      const text = await res.text();
+      const rewritten = text
+        .replace(/"model":\s*"fixture-model"/g, '"model":"upstream-alias"')
+        .replace(/"model":"fixture-model"/g, '"model":"upstream-alias"');
+      return new Response(rewritten, {
+        status: res.status,
+        headers: {
+          'content-type': String(init?.body ?? '').includes('"stream":true')
+            ? 'text/event-stream'
+            : 'application/json',
+        },
+      });
+    }) as typeof fetch;
+    const echoProvider = new CustomProvider({ credentials, fetchImpl: aliasFetch });
+    const chatResponse = await echoProvider.chat(customRequest);
+    assert.equal(chatResponse.content, 'hello world');
+    // upstream echoes a different model alias; response must still carry the
+    // gateway-level composed id so clients reusing response.model stay routable
+    assert.equal(chatResponse.model, 'fixture:fixture-model');
+    const echoChunks = await collect(echoProvider.stream({ ...customRequest, stream: true }));
+    assert.equal(echoChunks.map((chunk) => chunk.delta).join(''), 'hello world');
+    assert.equal(echoChunks[0]?.model, 'fixture:fixture-model');
 
     const limited = new CustomProvider({
       credentials,
