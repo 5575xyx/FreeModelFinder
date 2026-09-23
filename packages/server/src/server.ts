@@ -1001,6 +1001,61 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       };
     });
 
+    app.get('/api/auto-route/model-options', async () => {
+      const reg = getRegistry();
+      const local = await reg.peekLocalModels();
+      const cfg = reg.getConfig();
+      const custom = cfg.providers.custom;
+      const extra = (custom?.credentials?.extra ?? {}) as {
+        sources?: Array<{
+          id: string;
+          label?: string;
+          models?: Array<{ id: string; displayName?: string; contextWindow?: number }>;
+        }>;
+      };
+      const sources = Array.isArray(extra.sources) ? extra.sources : [];
+
+      const byId = new Map<
+        string,
+        { id: string; provider: string; displayName?: string; capabilities?: string[] }
+      >();
+      const push = (entry: {
+        id: string;
+        provider: string;
+        displayName?: string;
+        capabilities?: string[];
+      }) => {
+        if (!entry.id) return;
+        if (!byId.has(entry.id)) byId.set(entry.id, entry);
+      };
+
+      for (const m of local) {
+        push({
+          id: `${m.provider}:${m.id}`,
+          provider: m.provider,
+          displayName: m.displayName,
+          capabilities: m.capabilities,
+        });
+      }
+      for (const src of sources) {
+        const srcId = String(src.id ?? '');
+        if (!srcId) continue;
+        for (const m of src.models ?? []) {
+          const bare = typeof m?.id === 'string' ? m.id.trim() : '';
+          if (!bare) continue;
+          const composed =
+            bare.includes(':') && bare.startsWith('custom:') ? bare : `custom:${srcId}:${bare}`;
+          push({
+            id: composed,
+            provider: 'custom',
+            displayName: m.displayName?.trim() || bare,
+          });
+        }
+      }
+
+      return { models: [...byId.values()] };
+    });
+
     app.post<{
       Body: {
         enabled?: boolean;

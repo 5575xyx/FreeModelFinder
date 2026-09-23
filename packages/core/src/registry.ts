@@ -219,6 +219,25 @@ export class ProviderRegistry {
     return result;
   }
 
+  /**
+   * Local-only model catalog for UI pickers.
+   * Uses in-memory cache when fresh; otherwise reads snapshot from disk.
+   * Never calls provider listModels().
+   */
+  async peekLocalModels(): Promise<ModelInfo[]> {
+    const ttl = 5 * 60 * 1000;
+    if (this.modelsCache && Date.now() - this.cacheAt < ttl) {
+      return this.modelsCache.models;
+    }
+    const snapshot = await this.loadModelSnapshot();
+    return snapshot.models.map((m) => ({
+      id: m.id,
+      provider: m.provider,
+      displayName: m.displayName,
+      free: m.free,
+    }));
+  }
+
   getModelQuota(provider: ProviderId, model: string): ModelQuotaSnapshot {
     return this.quotaTracker.snapshot(provider, model);
   }
