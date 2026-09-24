@@ -149,7 +149,9 @@ async function handleStream(
       router.rememberPreference(originalRequested);
     }
     const msg = err instanceof Error ? err.message : String(err);
-    reply.raw.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+    reply.raw.write(
+      `data: ${JSON.stringify({ error: { message: msg, type: 'server_error' } })}\n\n`,
+    );
   } finally {
     reply.raw.end();
   }

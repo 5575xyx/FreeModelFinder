@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   asModelList,
   chatResponseToOpenAI,
+  extractMaxTokensLimit,
+  isMaxTokensTooLargeError,
   isVisionCapable,
   openAIToChatRequest,
   parseRateLimitError,
@@ -18,6 +20,7 @@ import {
   type OpenAIChatCompletionRequest,
   type ProviderId,
   type ProviderRegistry,
+  type StreamChunk,
   type SwitchNotice,
   type VideoGenerationRequest,
 } from '@freemodelfinder/core';
@@ -246,6 +249,34 @@ function nextFromPool(slot: string, pool: string[]): string | undefined {
   return pick;
 }
 
+/** Full pool rotated from the shared cursor (for vision failover order). */
+function rotatePool(slot: string, pool: string[]): string[] {
+  if (!pool.length) return [];
+  const cursor = modalityCursor.get(slot) ?? 0;
+  const start = cursor % pool.length;
+  modalityCursor.set(slot, (start + 1) % pool.length);
+  return [...pool.slice(start), ...pool.slice(0, start)];
+}
+
+async function withMaxTokensRetry<T>(chatReq: ChatRequest, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (isMaxTokensTooLargeError(err) && chatReq.max_tokens != null) {
+      chatReq.max_tokens = extractMaxTokensLimit(err);
+      return await fn();
+    }
+    throw err;
+  }
+}
+
+function streamErrorType(msg: string, err: unknown): string {
+  if (msg.includes('does not support image input')) return 'vision_input_error';
+  if (isMaxTokensTooLargeError(err)) return 'invalid_request_error';
+  if (msg.match(/failed\s+\d{3}/i)) return 'upstream_error';
+  return 'server_error';
+}
+
 export function resetModalityCursors(): void {
   modalityCursor.clear();
 }
@@ -347,16 +378,15 @@ export function registerOpenAIRoutes(
 
       // Auto-route: detect modality from request content when model is "auto"
       let forcedImageModality = false;
+      let visionCandidates: string[] = [];
       if (chatReq.model === 'auto' || chatReq.model === 'default') {
         const cfg = reg.getConfig();
         const ar = cfg.autoRoute;
         const detectedModality = detectRequestModality(body.messages);
         if (detectedModality === 'vision') {
           const forced = asModelList(ar?.visionModel);
-          const picked = nextFromPool('vision', forced);
-          if (picked) {
-            chatReq.model = picked;
-          } else {
+          let pool = forced;
+          if (!pool.length) {
             const { models } = await reg.listAllModels();
             const visionModels = models.filter((m) => isVisionCapable(m, forced));
             if (!visionModels.length) {
@@ -368,19 +398,19 @@ export function registerOpenAIRoutes(
                 },
               });
             }
-            const pool = visionModels.map((m) => m.id);
-            const catalogPick = nextFromPool('vision', pool);
-            if (!catalogPick) {
-              return reply.code(400).send({
-                error: {
-                  message:
-                    'No vision-capable model available. Configure autoRoute.visionModel or enable a model with image input.',
-                  type: 'no_vision_model',
-                },
-              });
-            }
-            chatReq.model = catalogPick;
+            pool = visionModels.map((m) => m.id);
           }
+          visionCandidates = rotatePool('vision', pool);
+          if (!visionCandidates.length) {
+            return reply.code(400).send({
+              error: {
+                message:
+                  'No vision-capable model available. Configure autoRoute.visionModel or enable a model with image input.',
+                type: 'no_vision_model',
+              },
+            });
+          }
+          chatReq.model = visionCandidates[0]!;
         } else if (detectedModality === 'image') {
           const pool = asModelList(ar?.imageModel);
           const picked = nextFromPool('image', pool);
@@ -564,12 +594,31 @@ export function registerOpenAIRoutes(
       if (!chatReq.stream) {
         let usage: ChatResponse['usage'] | undefined;
         try {
-          const { response, notices, finalModel } = await usageCaptureStore.run(
-            (u) => {
-              usage = u;
-            },
-            async () => dispatchWithAutoRoute(reg, chatReq),
-          );
+          const dispatchOnce = () =>
+            usageCaptureStore.run(
+              (u) => {
+                usage = u;
+              },
+              async () => dispatchWithAutoRoute(reg, chatReq),
+            );
+          let result;
+          if (visionCandidates.length) {
+            let lastErr: unknown;
+            for (let i = 0; i < visionCandidates.length; i++) {
+              chatReq.model = visionCandidates[i]!;
+              try {
+                result = await withMaxTokensRetry(chatReq, dispatchOnce);
+                break;
+              } catch (err) {
+                lastErr = err;
+                if (i < visionCandidates.length - 1) continue;
+              }
+            }
+            if (!result) throw lastErr;
+          } else {
+            result = await withMaxTokensRetry(chatReq, dispatchOnce);
+          }
+          const { response, notices, finalModel } = result;
           const payload = chatResponseToOpenAI(response) as Record<string, unknown> & {
             model?: string;
           };
@@ -639,7 +688,7 @@ export function registerOpenAIRoutes(
         preNotices.push(pre.notice);
       }
 
-      let provider;
+      let provider: { id: string; stream(req: ChatRequest): AsyncIterable<StreamChunk> };
       let realModelId: string;
       try {
         const resolved = reg.resolveModel(chatReq.model);
@@ -656,7 +705,6 @@ export function registerOpenAIRoutes(
         });
         return reply.code(400).send({ error: { message: msg, type: 'resolve_error' } });
       }
-      const dispatchReq: ChatRequest = { ...chatReq, model: realModelId };
 
       reply.hijack();
       reply.raw.writeHead(200, {
@@ -674,62 +722,98 @@ export function registerOpenAIRoutes(
       }
 
       let streamUsage: ChatResponse['usage'] | undefined;
+      let wroteChunk = false;
+      let maxTokensRetried = false;
+      let visionIndex = 0;
       try {
-        await usageCaptureStore.run(
-          (u) => {
-            streamUsage = u;
-          },
-          async () => {
-            for await (const chunk of provider.stream(dispatchReq)) {
-              const payload = streamChunkToOpenAI(chunk);
-              if (body.model === 'auto') {
-                (payload as Record<string, unknown>).fmf_auto_route = {
-                  picked: `${provider.id}:${realModelId}`,
-                  strategy: router.getStrategy(),
-                };
-              }
-              reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          try {
+            const dispatchReq: ChatRequest = { ...chatReq, model: realModelId };
+            await usageCaptureStore.run(
+              (u) => {
+                streamUsage = u;
+              },
+              async () => {
+                for await (const chunk of provider.stream(dispatchReq)) {
+                  wroteChunk = true;
+                  const payload = streamChunkToOpenAI(chunk);
+                  if (body.model === 'auto') {
+                    (payload as Record<string, unknown>).fmf_auto_route = {
+                      picked: `${provider.id}:${realModelId}`,
+                      strategy: router.getStrategy(),
+                    };
+                  }
+                  reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+                }
+              },
+            );
+            // Post-stream: if we were on a fallback and preferred is free again,
+            // emit a switch-back notice (applied on the NEXT request).
+            const switchBack = await router.maybeSwitchBack(chatReq.model);
+            if (switchBack) {
+              reply.raw.write(
+                `data: ${JSON.stringify({ fmf_route_notice: switchBack, id: 'fmf', object: 'chat.completion.chunk', choices: [] })}\n\n`,
+              );
             }
-          },
-        );
-        // Post-stream: if we were on a fallback and preferred is free again,
-        // emit a switch-back notice (applied on the NEXT request).
-        const switchBack = await router.maybeSwitchBack(chatReq.model);
-        if (switchBack) {
-          reply.raw.write(
-            `data: ${JSON.stringify({ fmf_route_notice: switchBack, id: 'fmf', object: 'chat.completion.chunk', choices: [] })}\n\n`,
-          );
+            reply.raw.write('data: [DONE]\n\n');
+            record(req, t0, {
+              kind: 'chat',
+              ...resolvePM(reg, chatReq.model),
+              status: 'success',
+              httpStatus: 200,
+              promptTokens: streamUsage?.prompt_tokens,
+              completionTokens: streamUsage?.completion_tokens,
+              cachedTokens: streamUsage?.prompt_tokens_details?.cached_tokens,
+            });
+            break;
+          } catch (err) {
+            if (isMaxTokensTooLargeError(err) && !maxTokensRetried && chatReq.max_tokens != null) {
+              chatReq.max_tokens = extractMaxTokensLimit(err);
+              maxTokensRetried = true;
+              continue;
+            }
+            if (
+              !wroteChunk &&
+              visionCandidates.length > 0 &&
+              visionIndex + 1 < visionCandidates.length
+            ) {
+              visionIndex++;
+              chatReq.model = visionCandidates[visionIndex]!;
+              try {
+                const resolved = reg.resolveModel(chatReq.model);
+                provider = resolved.provider;
+                realModelId = resolved.modelId;
+                maxTokensRetried = false;
+                continue;
+              } catch {
+                // fall through to error reporting
+              }
+            }
+            const parsed = parseRateLimitError(err);
+            if (parsed.isRateLimit && router.isEnabled()) {
+              router.markRateLimited(
+                chatReq.model,
+                extractProviderIdFromError(chatReq, reg) as ProviderId,
+                parsed,
+              );
+              router.rememberPreference(originalRequested);
+            }
+            const msg = err instanceof Error ? err.message : String(err);
+            const { status, httpStatus } = classifyStatus(err);
+            record(req, t0, {
+              kind: 'chat',
+              ...resolvePM(reg, chatReq.model),
+              status,
+              httpStatus,
+              error: msg,
+            });
+            reply.raw.write(
+              `data: ${JSON.stringify({ error: { message: msg, type: streamErrorType(msg, err) } })}\n\n`,
+            );
+            break;
+          }
         }
-        reply.raw.write('data: [DONE]\n\n');
-        record(req, t0, {
-          kind: 'chat',
-          ...resolvePM(reg, chatReq.model),
-          status: 'success',
-          httpStatus: 200,
-          promptTokens: streamUsage?.prompt_tokens,
-          completionTokens: streamUsage?.completion_tokens,
-          cachedTokens: streamUsage?.prompt_tokens_details?.cached_tokens,
-        });
-      } catch (err) {
-        const parsed = parseRateLimitError(err);
-        if (parsed.isRateLimit && router.isEnabled()) {
-          router.markRateLimited(
-            chatReq.model,
-            extractProviderIdFromError(chatReq, reg) as ProviderId,
-            parsed,
-          );
-          router.rememberPreference(originalRequested);
-        }
-        const msg = err instanceof Error ? err.message : String(err);
-        const { status, httpStatus } = classifyStatus(err);
-        record(req, t0, {
-          kind: 'chat',
-          ...resolvePM(reg, chatReq.model),
-          status,
-          httpStatus,
-          error: msg,
-        });
-        reply.raw.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
       } finally {
         reply.raw.end();
       }

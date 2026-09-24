@@ -9,6 +9,7 @@ export * from './providers/index.js';
 export * from './protocols/index.js';
 export * from './onboarding.js';
 export { isQueueFullError, retryOnQueueFull, type RetryOnQueueFullOptions } from './queue-retry.js';
+export { extractMaxTokensLimit, isMaxTokensTooLargeError } from './max-tokens.js';
 export { looksVisionModelId, withVisionInput, isVisionCapable } from './vision.js';
 export { ProviderRegistry, resetAutoPoolCursor, type ListAllModelsResult } from './registry.js';
 export {
