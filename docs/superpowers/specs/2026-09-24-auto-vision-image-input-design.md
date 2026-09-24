@@ -1,7 +1,7 @@
 # Design: Auto Vision Intent & Multimodal Image Input
 
 **Date:** 2026-09-24  
-**Status:** Approved (design)  
+**Status:** 待用户审阅  
 **Approach:** A — incremental extension of existing auto-route and protocol layers
 
 ## Problem
@@ -49,13 +49,13 @@ Return type becomes:
 type RequestModality = 'text' | 'image' | 'video' | 'vision';
 ```
 
-Rules (scan from latest user message backward; stop at first non-empty decision):
+Rules (decide only from the **latest non-empty user** message; empty user messages are skipped, same as today):
 
-1. Latest user `content` is an array containing `type === 'image_url'` or `type === 'image'` → **`vision`**.
+1. That message’s `content` is an array containing `type === 'image_url'` or `type === 'image'` → **`vision`**.
    - Phase 1: any image part forces vision (generation keywords ignored when image parts exist).
    - No video part handling yet.
-2. Else existing rules: video keyword regex → `video`; image generation keyword regex → `image`; else `text`.
-3. Image parts in **history** (not the latest user message) do **not** trigger vision.
+2. Else on the **same** message: video keyword regex → `video`; image generation keyword regex → `image`; else `text`.
+3. Older messages are never consulted once the latest non-empty user message yields a decision (including `'text'`). Image parts only in history never trigger vision.
 
 Export remains testable from `packages/server/src/routes/openai.ts`.
 
@@ -147,14 +147,13 @@ When `contentParts` includes `image_url`, encode images on the upstream request.
 
 ### Error when none available
 
-HTTP **400**:
+HTTP **400**, envelope matches existing structured errors (e.g. `resolve_error`) — status code is the HTTP status; no separate `error.code` field:
 
 ```json
 {
   "error": {
     "message": "No vision-capable model available. Configure autoRoute.visionModel or enable a model with image input.",
-    "type": "no_vision_model",
-    "code": 400
+    "type": "no_vision_model"
   }
 }
 ```
@@ -172,15 +171,15 @@ HTTP **400**:
 
 ### Unit / pure functions
 
-| Case                                 | Expectation                                  |
-| ------------------------------------ | -------------------------------------------- |
-| Latest user has `image_url`          | `'vision'`                                   |
-| Image part + text “生成图片”         | still `'vision'`                             |
-| History has image, latest plain text | `'text'`                                     |
-| No image + generation keywords       | `'image'` / `'video'` (existing green)       |
-| Heuristic / OpenRouter mapping       | vision-capable ids marked                    |
-| `openAIToChatRequest` with image     | `contentParts` kept; `content` = joined text |
-| Pure text openai convert             | identical to today                           |
+| Case                                           | Expectation                                  |
+| ---------------------------------------------- | -------------------------------------------- |
+| Latest user has `image_url`                    | `'vision'`                                   |
+| Image part + text “生成图片”                   | still `'vision'`                             |
+| History has image, latest non-empty plain text | `'text'`                                     |
+| No image + generation keywords                 | `'image'` / `'video'` (existing green)       |
+| Heuristic / OpenRouter mapping                 | vision-capable ids marked                    |
+| `openAIToChatRequest` with image               | `contentParts` kept; `content` = joined text |
+| Pure text openai convert                       | identical to today                           |
 
 ### HTTP / auto route (extend `auto-modality.test.ts` style)
 
