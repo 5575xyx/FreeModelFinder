@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ImageGenerationRequestSchema } from '../../types.js';
+import { ChatRequestSchema, ImageGenerationRequestSchema } from '../../types.js';
+import { AgnesIntlProvider } from '../agnes-intl.js';
 import { AgnesProvider } from '../agnes.js';
 
 function mockFetch(responseBody: unknown, status = 200): typeof fetch {
@@ -107,5 +108,89 @@ describe('AgnesProvider multimodal', () => {
         ),
       /401/,
     );
+  });
+
+  it('rejects chat requests containing image contentParts', async () => {
+    const provider = new AgnesProvider({
+      credentials: { apiKey: 'test-key' },
+      fetchImpl: mockFetch({}),
+    });
+    const req = ChatRequestSchema.parse({
+      model: 'agnes-3.0-flash',
+      messages: [
+        {
+          role: 'user',
+          content: 'describe this',
+          contentParts: [{ type: 'image_url', image_url: { url: 'http://x/y.png' } }],
+        },
+      ],
+    });
+    await assert.rejects(
+      () => provider.chat(req),
+      /^Error: Provider agnes does not support image input$/,
+    );
+  });
+
+  it('allows text-only chat on agnes', async () => {
+    const provider = new AgnesProvider({
+      credentials: { apiKey: 'test-key' },
+      fetchImpl: mockFetch({
+        id: 'c1',
+        model: 'agnes-3.0-flash',
+        created: 1,
+        choices: [
+          { index: 0, message: { role: 'assistant', content: 'hi' }, finish_reason: 'stop' },
+        ],
+      }),
+    });
+    const req = ChatRequestSchema.parse({
+      model: 'agnes-3.0-flash',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    const res = await provider.chat(req);
+    assert.equal(res.content, 'hi');
+  });
+});
+
+describe('AgnesIntlProvider vision guard', () => {
+  it('rejects chat requests containing image contentParts', async () => {
+    const provider = new AgnesIntlProvider({
+      credentials: { apiKey: 'test-key' },
+      fetchImpl: mockFetch({}),
+    });
+    const req = ChatRequestSchema.parse({
+      model: 'agnes-3.0-flash',
+      messages: [
+        {
+          role: 'user',
+          content: 'describe this',
+          contentParts: [{ type: 'image_url', image_url: { url: 'http://x/y.png' } }],
+        },
+      ],
+    });
+    await assert.rejects(
+      () => provider.chat(req),
+      /^Error: Provider agnes-intl does not support image input$/,
+    );
+  });
+
+  it('allows text-only chat on agnes-intl', async () => {
+    const provider = new AgnesIntlProvider({
+      credentials: { apiKey: 'test-key' },
+      fetchImpl: mockFetch({
+        id: 'c1',
+        model: 'agnes-3.0-flash',
+        created: 1,
+        choices: [
+          { index: 0, message: { role: 'assistant', content: 'hi' }, finish_reason: 'stop' },
+        ],
+      }),
+    });
+    const req = ChatRequestSchema.parse({
+      model: 'agnes-3.0-flash',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    const res = await provider.chat(req);
+    assert.equal(res.content, 'hi');
   });
 });

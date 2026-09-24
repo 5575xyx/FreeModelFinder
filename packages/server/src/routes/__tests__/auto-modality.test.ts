@@ -194,12 +194,14 @@ function modalityRegistry(options: {
   autoRoute: AppConfig['autoRoute'];
   models: ModelInfo[];
   realResolveModel?: boolean;
+  chatErrorMessage?: string;
 }): {
   registry: ProviderRegistry;
   imageCallCount: () => number;
   videoCallCount: () => number;
   lastImagePrompt: () => string | undefined;
   lastVideoPrompt: () => string | undefined;
+  lastChatRequest: () => ChatRequest | undefined;
 } {
   const registry = new ProviderRegistry(modalityConfig(options.autoRoute));
   const response: ChatResponse = {
@@ -214,9 +216,14 @@ function modalityRegistry(options: {
   let videoCalls = 0;
   let lastImagePrompt: string | undefined;
   let lastVideoPrompt: string | undefined;
+  let lastChatRequest: ChatRequest | undefined;
   const provider = {
     id: 'custom',
-    async chat(_request: ChatRequest): Promise<ChatResponse> {
+    async chat(request: ChatRequest): Promise<ChatResponse> {
+      lastChatRequest = request;
+      if (options.chatErrorMessage) {
+        throw new Error(options.chatErrorMessage);
+      }
       return response;
     },
     async *stream(_request: ChatRequest) {
@@ -246,6 +253,14 @@ function modalityRegistry(options: {
       };
     },
   };
+  const handles = {
+    registry,
+    imageCallCount: () => imageCalls,
+    videoCallCount: () => videoCalls,
+    lastImagePrompt: () => lastImagePrompt,
+    lastVideoPrompt: () => lastVideoPrompt,
+    lastChatRequest: () => lastChatRequest,
+  };
   if (options.realResolveModel) {
     const internals = registry as unknown as {
       instances: Map<ProviderId, unknown>;
@@ -259,13 +274,7 @@ function modalityRegistry(options: {
       failedProviders: [],
     };
     internals.cacheAt = Date.now();
-    return {
-      registry,
-      imageCallCount: () => imageCalls,
-      videoCallCount: () => videoCalls,
-      lastImagePrompt: () => lastImagePrompt,
-      lastVideoPrompt: () => lastVideoPrompt,
-    };
+    return handles;
   }
   registry.resolveModel = () => ({ provider: provider as never, modelId: 'fixture-model' });
   registry.listAllModels = async () => ({
@@ -273,13 +282,7 @@ function modalityRegistry(options: {
     succeededProviders: ['custom' as const],
     failedProviders: [],
   });
-  return {
-    registry,
-    imageCallCount: () => imageCalls,
-    videoCallCount: () => videoCalls,
-    lastImagePrompt: () => lastImagePrompt,
-    lastVideoPrompt: () => lastVideoPrompt,
-  };
+  return handles;
 }
 
 async function withApp(
@@ -673,6 +676,80 @@ describe('auto modality HTTP routing', () => {
         const prompt = handles.lastVideoPrompt();
         assert.equal(prompt, '生成小猫卖萌视频');
         assert.ok((prompt ?? '').length < 10000, 'video prompt must stay under provider limit');
+      },
+    );
+  });
+
+  it('explicit model with image part goes to chat with contentParts (not image gen)', async () => {
+    await withApp(
+      {
+        autoRoute: { enabled: false, strategy: 'capability' },
+        models: [textOnlyModel],
+      },
+      async (app, handles) => {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'custom:fixture-model',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: '描述这张图' },
+                  { type: 'image_url', image_url: { url: 'http://x/y.png' } },
+                ],
+              },
+            ],
+            stream: false,
+          },
+        });
+        assert.equal(res.statusCode, 200);
+        assert.equal(handles.imageCallCount(), 0, 'explicit model must not hit generateImage');
+        const chatReq = handles.lastChatRequest();
+        assert.ok(chatReq, 'chat must be invoked');
+        const parts = chatReq!.messages[0]!.contentParts;
+        assert.ok(parts, 'contentParts must flow into chat request');
+        assert.equal(
+          parts!.some((p) => p.type === 'image_url'),
+          true,
+        );
+        const body = res.json();
+        assert.equal(body.choices[0].message.content, 'fixture reply');
+        assert.equal(body.fmf_image_response, undefined);
+      },
+    );
+  });
+
+  it('upstream image rejection surfaces vision_input_error', async () => {
+    await withApp(
+      {
+        autoRoute: { enabled: false, strategy: 'capability' },
+        models: [textOnlyModel],
+        chatErrorMessage: 'Provider custom does not support image input',
+      },
+      async (app) => {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'custom:fixture-model',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: '描述这张图' },
+                  { type: 'image_url', image_url: { url: 'http://x/y.png' } },
+                ],
+              },
+            ],
+            stream: false,
+          },
+        });
+        assert.equal(res.statusCode, 400);
+        const body = res.json() as { error: { message: string; type: string } };
+        assert.equal(body.error.type, 'vision_input_error');
+        assert.match(body.error.message, /does not support image input/);
       },
     );
   });

@@ -1,4 +1,6 @@
 import type {
+  ChatRequest,
+  ChatResponse,
   ImageGenerationRequest,
   ImageGenerationResponse,
   ModelInfo,
@@ -73,7 +75,8 @@ const AGNES_INTL_STATIC_MODELS: Omit<ModelInfo, 'provider'>[] = [
     id: 'agnes-video-2.5-flash',
     displayName: 'Agnes Video 2.5 Flash',
     free: true,
-    description: 'Agnes Video 2.5 Flash, video generation with first/last frame control, permanently free.',
+    description:
+      'Agnes Video 2.5 Flash, video generation with first/last frame control, permanently free.',
     capabilities: ['video'],
   },
 ];
@@ -84,6 +87,13 @@ export class AgnesIntlProvider extends OpenAICompatibleProvider {
 
   protected baseUrl(): string {
     return this.ctx.credentials.baseUrl ?? 'https://apihub.agnes-ai.com/v1';
+  }
+
+  override async chat(req: ChatRequest): Promise<ChatResponse> {
+    if (req.messages.some((m) => m.contentParts?.some((p) => p.type === 'image_url'))) {
+      throw new Error(`Provider ${this.id} does not support image input`);
+    }
+    return super.chat(req);
   }
 
   async listModels(): Promise<ModelInfo[]> {

@@ -575,6 +575,11 @@ export function registerOpenAIRoutes(
             httpStatus: httpStatus ?? upstream,
             error: msg,
           });
+          if (msg.includes('does not support image input')) {
+            return reply.code(400).send({
+              error: { message: msg, type: 'vision_input_error' },
+            });
+          }
           return reply
             .code(upstream && upstream >= 400 && upstream < 600 ? upstream : 502)
             .send({ error: { message: msg, type: 'upstream_error', upstream } });
