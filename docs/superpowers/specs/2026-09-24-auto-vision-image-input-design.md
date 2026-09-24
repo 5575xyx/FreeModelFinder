@@ -142,7 +142,7 @@ When `contentParts` includes `image_url`, encode images on the upstream request.
 ### Selection order (auto + vision)
 
 1. If `autoRoute.visionModel` non-empty → `nextFromPool('vision', pool)` (cursor slot `'vision'`, isolated from `'image'`/`'video'`/`'text:*'`).
-2. Else scan `listAllModels()` for `inputModalities?.includes('image')` (config pool ids treated as eligible) → existing scored/round-robin pick.
+2. Else `listAllModels()` filtered to `inputModalities?.includes('image')` (config pool ids forced eligible). **Do not** run the unfiltered text auto-router pool: pick from this filtered subset only, using round-robin cursor slot `'vision'` (optional: prefer higher `scoreModel` within the subset).
 3. Else **error** (no degrade).
 
 ### Error when none available
