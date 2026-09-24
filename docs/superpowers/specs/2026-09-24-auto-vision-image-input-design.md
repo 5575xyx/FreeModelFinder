@@ -30,14 +30,14 @@ Users who upload a photo and ask “这是什么” get a wrong image-generation
 
 ## Decisions (user-confirmed)
 
-| Topic | Decision |
-|-------|----------|
-| Intent split | Two classes: no uploaded media → generation keywords; uploaded **image** → vision understanding only |
-| Vision pool | `autoRoute.visionModel` configurable pool + automatic catalog fallback |
-| Video understanding | Out of scope this iteration |
-| Capability source | Model metadata + id heuristics + config pool force-enable |
-| Media transport | Extend `ChatMessage` with optional `contentParts` |
-| No vision model | Explicit error (no silent degrade) |
+| Topic               | Decision                                                                                             |
+| ------------------- | ---------------------------------------------------------------------------------------------------- |
+| Intent split        | Two classes: no uploaded media → generation keywords; uploaded **image** → vision understanding only |
+| Vision pool         | `autoRoute.visionModel` configurable pool + automatic catalog fallback                               |
+| Video understanding | Out of scope this iteration                                                                          |
+| Capability source   | Model metadata + id heuristics + config pool force-enable                                            |
+| Media transport     | Extend `ChatMessage` with optional `contentParts`                                                    |
+| No vision model     | Explicit error (no silent degrade)                                                                   |
 
 ## 1. Intent detection and routing
 
@@ -51,8 +51,8 @@ type RequestModality = 'text' | 'image' | 'video' | 'vision';
 
 Rules (scan from latest user message backward; stop at first non-empty decision):
 
-1. Latest user `content` is an array containing `type === 'image_url'` or `type === 'image'` → **`vision`**.  
-   - Phase 1: any image part forces vision (generation keywords ignored when image parts exist).  
+1. Latest user `content` is an array containing `type === 'image_url'` or `type === 'image'` → **`vision`**.
+   - Phase 1: any image part forces vision (generation keywords ignored when image parts exist).
    - No video part handling yet.
 2. Else existing rules: video keyword regex → `video`; image generation keyword regex → `image`; else `text`.
 3. Image parts in **history** (not the latest user message) do **not** trigger vision.
@@ -61,12 +61,12 @@ Export remains testable from `packages/server/src/routes/openai.ts`.
 
 ### Auto branch (`model === 'auto' | 'default'`)
 
-| Detected | Behavior |
-|----------|----------|
+| Detected | Behavior                                                                                                         |
+| -------- | ---------------------------------------------------------------------------------------------------------------- |
 | `vision` | Select vision model → **normal chat path** with `contentParts` (must not enter image/video generation fast-path) |
-| `image` | Existing: `imageModel` pool / discovery → `forcedImageModality` → `generateImage` |
-| `video` | Existing: `videoModel` pool → `generateVideo` |
-| `text` | Existing: `textTiers` / auto-router |
+| `image`  | Existing: `imageModel` pool / discovery → `forcedImageModality` → `generateImage`                                |
+| `video`  | Existing: `videoModel` pool → `generateVideo`                                                                    |
+| `text`   | Existing: `textTiers` / auto-router                                                                              |
 
 ### Explicit model (non-auto)
 
@@ -124,12 +124,12 @@ contentParts?: Array<
 
 When `contentParts` includes `image_url`, encode images on the upstream request. When absent, **no behavioral change**.
 
-| Protocol / provider | Image behavior |
-|---------------------|----------------|
-| OpenAI-compatible (openai-compatible, custom, openrouter, …) | Send content as part array with `text` + `image_url`; do not run text-only `normalizeContent` on that path |
-| Anthropic | Content blocks: text + `{ type: 'image', source: { type: 'url' \| 'base64', media_type, data } }`; decode `data:` URLs to base64 |
-| Gemini | `parts` with `inlineData` (base64) or `fileData` for http(s) URLs when appropriate |
-| Providers without vision API | Throw `Provider X does not support image input`; router skips or surfaces error (never silent strip) |
+| Protocol / provider                                          | Image behavior                                                                                                                   |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI-compatible (openai-compatible, custom, openrouter, …) | Send content as part array with `text` + `image_url`; do not run text-only `normalizeContent` on that path                       |
+| Anthropic                                                    | Content blocks: text + `{ type: 'image', source: { type: 'url' \| 'base64', media_type, data } }`; decode `data:` URLs to base64 |
+| Gemini                                                       | `parts` with `inlineData` (base64) or `fileData` for http(s) URLs when appropriate                                               |
+| Providers without vision API                                 | Throw `Provider X does not support image input`; router skips or surfaces error (never silent strip)                             |
 
 ### Logging and safety
 
@@ -172,15 +172,15 @@ HTTP **400**:
 
 ### Unit / pure functions
 
-| Case | Expectation |
-|------|-------------|
-| Latest user has `image_url` | `'vision'` |
-| Image part + text “生成图片” | still `'vision'` |
-| History has image, latest plain text | `'text'` |
-| No image + generation keywords | `'image'` / `'video'` (existing green) |
-| Heuristic / OpenRouter mapping | vision-capable ids marked |
-| `openAIToChatRequest` with image | `contentParts` kept; `content` = joined text |
-| Pure text openai convert | identical to today |
+| Case                                 | Expectation                                  |
+| ------------------------------------ | -------------------------------------------- |
+| Latest user has `image_url`          | `'vision'`                                   |
+| Image part + text “生成图片”         | still `'vision'`                             |
+| History has image, latest plain text | `'text'`                                     |
+| No image + generation keywords       | `'image'` / `'video'` (existing green)       |
+| Heuristic / OpenRouter mapping       | vision-capable ids marked                    |
+| `openAIToChatRequest` with image     | `contentParts` kept; `content` = joined text |
+| Pure text openai convert             | identical to today                           |
 
 ### HTTP / auto route (extend `auto-modality.test.ts` style)
 
