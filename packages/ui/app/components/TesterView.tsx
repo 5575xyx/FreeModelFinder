@@ -11,11 +11,13 @@ import {
   Film,
   Loader2,
   MessageSquareText,
+  Paperclip,
   Square,
   Sparkles,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { formatContext, modelValue, type ModelItem } from '../lib/models';
+import { fileToDataURL, isImageDataUrlWithinLimit } from '../lib/image';
 import { classNames, GATEWAY, withUiHeaders } from '../lib/utils';
 import { useI18n } from '../i18n';
 
@@ -23,6 +25,7 @@ export type Msg = {
   role: 'user' | 'assistant' | 'system';
   content: string;
   imageUrls?: string[];
+  uploadImages?: string[];
   videoId?: string;
   videoProvider?: string;
 };
@@ -61,7 +64,9 @@ export function TesterView({
   input,
   model,
   models,
+  inputImages,
   setInput,
+  setImages,
   send,
   onCancel,
   onModelChange,
@@ -72,7 +77,9 @@ export function TesterView({
   input: string;
   model: string;
   models: ModelItem[];
+  inputImages: string[];
   setInput: (value: string) => void;
+  setImages: (value: string[]) => void;
   send: () => void;
   onCancel: () => void;
   onModelChange: (value: string) => void;
@@ -81,9 +88,33 @@ export function TesterView({
   const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachError, setAttachError] = useState('');
   const selected = models.find((item) => modelValue(item) === model);
   const missingSelection =
     !!model && model !== 'auto' && !models.some((item) => modelValue(item) === model);
+
+  const enqueueImages = useCallback(
+    async (files: File[]) => {
+      setAttachError('');
+      const next = [...inputImages];
+      for (const file of files) {
+        if (!file.type.startsWith('image/')) continue;
+        try {
+          const url = await fileToDataURL(file);
+          if (!isImageDataUrlWithinLimit(url)) {
+            setAttachError(t('tester.attach.tooLarge'));
+            continue;
+          }
+          next.push(url);
+        } catch {
+          setAttachError(t('tester.attach.readError'));
+        }
+      }
+      setImages(next);
+    },
+    [inputImages, setImages, t],
+  );
 
   const localizedPrompts = useMemo(
     () =>
@@ -243,37 +274,97 @@ export function TesterView({
         }}
       >
         <div className="mx-auto max-w-4xl">
-          <div className="flex items-end gap-2 rounded-2xl border border-input bg-surface p-2 shadow-sm transition focus-within:border-ring focus-within:shadow-[0_0_0_4px_hsl(var(--ring)/0.08)]">
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              value={input}
-              disabled={streaming || models.length === 0}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  send();
+          <div className="flex flex-col rounded-2xl border border-input bg-surface p-2 shadow-sm transition focus-within:border-ring focus-within:shadow-[0_0_0_4px_hsl(var(--ring)/0.08)]">
+            {inputImages.length > 0 && (
+              <div data-testid="tester-drafts" className="flex flex-wrap gap-2 px-1 pb-2">
+                {inputImages.map((url, i) => (
+                  <div key={`${i}-${url.slice(0, 24)}`} className="relative">
+                    <img
+                      src={url}
+                      alt={`attachment-${i}`}
+                      className="h-14 w-14 rounded-lg border border-border object-cover"
+                    />
+                    <button
+                      type="button"
+                      aria-label={t('tester.attach.removeAria', { index: String(i + 1) })}
+                      onClick={() => setImages(inputImages.filter((_, j) => j !== i))}
+                      className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-[11px] leading-none text-background shadow transition hover:opacity-80"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {attachError && (
+              <p role="alert" className="px-1 pb-2 text-xs text-destructive">
+                {attachError}
+              </p>
+            )}
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                aria-label={t('tester.attach.aria')}
+                disabled={streaming || models.length === 0}
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Paperclip size={16} />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                data-testid="tester-image-input"
+                className="hidden"
+                onChange={(event) => {
+                  const files = Array.from(event.target.files ?? []);
+                  event.target.value = '';
+                  if (files.length > 0) void enqueueImages(files);
+                }}
+              />
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={input}
+                disabled={streaming || models.length === 0}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    send();
+                  }
+                }}
+                onPaste={(event) => {
+                  const files = Array.from(event.clipboardData.items)
+                    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+                    .map((item) => item.getAsFile())
+                    .filter((file): file is File => !!file);
+                  if (files.length > 0) {
+                    event.preventDefault();
+                    void enqueueImages(files);
+                  }
+                }}
+                placeholder={
+                  models.length > 0 ? t('tester.input.placeholder') : t('tester.input.needProvider')
                 }
-              }}
-              placeholder={
-                models.length > 0 ? t('tester.input.placeholder') : t('tester.input.needProvider')
-              }
-              className="max-h-[180px] min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground/65 disabled:cursor-not-allowed"
-            />
-            <button
-              type={streaming ? 'button' : 'submit'}
-              aria-label={streaming ? t('tester.send.stopAria') : t('tester.send.sendAria')}
-              onClick={streaming ? onCancel : undefined}
-              disabled={!streaming && (!model || !input.trim())}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-background transition hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              {streaming ? (
-                <Square size={15} fill="currentColor" />
-              ) : (
-                <ArrowUp size={17} strokeWidth={2.2} />
-              )}
-            </button>
+                className="max-h-[180px] min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground/65 disabled:cursor-not-allowed"
+              />
+              <button
+                type={streaming ? 'button' : 'submit'}
+                aria-label={streaming ? t('tester.send.stopAria') : t('tester.send.sendAria')}
+                onClick={streaming ? onCancel : undefined}
+                disabled={!streaming && (!model || (!input.trim() && inputImages.length === 0))}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-background transition hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                {streaming ? (
+                  <Square size={15} fill="currentColor" />
+                ) : (
+                  <ArrowUp size={17} strokeWidth={2.2} />
+                )}
+              </button>
+            </div>
           </div>
           <div className="mt-2 flex items-center justify-between px-1 text-[11px] text-muted-foreground">
             <span>{t('tester.hint.disclaimer')}</span>
@@ -458,9 +549,7 @@ function MessageRow({ message, isStreamingLast }: { message: Msg; isStreamingLas
             ) : (
               <div className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
                 <Film size={14} />
-                <span>
-                  {videoPolling ? videoStatus : '视频任务已提交'}
-                </span>
+                <span>{videoPolling ? videoStatus : '视频任务已提交'}</span>
                 {videoPolling && <Loader2 className="animate-spin" size={12} />}
               </div>
             )}

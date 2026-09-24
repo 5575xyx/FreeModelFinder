@@ -172,4 +172,113 @@ describe('Home', () => {
       expect(screen.getByRole('button', { name: '发送消息' })).toBeTruthy();
     });
   });
+
+  describe('tester image upload', () => {
+    function pngFile(name: string, bytes = 8): File {
+      return new File([new Uint8Array(bytes)], name, { type: 'image/png' });
+    }
+
+    function captureChatBody() {
+      let body: {
+        messages?: Array<{ role: string; content: unknown }>;
+      } | null = null;
+      server.use(
+        http.post(`${gateway}/v1/chat/completions`, async ({ request }) => {
+          body = (await request.json()) as typeof body;
+          return new HttpResponse(
+            'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n' + 'data: [DONE]\n\n',
+            { headers: { 'content-type': 'text/event-stream' } },
+          );
+        }),
+      );
+      return {
+        get body() {
+          return body;
+        },
+      };
+    }
+
+    it('sends attached images as OpenAI image_url content parts', async () => {
+      const capture = captureChatBody();
+      renderInChinese(<Home />);
+      const user = await openTester();
+      const input = screen.getByPlaceholderText(/问点什么/);
+      await user.type(input, '这是什么');
+      await user.upload(screen.getByTestId('tester-image-input'), pngFile('a.png'));
+      expect(await screen.findByAltText('attachment-0')).toBeTruthy();
+      await user.click(screen.getByRole('button', { name: '发送消息' }));
+      await screen.findByText('ok');
+      await waitFor(() => expect(capture.body).not.toBeNull());
+      const messages = capture.body!.messages!;
+      const last = messages[messages.length - 1]!;
+      expect(last.role).toBe('user');
+      expect(Array.isArray(last.content)).toBe(true);
+      const parts = last.content as Array<{
+        type: string;
+        text?: string;
+        image_url?: { url: string };
+      }>;
+      expect(parts[0]).toEqual({ type: 'text', text: '这是什么' });
+      expect(parts[1]?.type).toBe('image_url');
+      expect(parts[1]?.image_url?.url.startsWith('data:image/png;base64,')).toBe(true);
+    });
+
+    it('allows an image-only send with empty text', async () => {
+      const capture = captureChatBody();
+      renderInChinese(<Home />);
+      const user = await openTester();
+      await user.upload(screen.getByTestId('tester-image-input'), pngFile('solo.png'));
+      const send = screen.getByRole('button', { name: '发送消息' });
+      await waitFor(() => expect((send as HTMLButtonElement).disabled).toBe(false));
+      await user.click(send);
+      await screen.findByText('ok');
+      await waitFor(() => expect(capture.body).not.toBeNull());
+      const last = capture.body!.messages![capture.body!.messages!.length - 1]!;
+      const parts = last.content as Array<{ type: string }>;
+      expect(parts.every((p) => p.type === 'image_url')).toBe(true);
+    });
+
+    it('rejects images over the 10MB limit with an inline error', async () => {
+      const capture = captureChatBody();
+      renderInChinese(<Home />);
+      const user = await openTester();
+      const huge = new File([new Uint8Array(14 * 1024 * 1024)], 'big.png', { type: 'image/png' });
+      await user.upload(screen.getByTestId('tester-image-input'), huge);
+      expect(await screen.findByText('图片超过 10MB，未添加')).toBeTruthy();
+      expect(screen.queryByAltText(/^attachment-/)).toBeNull();
+      expect((screen.getByRole('button', { name: '发送消息' }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+      void capture;
+    });
+
+    it('removes a single draft thumbnail via its remove button', async () => {
+      renderInChinese(<Home />);
+      const user = await openTester();
+      await user.upload(screen.getByTestId('tester-image-input'), [
+        pngFile('one.png', 8),
+        pngFile('two.png', 16),
+      ]);
+      expect(await screen.findByAltText('attachment-0')).toBeTruthy();
+      expect(screen.getByAltText('attachment-1')).toBeTruthy();
+      await user.click(screen.getByRole('button', { name: '移除图片 1' }));
+      const thumbs = screen.getAllByAltText(/^attachment-/);
+      expect(thumbs).toHaveLength(1);
+      expect((thumbs[0] as HTMLImageElement).src).toBe(
+        'data:image/png;base64,AAAAAAAAAAAAAAAAAAAAAA==',
+      );
+    });
+
+    it('keeps a text-only send on the plain string wire format', async () => {
+      const capture = captureChatBody();
+      renderInChinese(<Home />);
+      const user = await openTester();
+      await user.type(screen.getByPlaceholderText(/问点什么/), 'plain');
+      await user.click(screen.getByRole('button', { name: '发送消息' }));
+      await screen.findByText('ok');
+      await waitFor(() => expect(capture.body).not.toBeNull());
+      const last = capture.body!.messages![capture.body!.messages!.length - 1]!;
+      expect(last.content).toBe('plain');
+    });
+  });
 });

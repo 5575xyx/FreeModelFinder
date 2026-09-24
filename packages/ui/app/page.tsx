@@ -30,6 +30,7 @@ import {
   type ProviderFailure,
 } from './lib/models';
 import { GATEWAY, classNames, withUiHeaders } from './lib/utils';
+import { toWireContent } from './lib/chat';
 
 type TabKey = 'stats' | 'finder' | 'tester' | 'imagegen' | 'videogen' | 'settings';
 type OnboardingMode = 'loading' | 'required' | 'dismissed' | 'complete';
@@ -84,6 +85,7 @@ export default function Home() {
   const [tab, setTab] = useState<TabKey>('finder');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
+  const [inputImages, setInputImages] = useState<string[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [modelLoading, setModelLoading] = useState(true);
   const [gatewayReachable, setGatewayReachable] = useState<boolean | null>(null);
@@ -351,15 +353,26 @@ export default function Home() {
   }, []);
 
   async function send() {
-    if (!input.trim() || streaming || !model) return;
+    if ((!input.trim() && inputImages.length === 0) || streaming || !model) return;
 
-    const next: Msg[] = [...messages, { role: 'user', content: input.trim() }];
+    const userMsg: Msg = {
+      role: 'user',
+      content: input.trim(),
+      ...(inputImages.length > 0 ? { uploadImages: inputImages } : {}),
+    };
+    const next: Msg[] = [...messages, userMsg];
     const assistantIndex = next.length;
     setMessages([...next, { role: 'assistant', content: '' }]);
     setInput('');
+    setInputImages([]);
     setStreaming(true);
     const controller = new AbortController();
     streamAbortRef.current = controller;
+
+    const wireMessages = next.map((m) => ({
+      role: m.role,
+      content: toWireContent(m.content, m.uploadImages),
+    }));
 
     try {
       const response = await fetch(
@@ -367,7 +380,7 @@ export default function Home() {
         withUiHeaders({
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ model, messages: next, stream: true }),
+          body: JSON.stringify({ model, messages: wireMessages, stream: true }),
           signal: controller.signal,
         }),
       );
@@ -475,6 +488,11 @@ export default function Home() {
   const cancelStream = useCallback(() => {
     void streamReaderRef.current?.cancel();
     streamAbortRef.current?.abort();
+  }, []);
+
+  const onClearTester = useCallback(() => {
+    setMessages([]);
+    setInputImages([]);
   }, []);
 
   const TABS = useMemo<readonly SegmentedItem<TabKey>[]>(
@@ -659,11 +677,13 @@ export default function Home() {
                 input={input}
                 model={model}
                 models={models}
+                inputImages={inputImages}
                 setInput={setInput}
+                setImages={setInputImages}
                 send={send}
                 onCancel={cancelStream}
                 onModelChange={selectModel}
-                onClear={() => setMessages([])}
+                onClear={onClearTester}
               />
             ) : tab === 'imagegen' ? (
               <ImageGeneratorView models={models} model={model} onModelChange={selectModel} />
