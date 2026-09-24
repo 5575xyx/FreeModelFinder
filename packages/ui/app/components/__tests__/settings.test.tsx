@@ -345,6 +345,8 @@ describe('SettingsView', () => {
     render(<SettingsView />);
     const trigger = await screen.findByRole('button', { name: '视觉理解模型' });
     await user.click(trigger);
+    const listbox = await screen.findByRole('listbox', { name: '视觉理解模型' });
+    expect(within(listbox).queryByText('custom:fixture:chat-1')).toBeNull();
     const option = await screen.findByRole('option', { name: /custom:fixture:mm-chat/ });
     await user.click(within(option).getByRole('button'));
     await waitFor(() => expect(writes.length).toBeGreaterThan(0));

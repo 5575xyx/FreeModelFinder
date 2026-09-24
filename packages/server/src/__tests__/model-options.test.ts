@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ProviderRegistry, type AppConfig } from '@freemodelfinder/core';
+import { ProviderRegistry, type AppConfig, type ModelSnapshot } from '@freemodelfinder/core';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../server.js';
 
@@ -62,11 +62,36 @@ function configWithForcedVision(): AppConfig {
   return cfg;
 }
 
+function configWithCatalogVision(): AppConfig {
+  return {
+    version: 2,
+    port: 11435,
+    providers: {},
+    gateway: { requireAuth: false },
+    autoRoute: {
+      enabled: false,
+      strategy: 'capability',
+      visionModel: ['openrouter:gpt-4o-mini'],
+    },
+  };
+}
+
+function catalogVisionSnapshot(): Promise<ModelSnapshot> {
+  return Promise.resolve({
+    version: 1,
+    updatedAt: 1,
+    models: [{ id: 'gpt-4o-mini', provider: 'openrouter', displayName: 'GPT-4o Mini', free: true }],
+    added: [],
+    removed: [],
+  });
+}
+
 async function withApp(
   fn: (app: FastifyInstance, registry: ProviderRegistry) => Promise<void>,
   makeConfig: () => AppConfig = configWithCustomModels,
+  loadModelSnapshot?: () => Promise<ModelSnapshot>,
 ): Promise<void> {
-  const registry = new ProviderRegistry(makeConfig());
+  const registry = new ProviderRegistry(makeConfig(), loadModelSnapshot);
   let listAllCalls = 0;
   const original = registry.listAllModels.bind(registry);
   registry.listAllModels = async (force?: boolean) => {
@@ -185,5 +210,31 @@ describe('GET /api/auto-route/model-options vision tags', () => {
       const plain = body.models.find((m) => m.id === 'custom:fixture:plain-chat');
       assert.equal(plain?.vision, true, 'forced-pool member must be vision-tagged');
     }, configWithForcedVision);
+  });
+
+  it('local catalog loop tags vision using composed id against forced pool', async () => {
+    await withApp(
+      async (app) => {
+        const res = await app.inject({
+          method: 'GET',
+          url: '/api/auto-route/model-options',
+          headers: localUiHeaders,
+        });
+        assert.equal(res.statusCode, 200);
+        const body = res.json() as { models: Array<{ id: string; vision?: boolean }> };
+        const entry = body.models.find((m) => m.id === 'openrouter:gpt-4o-mini');
+        assert.ok(
+          entry,
+          `expected local catalog entry openrouter:gpt-4o-mini, got: ${body.models.map((m) => m.id).join(',')}`,
+        );
+        assert.equal(
+          entry.vision,
+          true,
+          'local catalog entry must match forced vision pool by composed id',
+        );
+      },
+      configWithCatalogVision,
+      catalogVisionSnapshot,
+    );
   });
 });
