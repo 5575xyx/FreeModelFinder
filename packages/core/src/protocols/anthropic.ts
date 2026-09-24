@@ -1,11 +1,17 @@
 import type { ChatMessage, ChatRequest } from '../types.js';
 
+interface AnthropicBlock {
+  type: string;
+  text?: string;
+  source?: { type?: string; media_type?: string; url?: string; data?: string };
+}
+
 export interface AnthropicMessagesRequest {
   model: string;
   system?: string | Array<{ type: 'text'; text: string }>;
   messages: Array<{
     role: 'user' | 'assistant';
-    content: string | Array<{ type: string; text?: string }>;
+    content: string | AnthropicBlock[];
   }>;
   max_tokens: number;
   temperature?: number;
@@ -22,6 +28,35 @@ function contentToString(content: AnthropicMessagesRequest['messages'][number]['
     .join('');
 }
 
+function anthropicContentToParts(
+  content: AnthropicMessagesRequest['messages'][number]['content'],
+):
+  | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
+  | undefined {
+  if (typeof content === 'string') return undefined;
+  const parts: Array<
+    { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+  > = [];
+  let sawImage = false;
+  for (const b of content) {
+    if (b.type === 'text' && typeof b.text === 'string') {
+      parts.push({ type: 'text', text: b.text });
+    } else if (b.type === 'image' && b.source) {
+      if (b.source.type === 'url' && b.source.url) {
+        parts.push({ type: 'image_url', image_url: { url: b.source.url } });
+        sawImage = true;
+      } else if (b.source.type === 'base64' && b.source.data && b.source.media_type) {
+        parts.push({
+          type: 'image_url',
+          image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` },
+        });
+        sawImage = true;
+      }
+    }
+  }
+  return sawImage ? parts : undefined;
+}
+
 export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatRequest {
   const messages: ChatMessage[] = [];
   if (req.system) {
@@ -30,7 +65,11 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
     messages.push({ role: 'system', content: sys });
   }
   for (const m of req.messages) {
-    messages.push({ role: m.role, content: contentToString(m.content) });
+    messages.push({
+      role: m.role,
+      content: contentToString(m.content),
+      contentParts: anthropicContentToParts(m.content),
+    });
   }
   return {
     model: req.model,

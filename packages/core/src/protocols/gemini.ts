@@ -1,9 +1,15 @@
 import type { ChatMessage, ChatRequest } from '../types.js';
 
+interface GeminiContentPart {
+  text?: string;
+  inlineData?: { mimeType?: string; data?: string };
+  fileData?: { mimeType?: string; fileUri?: string };
+}
+
 export interface GeminiHttpRequest {
   contents: Array<{
     role: 'user' | 'model';
-    parts: Array<{ text: string }>;
+    parts: GeminiContentPart[];
   }>;
   systemInstruction?: { parts: Array<{ text: string }> };
   generationConfig?: {
@@ -27,9 +33,33 @@ export function geminiToChatRequest(
     });
   }
   for (const c of req.contents) {
+    const text = c.parts
+      .filter((p) => typeof p.text === 'string')
+      .map((p) => p.text!)
+      .join('');
+    const parts: Array<
+      { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+    > = [];
+    let sawImage = false;
+    for (const p of c.parts) {
+      if (p.inlineData?.data) {
+        const mime = p.inlineData.mimeType ?? 'image/png';
+        parts.push({
+          type: 'image_url',
+          image_url: { url: `data:${mime};base64,${p.inlineData.data}` },
+        });
+        sawImage = true;
+      } else if (p.fileData?.fileUri) {
+        parts.push({ type: 'image_url', image_url: { url: p.fileData.fileUri } });
+        sawImage = true;
+      } else if (typeof p.text === 'string') {
+        parts.push({ type: 'text', text: p.text });
+      }
+    }
     messages.push({
       role: c.role === 'model' ? 'assistant' : 'user',
-      content: c.parts.map((p) => p.text).join(''),
+      content: text,
+      contentParts: sawImage ? parts : undefined,
     });
   }
   return {
