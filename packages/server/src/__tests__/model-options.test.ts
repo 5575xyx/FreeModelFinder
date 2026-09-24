@@ -23,6 +23,7 @@ function configWithCustomModels(): AppConfig {
                 models: [
                   { id: 'plain-chat', displayName: 'Plain' },
                   { id: 'sora-image', displayName: 'Img' },
+                  { id: 'llava-mini', displayName: 'LLaVA Mini' },
                   { id: '', displayName: 'Empty' },
                   { id: '   ', displayName: 'Whitespace' },
                 ],
@@ -51,10 +52,21 @@ function configWithCustomModels(): AppConfig {
   };
 }
 
+function configWithForcedVision(): AppConfig {
+  const cfg = configWithCustomModels();
+  cfg.autoRoute = {
+    enabled: false,
+    strategy: 'capability',
+    visionModel: ['custom:fixture:plain-chat'],
+  };
+  return cfg;
+}
+
 async function withApp(
   fn: (app: FastifyInstance, registry: ProviderRegistry) => Promise<void>,
+  makeConfig: () => AppConfig = configWithCustomModels,
 ): Promise<void> {
-  const registry = new ProviderRegistry(configWithCustomModels());
+  const registry = new ProviderRegistry(makeConfig());
   let listAllCalls = 0;
   const original = registry.listAllModels.bind(registry);
   registry.listAllModels = async (force?: boolean) => {
@@ -141,5 +153,37 @@ describe('GET /api/auto-route/model-options', () => {
       assert.ok(ids.includes('custom:fixture:sora-image'), ids.join(','));
       assert.ok(ids.includes('custom:dup:x'), ids.join(','));
     });
+  });
+});
+
+describe('GET /api/auto-route/model-options vision tags', () => {
+  it('tags heuristic vision ids true and plain ids false', async () => {
+    await withApp(async (app) => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/auto-route/model-options',
+        headers: localUiHeaders,
+      });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as { models: Array<{ id: string; vision?: boolean }> };
+      const vision = body.models.find((m) => m.id === 'custom:fixture:llava-mini');
+      const plain = body.models.find((m) => m.id === 'custom:fixture:plain-chat');
+      assert.equal(vision?.vision, true, 'llava-mini should be vision-tagged');
+      assert.equal(plain?.vision, false, 'plain-chat should not be vision-tagged');
+    });
+  });
+
+  it('forced visionModel pool marks listed ids vision even without heuristic match', async () => {
+    await withApp(async (app) => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/auto-route/model-options',
+        headers: localUiHeaders,
+      });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as { models: Array<{ id: string; vision?: boolean }> };
+      const plain = body.models.find((m) => m.id === 'custom:fixture:plain-chat');
+      assert.equal(plain?.vision, true, 'forced-pool member must be vision-tagged');
+    }, configWithForcedVision);
   });
 });

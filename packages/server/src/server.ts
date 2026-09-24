@@ -9,6 +9,7 @@ import {
   ProviderIdSchema,
   ProviderRegistry,
   asModelList,
+  isVisionCapable,
   loadConfig,
   updateConfig,
   type GatewayKeyEntry,
@@ -1006,6 +1007,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       const reg = getRegistry();
       const local = await reg.peekLocalModels();
       const cfg = reg.getConfig();
+      const forcedVision = asModelList(cfg.autoRoute?.visionModel);
       const custom = cfg.providers.custom;
       const extra = (custom?.credentials?.extra ?? {}) as {
         sources?: Array<{
@@ -1018,24 +1020,33 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
 
       const byId = new Map<
         string,
-        { id: string; provider: string; displayName?: string; capabilities?: string[] }
+        {
+          id: string;
+          provider: string;
+          displayName?: string;
+          capabilities?: string[];
+          vision?: boolean;
+        }
       >();
       const push = (entry: {
         id: string;
         provider: string;
         displayName?: string;
         capabilities?: string[];
+        vision?: boolean;
       }) => {
         if (!entry.id) return;
         if (!byId.has(entry.id)) byId.set(entry.id, entry);
       };
 
       for (const m of local) {
+        const composedId = `${m.provider}:${m.id}`;
         push({
-          id: `${m.provider}:${m.id}`,
+          id: composedId,
           provider: m.provider,
           displayName: m.displayName,
           capabilities: m.capabilities,
+          vision: isVisionCapable({ ...m, id: composedId }, forcedVision),
         });
       }
       for (const src of sources) {
@@ -1049,6 +1060,10 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             id: composed,
             provider: 'custom',
             displayName: m.displayName?.trim() || bare,
+            vision: isVisionCapable(
+              { id: composed, provider: 'custom', displayName: composed, free: true },
+              forcedVision,
+            ),
           });
         }
       }
