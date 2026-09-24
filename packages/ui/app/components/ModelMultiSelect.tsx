@@ -27,6 +27,7 @@ interface ModelMultiSelectProps {
   disabled?: boolean;
 }
 
+// Mirror of core VISION_ID_RE (packages/core/src/vision.ts) — keep in sync.
 const VISION_FALLBACK_RE =
   /vision|4v|vl|qwen2?\.?vl|glm-4v|llava|moondream|pixtral|mistral-small-vision|internvl|falcon-vision/i;
 

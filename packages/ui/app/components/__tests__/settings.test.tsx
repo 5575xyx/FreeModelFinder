@@ -415,6 +415,9 @@ describe('matchesCapability', () => {
     expect(
       matchesCapability({ id: 'custom:x:plain-chat', provider: 'custom', vision: false }, 'vision'),
     ).toBe(false);
+    expect(
+      matchesCapability({ id: 'custom:x:llava-7b', provider: 'custom', vision: false }, 'vision'),
+    ).toBe(false);
   });
 
   it('vision filter falls back to id regex when untagged', () => {
@@ -422,5 +425,11 @@ describe('matchesCapability', () => {
     expect(matchesCapability({ id: 'custom:x:plain-chat', provider: 'custom' }, 'vision')).toBe(
       false,
     );
+    expect(
+      matchesCapability(
+        { id: 'custom:x:mm', provider: 'custom', displayName: 'Vision Chat' },
+        'vision',
+      ),
+    ).toBe(true);
   });
 });
