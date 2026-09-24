@@ -12,6 +12,7 @@ export interface ModelOption {
   provider: string;
   displayName?: string;
   capabilities?: string[];
+  vision?: boolean;
 }
 
 interface ModelMultiSelectProps {
@@ -19,18 +20,25 @@ interface ModelMultiSelectProps {
   hint?: string;
   value: string[];
   onChange: (next: string[]) => void;
-  filterCapability?: 'image' | 'video' | 'text';
+  filterCapability?: 'image' | 'video' | 'text' | 'vision';
   placeholder?: string;
   /** options supplied by parent (Task 6 fetches once and shares) */
   options: ModelOption[];
   disabled?: boolean;
 }
 
+const VISION_FALLBACK_RE =
+  /vision|4v|vl|qwen2?\.?vl|glm-4v|llava|moondream|pixtral|mistral-small-vision|internvl|falcon-vision/i;
+
 export function matchesCapability(
   option: ModelOption,
-  filter?: 'image' | 'video' | 'text',
+  filter?: 'image' | 'video' | 'text' | 'vision',
 ): boolean {
   if (!filter) return true;
+  if (filter === 'vision') {
+    if (typeof option.vision === 'boolean') return option.vision;
+    return VISION_FALLBACK_RE.test(`${option.id} ${option.displayName ?? ''}`);
+  }
   const caps = option.capabilities;
   const hasCaps = Array.isArray(caps) && caps.length > 0;
   const bare = `${option.id} ${option.displayName ?? ''}`;

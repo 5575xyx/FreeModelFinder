@@ -407,4 +407,20 @@ describe('matchesCapability', () => {
       ),
     ).toBe(false);
   });
+
+  it('vision filter trusts the backend vision tag', () => {
+    expect(
+      matchesCapability({ id: 'custom:x:sora-image', provider: 'custom', vision: true }, 'vision'),
+    ).toBe(true);
+    expect(
+      matchesCapability({ id: 'custom:x:plain-chat', provider: 'custom', vision: false }, 'vision'),
+    ).toBe(false);
+  });
+
+  it('vision filter falls back to id regex when untagged', () => {
+    expect(matchesCapability({ id: 'custom:x:llava-7b', provider: 'custom' }, 'vision')).toBe(true);
+    expect(matchesCapability({ id: 'custom:x:plain-chat', provider: 'custom' }, 'vision')).toBe(
+      false,
+    );
+  });
 });
