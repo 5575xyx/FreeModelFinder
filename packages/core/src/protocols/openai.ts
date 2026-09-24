@@ -1,10 +1,16 @@
 import type { ChatMessage, ChatRequest, ChatResponse, StreamChunk } from '../types.js';
 
+export interface OpenAIContentPart {
+  type: string;
+  text?: string;
+  image_url?: { url: string };
+}
+
 export interface OpenAIChatCompletionRequest {
   model: string;
   messages: Array<{
     role: 'system' | 'user' | 'assistant' | 'tool';
-    content: string | Array<{ type: string; text?: string }>;
+    content: string | OpenAIContentPart[];
     name?: string;
     tool_call_id?: string;
   }>;
@@ -23,13 +29,38 @@ function normalizeContent(c: OpenAIChatCompletionRequest['messages'][number]['co
     .join('');
 }
 
+function extractContentParts(
+  content: OpenAIChatCompletionRequest['messages'][number]['content'],
+):
+  | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
+  | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const parts: Array<
+    { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+  > = [];
+  let sawImage = false;
+  for (const p of content) {
+    if (p.type === 'image_url' && p.image_url?.url) {
+      parts.push({ type: 'image_url', image_url: { url: p.image_url.url } });
+      sawImage = true;
+    } else if ((p.type === 'text' || p.type === 'input_text') && typeof p.text === 'string') {
+      parts.push({ type: 'text', text: p.text });
+    }
+  }
+  return sawImage ? parts : undefined;
+}
+
 export function openAIToChatRequest(req: OpenAIChatCompletionRequest): ChatRequest {
-  const messages: ChatMessage[] = req.messages.map((m) => ({
-    role: m.role,
-    content: normalizeContent(m.content),
-    name: m.name,
-    tool_call_id: m.tool_call_id,
-  }));
+  const messages: ChatMessage[] = req.messages.map((m) => {
+    const contentParts = extractContentParts(m.content);
+    return {
+      role: m.role,
+      content: normalizeContent(m.content),
+      contentParts,
+      name: m.name,
+      tool_call_id: m.tool_call_id,
+    };
+  });
   return {
     model: req.model,
     messages,

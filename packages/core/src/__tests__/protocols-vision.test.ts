@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { anthropicToChatRequest, type AnthropicMessagesRequest } from '../protocols/anthropic.js';
 import { geminiToChatRequest, type GeminiHttpRequest } from '../protocols/gemini.js';
+import { openAIToChatRequest, type OpenAIChatCompletionRequest } from '../protocols/openai.js';
 
 describe('anthropic/gemini inbound image parts', () => {
   it('maps anthropic image block to contentParts', () => {
@@ -68,5 +69,36 @@ describe('openai outbound encoding', () => {
     const { toOpenAIMessages } = await import('../providers/openai-messages.js');
     const msgs = toOpenAIMessages([{ role: 'user', content: 'hi' }]);
     assert.deepEqual(msgs[0], { role: 'user', content: 'hi' });
+  });
+});
+
+describe('openAIToChatRequest contentParts', () => {
+  it('keeps image_url parts and joins text into content', () => {
+    const req = {
+      model: 'auto',
+      messages: [
+        {
+          role: 'user' as const,
+          content: [
+            { type: 'text', text: '这是什么?' },
+            { type: 'image_url', image_url: { url: 'https://example.com/a.png' } },
+          ],
+        },
+      ],
+    } satisfies OpenAIChatCompletionRequest;
+    const out = openAIToChatRequest(req);
+    assert.equal(out.messages[0]!.content, '这是什么?');
+    assert.deepEqual(out.messages[0]!.contentParts, [
+      { type: 'text', text: '这是什么?' },
+      { type: 'image_url', image_url: { url: 'https://example.com/a.png' } },
+    ]);
+  });
+
+  it('omits contentParts for pure string messages (regression)', () => {
+    const out = openAIToChatRequest({
+      model: 'auto',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    assert.equal(out.messages[0]!.contentParts, undefined);
   });
 });
