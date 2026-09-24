@@ -6,10 +6,13 @@ import type {
   ProviderId,
   StreamChunk,
 } from '../types.js';
+import { assertImageDataUrlWithinLimit } from '../vision.js';
 import { BaseProvider } from './base.js';
 
 interface GeminiContentPart {
-  text: string;
+  text?: string;
+  inlineData?: { mimeType?: string; data?: string };
+  fileData?: { mimeType?: string; fileUri?: string };
 }
 interface GeminiContent {
   role: 'user' | 'model';
@@ -28,6 +31,39 @@ interface GeminiResponse {
   };
 }
 
+function pushImageParts(parts: GeminiContentPart[], urls: string[]) {
+  for (const url of urls) {
+    assertImageDataUrlWithinLimit(url);
+    if (url.startsWith('data:')) {
+      const comma = url.indexOf(',');
+      const meta = url.slice(5, comma);
+      const mime = meta.replace(/;base64$/, '') || 'image/png';
+      const data = url.slice(comma + 1);
+      parts.push({ inlineData: { mimeType: mime, data } });
+    } else {
+      parts.push({ fileData: { fileUri: url } });
+    }
+  }
+}
+
+function buildMessageParts(m: ChatMessage): GeminiContentPart[] {
+  const msgParts: GeminiContentPart[] = [];
+  const imageUrls: string[] = [];
+  if (m.contentParts?.length) {
+    for (const p of m.contentParts) {
+      if (p.type === 'text') msgParts.push({ text: p.text });
+      else if (p.type === 'image_url') imageUrls.push(p.image_url.url);
+    }
+    if (!msgParts.some((p) => typeof p.text === 'string' && p.text.length) && m.content) {
+      msgParts.unshift({ text: m.content });
+    }
+    pushImageParts(msgParts, imageUrls);
+  } else {
+    msgParts.push({ text: m.content });
+  }
+  return msgParts;
+}
+
 function toGeminiContents(messages: ChatMessage[]): {
   contents: GeminiContent[];
   systemInstruction?: { parts: GeminiContentPart[] };
@@ -38,9 +74,9 @@ function toGeminiContents(messages: ChatMessage[]): {
     if (m.role === 'system') {
       systemPieces.push(m.content);
     } else if (m.role === 'assistant') {
-      contents.push({ role: 'model', parts: [{ text: m.content }] });
+      contents.push({ role: 'model', parts: buildMessageParts(m) });
     } else {
-      contents.push({ role: 'user', parts: [{ text: m.content }] });
+      contents.push({ role: 'user', parts: buildMessageParts(m) });
     }
   }
   return {
@@ -167,7 +203,7 @@ export class GeminiProvider extends BaseProvider {
       : undefined;
     this.observeUsage(req.model, usage);
     const cand = data.candidates?.[0];
-    const text = cand?.content?.parts?.map((p) => p.text).join('') ?? '';
+    const text = cand?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
     return {
       id: `gemini-${Date.now()}`,
       model: req.model,
@@ -220,7 +256,7 @@ export class GeminiProvider extends BaseProvider {
             };
           }
           const cand = json.candidates?.[0];
-          const delta = cand?.content?.parts?.map((p) => p.text).join('') ?? '';
+          const delta = cand?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
           yield {
             id: streamId,
             model: req.model,
