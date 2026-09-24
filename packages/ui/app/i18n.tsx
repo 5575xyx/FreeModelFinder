@@ -243,11 +243,13 @@ const zh: Dict = {
   'settings.autoRoute.saved': '智能路由配置已更新',
   'settings.autoRoute.modality.title': '模态路由（Auto 模式）',
   'settings.autoRoute.modality.desc':
-    '当 model 为 auto 时，根据请求内容自动选择合适的模型。检测到图片（含「生成xx图片」等文本意图）走图片模型；检测到视频关键词走视频模型；其余走默认文本模型。未配置图片模型时会自动发现可用生图模型。',
+    '当 model 为 auto 时，根据请求内容自动选择合适的模型。检测到图片（含「生成xx图片」等文本意图）走图片模型；检测到视频关键词走视频模型；其余走默认文本模型。未配置图片模型时会自动发现可用生图模型。上传图片（多模态理解）走视觉模型，未配置时自动发现可看图模型。',
   'settings.autoRoute.modality.imageModel': '图片生成模型',
   'settings.autoRoute.modality.imageModelPh': '例如 custom:grok:claude-sonnet-4-6',
   'settings.autoRoute.modality.videoModel': '视频生成模型',
   'settings.autoRoute.modality.videoModelPh': '例如 custom:grok:gpt-5.5',
+  'settings.autoRoute.modality.visionModel': '视觉理解模型',
+  'settings.autoRoute.modality.visionModelPh': '例如 custom:cpa:DeepSeek-V4-Flash-Vision-Exp',
   'settings.autoRoute.textTiers.title': '文本复杂度分级',
   'settings.autoRoute.textTiers.desc':
     '纯文本请求根据复杂度自动选择模型。简单问题走轻量模型（快），复杂任务走强模型（准）。',
@@ -711,11 +713,13 @@ const en: Dict = {
   'settings.autoRoute.saved': 'Smart routing configuration updated',
   'settings.autoRoute.modality.title': 'Modality routing (Auto mode)',
   'settings.autoRoute.modality.desc':
-    'When model is auto, selects a suitable model from the request. Detected images (including text intent like "generate a cat image") use the image model; video keywords use the video model; otherwise the default text model. If no image model is configured, an available image-generation model is discovered automatically.',
+    'When model is auto, selects a suitable model from the request. Detected images (including text intent like "generate a cat image") use the image model; video keywords use the video model; otherwise the default text model. If no image model is configured, an available image-generation model is discovered automatically. Uploaded images (multimodal understanding) use the vision model; if none is configured, a vision-capable model is discovered automatically.',
   'settings.autoRoute.modality.imageModel': 'Image generation model',
   'settings.autoRoute.modality.imageModelPh': 'e.g. custom:grok:claude-sonnet-4-6',
   'settings.autoRoute.modality.videoModel': 'Video generation model',
   'settings.autoRoute.modality.videoModelPh': 'e.g. custom:grok:gpt-5.5',
+  'settings.autoRoute.modality.visionModel': 'Vision (image input) model',
+  'settings.autoRoute.modality.visionModelPh': 'e.g. custom:cpa:qwen2-vl',
   'settings.autoRoute.textTiers.title': 'Text complexity tiers',
   'settings.autoRoute.textTiers.desc':
     'Text-only requests are routed by complexity. Simple questions go to lightweight models (fast), complex tasks go to stronger models (accurate).',

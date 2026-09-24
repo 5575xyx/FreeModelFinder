@@ -178,6 +178,7 @@ export function SettingsView({
     fallbackChain?: string[];
     imageModel?: string[];
     videoModel?: string[];
+    visionModel?: string[];
     textTiers?: { simple?: string[]; medium?: string[]; complex?: string[] };
     cooldowns?: { model: string; provider: string; resetAt: number }[];
     rememberedPreference?: string | null;
@@ -1305,7 +1306,7 @@ export function SettingsView({
               <p className="text-[11px] text-muted-foreground">
                 {t('settings.autoRoute.roundRobinHint')}
               </p>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <ModelMultiSelect
                   label={t('settings.autoRoute.modality.imageModel')}
                   placeholder={t('settings.autoRoute.modality.imageModelPh')}
@@ -1326,6 +1327,17 @@ export function SettingsView({
                     void saveAutoRoute({ videoModel: next });
                   }}
                   filterCapability="video"
+                  options={modelOptions}
+                />
+                <ModelMultiSelect
+                  label={t('settings.autoRoute.modality.visionModel')}
+                  placeholder={t('settings.autoRoute.modality.visionModelPh')}
+                  value={autoRoute?.visionModel ?? []}
+                  onChange={(next) => {
+                    setAutoRoute((prev) => (prev ? { ...prev, visionModel: next } : prev));
+                    void saveAutoRoute({ visionModel: next });
+                  }}
+                  filterCapability="vision"
                   options={modelOptions}
                 />
               </div>

@@ -326,6 +326,30 @@ describe('SettingsView', () => {
     await waitFor(() => expect(writes.length).toBeGreaterThan(0));
     expect(writes[0]).toMatchObject({ imageModel: [] });
   });
+
+  it('renders the vision model multi-select in the modality card', async () => {
+    render(<SettingsView />);
+    expect(await screen.findByRole('button', { name: '视觉理解模型' })).toBeTruthy();
+  });
+
+  it('selecting a vision option POSTs visionModel to /api/auto-route', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () => HttpResponse.json(configPayload)),
+      http.post(`${gateway}/api/auto-route`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    const trigger = await screen.findByRole('button', { name: '视觉理解模型' });
+    await user.click(trigger);
+    const option = await screen.findByRole('option', { name: /custom:fixture:mm-chat/ });
+    await user.click(within(option).getByRole('button'));
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    expect(writes.at(-1)!.visionModel).toContain('custom:fixture:mm-chat');
+  });
 });
 
 describe('matchesCapability', () => {
