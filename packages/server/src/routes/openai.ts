@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   asModelList,
   chatResponseToOpenAI,
+  isVisionCapable,
   openAIToChatRequest,
   parseRateLimitError,
   scoreModel,
@@ -350,7 +351,37 @@ export function registerOpenAIRoutes(
         const cfg = reg.getConfig();
         const ar = cfg.autoRoute;
         const detectedModality = detectRequestModality(body.messages);
-        if (detectedModality === 'image') {
+        if (detectedModality === 'vision') {
+          const forced = asModelList(ar?.visionModel);
+          const picked = nextFromPool('vision', forced);
+          if (picked) {
+            chatReq.model = picked;
+          } else {
+            const { models } = await reg.listAllModels();
+            const visionModels = models.filter((m) => isVisionCapable(m, forced));
+            if (!visionModels.length) {
+              return reply.code(400).send({
+                error: {
+                  message:
+                    'No vision-capable model available. Configure autoRoute.visionModel or enable a model with image input.',
+                  type: 'no_vision_model',
+                },
+              });
+            }
+            const pool = visionModels.map((m) => m.id);
+            const catalogPick = nextFromPool('vision', pool);
+            if (!catalogPick) {
+              return reply.code(400).send({
+                error: {
+                  message:
+                    'No vision-capable model available. Configure autoRoute.visionModel or enable a model with image input.',
+                  type: 'no_vision_model',
+                },
+              });
+            }
+            chatReq.model = catalogPick;
+          }
+        } else if (detectedModality === 'image') {
           const pool = asModelList(ar?.imageModel);
           const picked = nextFromPool('image', pool);
           if (picked) {

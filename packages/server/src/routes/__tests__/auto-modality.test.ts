@@ -11,7 +11,7 @@ import {
 } from '@freemodelfinder/core';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../../server.js';
-import { detectRequestModality, extractGenerationPrompt } from '../openai.js';
+import { detectRequestModality, extractGenerationPrompt, resetModalityCursors } from '../openai.js';
 
 function textMsg(content: string) {
   return { role: 'user' as const, content };
@@ -750,6 +750,150 @@ describe('auto modality HTTP routing', () => {
         const body = res.json() as { error: { message: string; type: string } };
         assert.equal(body.error.type, 'vision_input_error');
         assert.match(body.error.message, /does not support image input/);
+      },
+    );
+  });
+
+  it('routes auto vision request to visionModel pool without generateImage', async () => {
+    await withApp(
+      {
+        autoRoute: {
+          enabled: false,
+          strategy: 'capability',
+          visionModel: ['custom:vision-a'],
+        },
+        models: [
+          textOnlyModel,
+          {
+            id: 'vision-a',
+            provider: 'custom',
+            displayName: 'Vision A',
+            free: true,
+          },
+        ],
+        realResolveModel: true,
+      },
+      async (app, handles) => {
+        resetModalityCursors();
+        resetAutoPoolCursor();
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'auto',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: '这是什么' },
+                  { type: 'image_url', image_url: { url: 'https://example.com/a.png' } },
+                ],
+              },
+            ],
+            stream: false,
+          },
+        });
+        assert.equal(res.statusCode, 200);
+        assert.equal(handles.imageCallCount(), 0, 'vision must not hit generateImage');
+        assert.equal(handles.videoCallCount(), 0, 'vision must not hit generateVideo');
+        const body = res.json() as { model: string };
+        assert.equal(body.model, 'custom:vision-a');
+        const chatReq = handles.lastChatRequest();
+        assert.ok(chatReq, 'chat must be invoked');
+        const parts = chatReq!.messages[0]!.contentParts;
+        assert.ok(parts, 'contentParts must flow into chat request');
+        assert.equal(
+          parts!.some((p) => p.type === 'image_url'),
+          true,
+        );
+      },
+    );
+  });
+
+  it('returns 400 no_vision_model when no vision model available', async () => {
+    await withApp(
+      {
+        autoRoute: { enabled: false, strategy: 'capability' },
+        models: [textOnlyModel],
+      },
+      async (app, handles) => {
+        resetModalityCursors();
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'auto',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: '这是什么' },
+                  { type: 'image_url', image_url: { url: 'https://example.com/a.png' } },
+                ],
+              },
+            ],
+            stream: false,
+          },
+        });
+        assert.equal(res.statusCode, 400);
+        const body = res.json() as { error: { message: string; type: string } };
+        assert.equal(body.error.type, 'no_vision_model');
+        assert.match(body.error.message, /vision/i);
+        assert.equal(handles.imageCallCount(), 0, 'no vision model must not hit generateImage');
+        assert.equal(handles.videoCallCount(), 0, 'no vision model must not hit generateVideo');
+      },
+    );
+  });
+
+  it('discovers vision model from catalog when visionModel pool unset', async () => {
+    await withApp(
+      {
+        autoRoute: { enabled: false, strategy: 'capability' },
+        models: [
+          textOnlyModel,
+          {
+            id: 'custom:vision-cat',
+            provider: 'custom',
+            displayName: 'Vision Catalog',
+            free: true,
+            inputModalities: ['text', 'image'],
+          },
+        ],
+        realResolveModel: true,
+      },
+      async (app, handles) => {
+        resetModalityCursors();
+        resetAutoPoolCursor();
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'auto',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: '这是什么' },
+                  { type: 'image_url', image_url: { url: 'https://example.com/a.png' } },
+                ],
+              },
+            ],
+            stream: false,
+          },
+        });
+        assert.equal(res.statusCode, 200);
+        assert.equal(handles.imageCallCount(), 0, 'catalog vision must not hit generateImage');
+        assert.equal(handles.videoCallCount(), 0, 'catalog vision must not hit generateVideo');
+        const body = res.json() as { model: string };
+        assert.equal(body.model, 'custom:vision-cat');
+        const chatReq = handles.lastChatRequest();
+        assert.ok(chatReq, 'chat must be invoked');
+        const parts = chatReq!.messages[0]!.contentParts;
+        assert.ok(parts, 'contentParts must flow into chat request');
+        assert.equal(
+          parts!.some((p) => p.type === 'image_url'),
+          true,
+        );
       },
     );
   });
