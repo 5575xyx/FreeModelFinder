@@ -192,6 +192,10 @@ const zh: Dict = {
   'tester.msg.copy': '复制',
   'tester.msg.copied': '已复制',
   'tester.msg.waiting': '等待模型响应',
+  'tester.attach.aria': '附加图片',
+  'tester.attach.tooLarge': '图片超过 10MB，未添加',
+  'tester.attach.readError': '图片读取失败',
+  'tester.attach.removeAria': '移除图片 {index}',
 
   'settings.title': '设置',
   'settings.subtitle': '配置各平台的 API Key，Key 只在本机加密存储，不会上传。',
@@ -657,6 +661,10 @@ const en: Dict = {
   'tester.msg.copy': 'Copy',
   'tester.msg.copied': 'Copied',
   'tester.msg.waiting': 'Waiting for model response',
+  'tester.attach.aria': 'Attach images',
+  'tester.attach.tooLarge': 'Image exceeds 10MB and was not added',
+  'tester.attach.readError': 'Failed to read image',
+  'tester.attach.removeAria': 'Remove image {index}',
 
   'settings.title': 'Settings',
   'settings.subtitle':
