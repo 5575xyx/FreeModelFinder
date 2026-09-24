@@ -50,5 +50,13 @@ describe('vision helpers', () => {
       free: true,
     } as ModelInfo;
     assert.equal(isVisionCapable(textOnly, []), false);
+    const declaredTextOnly = {
+      id: 'llava-x',
+      provider: 'openrouter',
+      displayName: 'e',
+      free: true,
+      inputModalities: ['text'],
+    } as ModelInfo;
+    assert.equal(isVisionCapable(declaredTextOnly, []), false);
   });
 });
