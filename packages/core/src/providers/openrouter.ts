@@ -87,6 +87,11 @@ export class OpenRouterProvider extends OpenAICompatibleProvider {
         contextWindow: m.context_length,
         free: true,
         description: m.description,
+        inputModalities: (() => {
+          const inputs = m.architecture?.input_modalities ?? [];
+          const mapped = inputs.filter((x): x is 'text' | 'image' => x === 'text' || x === 'image');
+          return mapped.length ? mapped : undefined;
+        })(),
       }));
   }
 }

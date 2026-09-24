@@ -41,3 +41,32 @@ describe('anthropic/gemini inbound image parts', () => {
     assert.equal(img.image_url.url, 'data:image/png;base64,AAAA');
   });
 });
+
+describe('openai outbound encoding', () => {
+  it('serializes contentParts as OpenAI content array', async () => {
+    const { toOpenAIMessages } = await import('../providers/openai-messages.js');
+    const msgs = toOpenAIMessages([
+      {
+        role: 'user',
+        content: 'see this',
+        contentParts: [
+          { type: 'text', text: 'see this' },
+          { type: 'image_url', image_url: { url: 'https://example.com/a.png' } },
+        ],
+      },
+    ]);
+    assert.deepEqual(msgs[0], {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'see this' },
+        { type: 'image_url', image_url: { url: 'https://example.com/a.png' } },
+      ],
+    });
+  });
+
+  it('keeps string content when no image parts', async () => {
+    const { toOpenAIMessages } = await import('../providers/openai-messages.js');
+    const msgs = toOpenAIMessages([{ role: 'user', content: 'hi' }]);
+    assert.deepEqual(msgs[0], { role: 'user', content: 'hi' });
+  });
+});

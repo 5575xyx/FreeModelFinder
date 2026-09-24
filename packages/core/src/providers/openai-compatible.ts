@@ -1,5 +1,6 @@
 import type { ChatRequest, ChatResponse, ModelInfo, ProviderId, StreamChunk } from '../types.js';
 import { BaseProvider } from './base.js';
+import { toOpenAIMessages } from './openai-messages.js';
 
 interface OpenAILikeChoice {
   index: number;
@@ -54,7 +55,11 @@ export abstract class OpenAICompatibleProvider extends BaseProvider {
       await this.fetch(`${this.baseUrl()}/chat/completions`, {
         method: 'POST',
         headers: this.buildHeaders(),
-        body: JSON.stringify({ ...req, stream: false }),
+        body: JSON.stringify({
+          ...req,
+          messages: toOpenAIMessages(req.messages),
+          stream: false,
+        }),
       }),
     );
     if (!res.ok) {
@@ -88,6 +93,7 @@ export abstract class OpenAICompatibleProvider extends BaseProvider {
         headers: this.buildHeaders(),
         body: JSON.stringify({
           ...req,
+          messages: toOpenAIMessages(req.messages),
           stream: true,
           stream_options: { include_usage: true },
         }),

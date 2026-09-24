@@ -8,6 +8,7 @@ import type {
   StreamChunk,
 } from '../types.js';
 import { BaseProvider } from './base.js';
+import { toOpenAIMessages } from './openai-messages.js';
 
 interface OpenAILikeChoice {
   index: number;
@@ -156,7 +157,12 @@ export class CustomProvider extends BaseProvider {
       await this.fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: this.buildHeaders(source),
-        body: JSON.stringify({ ...req, model: realModel, stream: false }),
+        body: JSON.stringify({
+          ...req,
+          model: realModel,
+          messages: toOpenAIMessages(req.messages),
+          stream: false,
+        }),
       }),
     );
     if (!res.ok) {
@@ -191,7 +197,12 @@ export class CustomProvider extends BaseProvider {
       await this.fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: this.buildHeaders(source),
-        body: JSON.stringify({ ...req, model: realModel, stream: true }),
+        body: JSON.stringify({
+          ...req,
+          model: realModel,
+          messages: toOpenAIMessages(req.messages),
+          stream: true,
+        }),
       }),
     );
     if (!res.ok || !res.body) {
