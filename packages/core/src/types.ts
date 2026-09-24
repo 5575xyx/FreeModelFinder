@@ -36,9 +36,18 @@ export interface CustomSource {
 export const RoleSchema = z.enum(['system', 'user', 'assistant', 'tool']);
 export type Role = z.infer<typeof RoleSchema>;
 
+export const ChatContentPartSchema = z.union([
+  z.object({ type: z.literal('text'), text: z.string() }),
+  z.object({
+    type: z.literal('image_url'),
+    image_url: z.object({ url: z.string() }),
+  }),
+]);
+
 export const ChatMessageSchema = z.object({
   role: RoleSchema,
   content: z.string(),
+  contentParts: z.array(ChatContentPartSchema).optional(),
   name: z.string().optional(),
   tool_call_id: z.string().optional(),
 });
@@ -85,6 +94,8 @@ export interface ModelInfo {
   free: boolean;
   description?: string;
   capabilities?: ('text' | 'image' | 'video')[];
+  /** Chat *input* modalities. Missing = text-only. Not the same as capabilities (output). */
+  inputModalities?: ('text' | 'image')[];
 }
 
 export type QuotaResource = 'requests' | 'tokens' | 'neurons';
@@ -142,6 +153,7 @@ export interface AutoRouteSettings {
   fallbackChain?: string[];
   imageModel?: string[];
   videoModel?: string[];
+  visionModel?: string[];
   textTiers?: {
     simple?: string[];
     medium?: string[];
