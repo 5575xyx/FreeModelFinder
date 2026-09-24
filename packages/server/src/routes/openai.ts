@@ -187,6 +187,22 @@ export function detectRequestModality(
   return 'text';
 }
 
+/**
+ * Image/video providers reject prompts above a hard character limit
+ * (Agnes: 10000). External tools send the full chat history, so joining
+ * every message overflows the limit even though the latest user message
+ * alone is a valid prompt. Extract only the latest non-empty user turn.
+ */
+export function extractGenerationPrompt(messages: ChatRequest['messages']): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]!;
+    if (msg.role !== 'user') continue;
+    const text = msg.content.trim();
+    if (text) return text;
+  }
+  return '';
+}
+
 type TextTier = 'simple' | 'medium' | 'complex';
 
 function classifyTextComplexity(text: string): TextTier {
@@ -353,8 +369,8 @@ export function registerOpenAIRoutes(
           const picked = nextFromPool('video', pool);
           if (picked) chatReq.model = picked;
         } else if (detectedModality === 'text' && ar?.textTiers) {
-          const prompt = chatReq.messages.map((m) => m.content).join('\n');
-          const tier = classifyTextComplexity(prompt);
+          const tierText = chatReq.messages.map((m) => m.content).join('\n');
+          const tier = classifyTextComplexity(tierText);
           const pool = asModelList(ar.textTiers[tier]);
           const picked = nextFromPool(`text:${tier}`, pool);
           if (picked) chatReq.model = picked;
@@ -369,7 +385,7 @@ export function registerOpenAIRoutes(
           ? ['image']
           : [];
 
-      const prompt = chatReq.messages.map((m) => m.content).join('\n');
+      const prompt = extractGenerationPrompt(chatReq.messages);
 
       if (inferredCaps.includes('image')) {
         const imageReq: ImageGenerationRequest = {

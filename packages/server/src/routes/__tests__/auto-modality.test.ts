@@ -11,7 +11,7 @@ import {
 } from '@freemodelfinder/core';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../../server.js';
-import { detectRequestModality } from '../openai.js';
+import { detectRequestModality, extractGenerationPrompt } from '../openai.js';
 
 function textMsg(content: string) {
   return { role: 'user' as const, content };
@@ -86,6 +86,41 @@ describe('detectRequestModality image text intent', () => {
   });
 });
 
+describe('extractGenerationPrompt', () => {
+  it('returns only the latest non-empty user message', () => {
+    assert.equal(
+      extractGenerationPrompt([
+        { role: 'system', content: '系统指令' },
+        { role: 'user', content: '第一轮问题' },
+        { role: 'assistant', content: '第一轮回答' },
+        { role: 'user', content: '生成小猫图片' },
+      ]),
+      '生成小猫图片',
+    );
+  });
+
+  it('skips empty user messages and assistant turns', () => {
+    assert.equal(
+      extractGenerationPrompt([
+        { role: 'user', content: '画一只猫' },
+        { role: 'assistant', content: '好的' },
+        { role: 'user', content: '   ' },
+      ]),
+      '画一只猫',
+    );
+  });
+
+  it('returns empty string when no user text exists', () => {
+    assert.equal(
+      extractGenerationPrompt([
+        { role: 'system', content: '系统指令' },
+        { role: 'assistant', content: '你好' },
+      ]),
+      '',
+    );
+  });
+});
+
 function modalityConfig(autoRoute: AppConfig['autoRoute']): AppConfig {
   return {
     version: 2,
@@ -122,6 +157,8 @@ function modalityRegistry(options: {
   registry: ProviderRegistry;
   imageCallCount: () => number;
   videoCallCount: () => number;
+  lastImagePrompt: () => string | undefined;
+  lastVideoPrompt: () => string | undefined;
 } {
   const registry = new ProviderRegistry(modalityConfig(options.autoRoute));
   const response: ChatResponse = {
@@ -134,6 +171,8 @@ function modalityRegistry(options: {
   };
   let imageCalls = 0;
   let videoCalls = 0;
+  let lastImagePrompt: string | undefined;
+  let lastVideoPrompt: string | undefined;
   const provider = {
     id: 'custom',
     async chat(_request: ChatRequest): Promise<ChatResponse> {
@@ -148,15 +187,17 @@ function modalityRegistry(options: {
         finish_reason: 'stop' as const,
       };
     },
-    async generateImage() {
+    async generateImage(req: { prompt: string }) {
       imageCalls++;
+      lastImagePrompt = req.prompt;
       return {
         created: Date.now(),
         data: [{ url: 'https://example.invalid/cat.png' }],
       };
     },
-    async generateVideo() {
+    async generateVideo(req: { prompt: string }) {
       videoCalls++;
+      lastVideoPrompt = req.prompt;
       return {
         video_id: 'vid_fixture123',
         status: 'submitted' as const,
@@ -181,6 +222,8 @@ function modalityRegistry(options: {
       registry,
       imageCallCount: () => imageCalls,
       videoCallCount: () => videoCalls,
+      lastImagePrompt: () => lastImagePrompt,
+      lastVideoPrompt: () => lastVideoPrompt,
     };
   }
   registry.resolveModel = () => ({ provider: provider as never, modelId: 'fixture-model' });
@@ -193,20 +236,22 @@ function modalityRegistry(options: {
     registry,
     imageCallCount: () => imageCalls,
     videoCallCount: () => videoCalls,
+    lastImagePrompt: () => lastImagePrompt,
+    lastVideoPrompt: () => lastVideoPrompt,
   };
 }
 
 async function withApp(
   options: Parameters<typeof modalityRegistry>[0],
-  fn: (app: FastifyInstance) => Promise<void>,
+  fn: (app: FastifyInstance, handles: ReturnType<typeof modalityRegistry>) => Promise<void>,
 ): Promise<void> {
-  const { registry } = modalityRegistry(options);
+  const handles = modalityRegistry(options);
   const { app } = await createServer({
-    registry,
+    registry: handles.registry,
     watchIntervalMs: 60 * 60 * 1000,
   });
   try {
-    await fn(app);
+    await fn(app, handles);
   } finally {
     await app.close();
   }
@@ -514,6 +559,79 @@ describe('auto modality HTTP routing', () => {
         const body = res.json();
         assert.equal(body.choices[0].message.content, 'fixture reply');
         assert.equal(body.fmf_image_response, undefined);
+      },
+    );
+  });
+
+  it('uses only the latest user message as image prompt despite long history', async () => {
+    const filler = '历史背景内容'.repeat(2000);
+    await withApp(
+      {
+        autoRoute: {
+          enabled: false,
+          strategy: 'capability',
+          imageModel: ['custom:img-model'],
+        },
+        models: [textOnlyModel],
+      },
+      async (app, handles) => {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'auto',
+            messages: [
+              { role: 'system', content: filler },
+              { role: 'user', content: filler },
+              { role: 'assistant', content: filler },
+              { role: 'user', content: '生成小猫图片' },
+            ],
+            stream: false,
+          },
+        });
+        assert.equal(res.statusCode, 200);
+        const body = res.json();
+        assert.equal(body.model, 'custom:img-model');
+        const prompt = handles.lastImagePrompt();
+        assert.equal(prompt, '生成小猫图片');
+        assert.ok((prompt ?? '').length < 10000, 'image prompt must stay under provider limit');
+      },
+    );
+  });
+
+  it('uses only the latest user message as video prompt despite long history', async () => {
+    const filler = '历史背景内容'.repeat(2000);
+    await withApp(
+      {
+        autoRoute: {
+          enabled: false,
+          strategy: 'capability',
+          imageModel: ['custom:img-model'],
+          videoModel: ['custom:vid-model'],
+        },
+        models: [textOnlyModel],
+      },
+      async (app, handles) => {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            model: 'auto',
+            messages: [
+              { role: 'system', content: filler },
+              { role: 'user', content: filler },
+              { role: 'assistant', content: filler },
+              { role: 'user', content: '生成小猫卖萌视频' },
+            ],
+            stream: false,
+          },
+        });
+        assert.equal(res.statusCode, 200);
+        const body = res.json();
+        assert.equal(body.model, 'custom:vid-model');
+        const prompt = handles.lastVideoPrompt();
+        assert.equal(prompt, '生成小猫卖萌视频');
+        assert.ok((prompt ?? '').length < 10000, 'video prompt must stay under provider limit');
       },
     );
   });
