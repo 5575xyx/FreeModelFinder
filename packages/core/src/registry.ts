@@ -21,6 +21,7 @@ import type { ProviderContext } from './providers/base.js';
 import { QuotaTracker } from './quota.js';
 import { emitUsageCapture } from './call-logger.js';
 import { AutoRouter, parseRateLimitError, scoreModel } from './router/auto-router.js';
+import { retryOnQueueFull, type RetryOnQueueFullOptions } from './queue-retry.js';
 import type {
   AppConfig,
   ImageGenerationRequest,
@@ -82,6 +83,7 @@ export class ProviderRegistry {
   constructor(
     private config: AppConfig,
     private readonly loadModelSnapshot: () => Promise<ModelSnapshot> = loadSnapshot,
+    private readonly queueRetry: RetryOnQueueFullOptions = {},
   ) {
     this.autoRouter = new AutoRouter({
       getSettings: () => this.config.autoRoute,
@@ -429,7 +431,11 @@ export class ProviderRegistry {
     if (!provider.generateImage) {
       throw new Error(`Provider ${provider.id} does not support image generation`);
     }
-    const response = await provider.generateImage({ ...req, model: modelId });
+    const generateImage = provider.generateImage.bind(provider);
+    const response = await retryOnQueueFull(
+      () => generateImage({ ...req, model: modelId }),
+      this.queueRetry,
+    );
     return { provider, response };
   }
 
@@ -440,7 +446,11 @@ export class ProviderRegistry {
     if (!provider.generateVideo) {
       throw new Error(`Provider ${provider.id} does not support video generation`);
     }
-    const response = await provider.generateVideo({ ...req, model: modelId });
+    const generateVideo = provider.generateVideo.bind(provider);
+    const response = await retryOnQueueFull(
+      () => generateVideo({ ...req, model: modelId }),
+      this.queueRetry,
+    );
     return { provider, response };
   }
 

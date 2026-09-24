@@ -389,3 +389,118 @@ describe('ProviderRegistry auto scored pool', () => {
     assert.throws(() => registry.resolveModel('auto'), /no model available/);
   });
 });
+
+describe('ProviderRegistry queue-full retry', () => {
+  function registryWith(
+    generateImage: () => Promise<unknown>,
+    generateVideo?: () => Promise<unknown>,
+  ) {
+    const config = configWithProviders({
+      agnes: { enabled: true, credentials: { apiKey: 'k' } },
+    });
+    const registry = new ProviderRegistry(
+      config,
+      async () => ({
+        version: 1,
+        updatedAt: 0,
+        models: [],
+        added: [],
+        removed: [],
+      }),
+      { maxAttempts: 3, baseDelayMs: 1, sleep: async () => {} },
+    );
+    const fakeProvider = {
+      id: 'agnes' as const,
+      displayName: 'Fake',
+      listModels: async () => [
+        {
+          id: 'img-1',
+          provider: 'agnes',
+          displayName: 'Img',
+          free: true,
+          modalities: { input: ['text'], output: ['image'] },
+        },
+        {
+          id: 'vid-1',
+          provider: 'agnes',
+          displayName: 'Vid',
+          free: true,
+          modalities: { input: ['text'], output: ['video'] },
+        },
+      ],
+      generateImage,
+      generateVideo,
+    } as unknown as BaseProvider;
+    const internals = registry as unknown as {
+      instances: Map<ProviderId, BaseProvider>;
+    };
+    internals.instances.set('agnes', fakeProvider);
+    return registry;
+  }
+
+  it('retries generateImage on 503 queue-full then succeeds', async () => {
+    let calls = 0;
+    const registry = registryWith(async () => {
+      calls += 1;
+      if (calls < 3) {
+        throw new Error('agnes image generation failed 503: 文生图队列已满');
+      }
+      return { created: 1, data: [{ url: 'ok' }] };
+    });
+    const result = await registry.generateImage({
+      model: 'agnes:img-1',
+      prompt: 'cat',
+      size: '1024x1024',
+      n: 1,
+      response_format: 'url',
+    });
+    assert.equal(calls, 3);
+    assert.equal(result.response.data[0]?.url, 'ok');
+  });
+
+  it('retries generateVideo on 503 queue-full then succeeds', async () => {
+    let calls = 0;
+    const registry = registryWith(
+      async () => {
+        throw new Error('unused');
+      },
+      async () => {
+        calls += 1;
+        if (calls < 2) {
+          throw new Error('agnes video creation failed 503: video_queue_full');
+        }
+        return { video_id: 'v1', status: 'queued' as const };
+      },
+    );
+    const result = await registry.generateVideo({
+      model: 'agnes:vid-1',
+      prompt: 'a cat',
+      width: 1152,
+      height: 768,
+      num_frames: 121,
+      frame_rate: 24,
+    });
+    assert.equal(calls, 2);
+    assert.equal(result.response.video_id, 'v1');
+  });
+
+  it('does not retry non-queue errors in generateImage', async () => {
+    let calls = 0;
+    const registry = registryWith(async () => {
+      calls += 1;
+      throw new Error('agnes image generation failed 400: prompt too long');
+    });
+    await assert.rejects(
+      () =>
+        registry.generateImage({
+          model: 'agnes:img-1',
+          prompt: 'cat',
+          size: '1024x1024',
+          n: 1,
+          response_format: 'url',
+        }),
+      /400/,
+    );
+    assert.equal(calls, 1);
+  });
+});
