@@ -390,6 +390,7 @@ function MessageRow({ message, isStreamingLast }: { message: Msg; isStreamingLas
   const isUser = message.role === 'user';
   const isError = message.content.startsWith('[error]');
   const hasImages = (message.imageUrls?.length ?? 0) > 0;
+  const hasUploads = (message.uploadImages?.length ?? 0) > 0;
   const hasVideo = !!message.videoId;
 
   const fetchProxied = useCallback(async (url: string, provider: string): Promise<string> => {
@@ -490,29 +491,46 @@ function MessageRow({ message, isStreamingLast }: { message: Msg; isStreamingLas
         {isUser ? t('tester.msg.you') : 'FM'}
       </div>
       <div className={classNames('min-w-0 max-w-[86%]', isUser && 'text-right')}>
-        <div
-          className={classNames(
-            'inline-block whitespace-pre-wrap rounded-2xl px-4 py-3 text-left text-sm leading-7',
-            isUser
-              ? 'rounded-tr-sm bg-foreground text-background'
-              : isError
-                ? 'rounded-tl-sm border border-destructive/25 bg-destructive/5 text-destructive'
-                : 'rounded-tl-sm border border-border bg-surface text-foreground',
-          )}
-        >
-          {message.content ? (
-            isError ? (
-              message.content.replace(/^\[error\]\s*/, '')
+        {(message.content || isStreamingLast) && (
+          <div
+            className={classNames(
+              'inline-block whitespace-pre-wrap rounded-2xl px-4 py-3 text-left text-sm leading-7',
+              isUser
+                ? 'rounded-tr-sm bg-foreground text-background'
+                : isError
+                  ? 'rounded-tl-sm border border-destructive/25 bg-destructive/5 text-destructive'
+                  : 'rounded-tl-sm border border-border bg-surface text-foreground',
+            )}
+          >
+            {message.content ? (
+              isError ? (
+                message.content.replace(/^\[error\]\s*/, '')
+              ) : (
+                message.content
+              )
             ) : (
-              message.content
-            )
-          ) : isStreamingLast ? (
-            <span className="inline-flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="animate-spin" size={14} />
-              {t('tester.msg.waiting')}
-            </span>
-          ) : null}
-        </div>
+              <span className="inline-flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="animate-spin" size={14} />
+                {t('tester.msg.waiting')}
+              </span>
+            )}
+          </div>
+        )}
+
+        {hasUploads && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {message.uploadImages!.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                <img
+                  src={url}
+                  alt={`uploaded-${i}`}
+                  className="max-h-[300px] rounded-xl border border-border object-contain"
+                  loading="lazy"
+                />
+              </a>
+            ))}
+          </div>
+        )}
 
         {hasImages && (
           <div className="mt-2 flex flex-wrap gap-2">

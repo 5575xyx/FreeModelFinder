@@ -279,5 +279,15 @@ describe('Home', () => {
       const last = capture.body!.messages![capture.body!.messages!.length - 1]!;
       expect(last.content).toBe('plain');
     });
+
+    it('renders sent uploads as thumbnails on the user message', async () => {
+      captureChatBody();
+      renderInChinese(<Home />);
+      const user = await openTester();
+      await user.upload(screen.getByTestId('tester-image-input'), pngFile('hist.png'));
+      await user.click(screen.getByRole('button', { name: '发送消息' }));
+      expect(await screen.findByAltText('uploaded-0')).toBeTruthy();
+      expect(screen.queryByAltText('attachment-0')).toBeNull();
+    });
   });
 });
