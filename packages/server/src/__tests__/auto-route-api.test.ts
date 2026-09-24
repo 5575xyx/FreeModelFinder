@@ -134,3 +134,69 @@ describe('auto-route merge API', () => {
     assert.deepEqual(get.json().imageModel, ['legacy:string']);
   });
 });
+
+describe('visionModel auto-route API', () => {
+  let app: FastifyInstance;
+
+  before(async () => {
+    await updateConfig(() =>
+      baseConfig({
+        enabled: false,
+        strategy: 'capability',
+        visionModel: ['custom:v1'],
+      }),
+    );
+    ({ app } = await createServer({
+      registry: fakeRegistry({
+        enabled: false,
+        strategy: 'capability',
+        visionModel: ['custom:v1'],
+      }),
+      watchIntervalMs: 60 * 60 * 1000,
+    }));
+  });
+
+  after(async () => {
+    await app?.close();
+  });
+
+  it('GET returns visionModel array', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auto-route',
+      headers: localUiHeaders,
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json().visionModel, ['custom:v1']);
+  });
+
+  it('POST merge keeps previous visionModel when omitted; assigns when provided', async () => {
+    const assign = await app.inject({
+      method: 'POST',
+      url: '/api/auto-route',
+      headers: localUiHeaders,
+      payload: { visionModel: ['custom:v2'] },
+    });
+    assert.equal(assign.statusCode, 200);
+    const afterAssign = await app.inject({
+      method: 'GET',
+      url: '/api/auto-route',
+      headers: localUiHeaders,
+    });
+    assert.deepEqual(afterAssign.json().visionModel, ['custom:v2']);
+
+    const empty = await app.inject({
+      method: 'POST',
+      url: '/api/auto-route',
+      headers: localUiHeaders,
+      payload: {},
+    });
+    assert.equal(empty.statusCode, 200);
+    const afterEmpty = await app.inject({
+      method: 'GET',
+      url: '/api/auto-route',
+      headers: localUiHeaders,
+    });
+    assert.deepEqual(afterEmpty.json().visionModel, ['custom:v2']);
+  });
+});

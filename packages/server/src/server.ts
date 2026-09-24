@@ -990,6 +990,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         fallbackChain: ar.fallbackChain ?? [],
         imageModel: asModelList(ar.imageModel),
         videoModel: asModelList(ar.videoModel),
+        visionModel: asModelList(ar.visionModel),
         textTiers: {
           simple: asModelList(ar.textTiers?.simple),
           medium: asModelList(ar.textTiers?.medium),
@@ -1063,6 +1064,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         profiles?: unknown;
         imageModel?: string[] | string;
         videoModel?: string[] | string;
+        visionModel?: string[] | string;
         textTiers?: {
           simple?: string[] | string;
           medium?: string[] | string;
@@ -1070,8 +1072,16 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         };
       };
     }>('/api/auto-route', async (req, reply) => {
-      const { enabled, strategy, fallbackChain, profiles, imageModel, videoModel, textTiers } =
-        req.body ?? {};
+      const {
+        enabled,
+        strategy,
+        fallbackChain,
+        profiles,
+        imageModel,
+        videoModel,
+        visionModel,
+        textTiers,
+      } = req.body ?? {};
       if (strategy && !['capability', 'speed', 'rate-limit'].includes(strategy)) {
         return reply.code(400).send({ error: 'invalid strategy' });
       }
@@ -1087,6 +1097,8 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             imageModel !== undefined ? asModelList(imageModel) : asModelList(cur.imageModel),
           videoModel:
             videoModel !== undefined ? asModelList(videoModel) : asModelList(cur.videoModel),
+          visionModel:
+            visionModel !== undefined ? asModelList(visionModel) : asModelList(cur.visionModel),
           textTiers: textTiers
             ? {
                 simple:
