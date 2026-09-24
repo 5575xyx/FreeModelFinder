@@ -79,7 +79,7 @@ export function TesterView({
   models: ModelItem[];
   inputImages: string[];
   setInput: (value: string) => void;
-  setImages: (value: string[]) => void;
+  setImages: (value: string[] | ((prev: string[]) => string[])) => void;
   send: () => void;
   onCancel: () => void;
   onModelChange: (value: string) => void;
@@ -97,7 +97,7 @@ export function TesterView({
   const enqueueImages = useCallback(
     async (files: File[]) => {
       setAttachError('');
-      const next = [...inputImages];
+      const accepted: string[] = [];
       for (const file of files) {
         if (!file.type.startsWith('image/')) continue;
         try {
@@ -106,15 +106,19 @@ export function TesterView({
             setAttachError(t('tester.attach.tooLarge'));
             continue;
           }
-          next.push(url);
+          accepted.push(url);
         } catch {
           setAttachError(t('tester.attach.readError'));
         }
       }
-      setImages(next);
+      if (accepted.length > 0) setImages((prev) => [...prev, ...accepted]);
     },
-    [inputImages, setImages, t],
+    [setImages, t],
   );
+
+  useEffect(() => {
+    if (streaming) setAttachError('');
+  }, [streaming]);
 
   const localizedPrompts = useMemo(
     () =>
@@ -287,7 +291,7 @@ export function TesterView({
                     <button
                       type="button"
                       aria-label={t('tester.attach.removeAria', { index: String(i + 1) })}
-                      onClick={() => setImages(inputImages.filter((_, j) => j !== i))}
+                      onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
                       className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-[11px] leading-none text-background shadow transition hover:opacity-80"
                     >
                       ×

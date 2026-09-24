@@ -235,11 +235,11 @@ describe('Home', () => {
       await waitFor(() => expect(capture.body).not.toBeNull());
       const last = capture.body!.messages![capture.body!.messages!.length - 1]!;
       const parts = last.content as Array<{ type: string }>;
+      expect(parts.length).toBeGreaterThan(0);
       expect(parts.every((p) => p.type === 'image_url')).toBe(true);
     });
 
     it('rejects images over the 10MB limit with an inline error', async () => {
-      const capture = captureChatBody();
       renderInChinese(<Home />);
       const user = await openTester();
       const huge = new File([new Uint8Array(14 * 1024 * 1024)], 'big.png', { type: 'image/png' });
@@ -249,7 +249,6 @@ describe('Home', () => {
       expect((screen.getByRole('button', { name: '发送消息' }) as HTMLButtonElement).disabled).toBe(
         true,
       );
-      void capture;
     });
 
     it('removes a single draft thumbnail via its remove button', async () => {
