@@ -69,7 +69,7 @@ describe('detectRequestModality image text intent', () => {
     );
   });
 
-  it('keeps uploaded image parts as image', () => {
+  it('keeps uploaded image parts as vision', () => {
     const imagePart = { type: 'image_url', image_url: { url: 'http://x/y.png' } } as {
       type: string;
       text?: string;
@@ -81,7 +81,48 @@ describe('detectRequestModality image text intent', () => {
           content: [imagePart],
         },
       ]),
-      'image',
+      'vision',
+    );
+  });
+
+  it('detects vision when latest user uploads an image part', () => {
+    assert.equal(
+      detectRequestModality([
+        {
+          role: 'user' as const,
+          content: [{ type: 'image_url', image_url: { url: 'http://x/y.png' } } as never],
+        },
+      ]),
+      'vision',
+    );
+  });
+
+  it('image part wins over generation keywords in the same message', () => {
+    assert.equal(
+      detectRequestModality([
+        {
+          role: 'user' as const,
+          content: [
+            { type: 'text', text: '生成一张图片' },
+            { type: 'image_url', image_url: { url: 'http://x/y.png' } } as never,
+          ],
+        },
+      ]),
+      'vision',
+    );
+  });
+
+  it('does not trigger vision from image only in history', () => {
+    assert.equal(
+      detectRequestModality([
+        {
+          role: 'user' as const,
+          content: [{ type: 'image_url', image_url: { url: 'http://old.png' } } as never],
+        },
+        { role: 'assistant' as const, content: 'ok' },
+        { role: 'user' as const, content: '介绍一下 OpenRouter' },
+      ]),
+      'text',
     );
   });
 });

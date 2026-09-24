@@ -150,7 +150,7 @@ async function dispatchWithAutoRoute(
   }
 }
 
-type RequestModality = 'text' | 'image' | 'video';
+type RequestModality = 'text' | 'image' | 'video' | 'vision';
 
 export function detectRequestModality(
   messages: OpenAIChatCompletionRequest['messages'],
@@ -165,7 +165,7 @@ export function detectRequestModality(
     const content = msg.content;
     if (Array.isArray(content)) {
       for (const part of content) {
-        if (part.type === 'image_url' || part.type === 'image') return 'image';
+        if (part.type === 'image_url' || part.type === 'image') return 'vision';
       }
       const text = content
         .map((p) => (p.type === 'text' && typeof p.text === 'string' ? p.text : ''))
