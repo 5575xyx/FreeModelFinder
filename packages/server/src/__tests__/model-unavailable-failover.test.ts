@@ -341,4 +341,31 @@ describe('full-pool failover semantics', () => {
     assert.equal(res.statusCode, 400);
     assert.deepEqual(seenModels(), ['deepseek-v3.1-dead'], 'param errors must not walk the pool');
   });
+
+  it('cools the rate-limited model under its own id so the next request skips it', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.0-dead', 'alive-mini'],
+      failures: { 'deepseek-v3.0-dead': RATE_LIMIT_429 },
+    });
+    resetAutoPoolCursor();
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'first' }], stream: false },
+    });
+    assert.equal(first.statusCode, 200);
+    assert.deepEqual(seenModels(), ['deepseek-v3.0-dead', 'alive-mini']);
+    const second = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'second' }], stream: false },
+    });
+    assert.equal(second.statusCode, 200);
+    const calls = seenModels();
+    assert.equal(
+      calls.filter((m) => m === 'deepseek-v3.0-dead').length,
+      1,
+      'rate-limited model must be cooled under its own id and skipped next request',
+    );
+  });
 });

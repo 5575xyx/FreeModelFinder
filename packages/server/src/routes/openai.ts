@@ -75,15 +75,6 @@ function classifyStatus(err: unknown): { status: CallStatus; httpStatus?: number
   return { status: 'error', httpStatus: upstream };
 }
 
-function extractProviderIdFromError(chatReq: ChatRequest, reg: ProviderRegistry): string {
-  try {
-    const { provider } = reg.resolveModel(chatReq.model);
-    return provider.id;
-  } catch {
-    return 'unknown';
-  }
-}
-
 type FailureKind = 'unavailable' | 'rate-limit' | 'request' | 'upstream';
 
 function classifyFailure(err: unknown): { kind: FailureKind; message: string } {
@@ -219,7 +210,7 @@ async function dispatchWithAutoRoute(
         if (failure.kind === 'unavailable') {
           router.markModelUnavailable(realModelId, provider.id, failure.message);
         } else if (failure.kind === 'rate-limit') {
-          router.markRateLimited(chatReq.model, provider.id, parseRateLimitError(err));
+          router.markRateLimited(realModelId, provider.id, parseRateLimitError(err));
         }
       };
 
@@ -241,17 +232,17 @@ async function dispatchWithAutoRoute(
       mark();
       const parsed = parseRateLimitError(err);
       if (parsed.isRateLimit && router.isEnabled() && attempt === 0) {
-        const fallback = await router.pickFallback(chatReq.model);
+        const fallback = await router.pickFallback(failedKey);
         if (fallback) {
           router.rememberPreference(originalRequested);
           const notice: SwitchNotice = {
             type: 'switch-away',
-            from: chatReq.model,
+            from: failedKey,
             to: `${fallback.provider}:${fallback.id}`,
             strategy: router.getStrategy(),
             reason: router.buildSwitchAwayMessage(
               {
-                model: chatReq.model,
+                model: failedKey,
                 provider: provider.id,
                 hitAt: Date.now(),
                 resetAt: parsed.resetAt ?? Date.now() + 60_000,
@@ -961,11 +952,7 @@ export function registerOpenAIRoutes(
             }
             const parsed = parseRateLimitError(err);
             if (parsed.isRateLimit && router.isEnabled()) {
-              router.markRateLimited(
-                chatReq.model,
-                extractProviderIdFromError(chatReq, reg) as ProviderId,
-                parsed,
-              );
+              router.markRateLimited(realModelId, provider.id, parsed);
               router.rememberPreference(originalRequested);
             }
             const msg = err instanceof Error ? err.message : String(err);
