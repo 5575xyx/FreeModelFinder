@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { parseModelUnavailableError } from '../auto-router.js';
+import { formatResetTime, parseModelUnavailableError } from '../auto-router.js';
 import { makeModel, makeRouter } from './fixtures.js';
 
 describe('parseModelUnavailableError', () => {
@@ -70,7 +70,7 @@ describe('AutoRouter.markModelUnavailable', () => {
       'has no provider supported',
     );
     assert.equal(state.scope, 'model');
-    assert.ok(state.resetAt > Date.now(), 'cooldown expires in the future');
+    assert.equal(state.resetAt, Number.POSITIVE_INFINITY, 'unavailable models are removed permanently');
     assert.ok(harness.router.isRateLimited('deepseek-v3.1-dead'));
     assert.equal(harness.router.isProviderRateLimited('custom'), null);
 
@@ -85,5 +85,16 @@ describe('AutoRouter.markModelUnavailable', () => {
     ]);
     harness.router.markModelUnavailable('deepseek-v3.1-dead', 'custom', 'no provider supported');
     assert.equal(harness.router.isRateLimited('qwen-other'), null);
+  });
+});
+
+describe('formatResetTime with permanent markers', () => {
+  it('renders Infinity as permanently excluded', () => {
+    assert.equal(formatResetTime(Number.POSITIVE_INFINITY), '已永久剔除');
+  });
+
+  it('keeps normal timestamps unchanged', () => {
+    const ts = new Date(2026, 8, 25, 10, 30, 0).getTime();
+    assert.equal(formatResetTime(ts), '2026-09-25 10:30:00');
   });
 });

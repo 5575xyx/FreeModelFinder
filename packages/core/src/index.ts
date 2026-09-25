@@ -16,7 +16,6 @@ export {
   AutoRouter,
   parseRateLimitError,
   parseModelUnavailableError,
-  MODEL_UNAVAILABLE_COOLDOWN_MS,
   scoreModel,
   formatResetTime,
   formatModelId,

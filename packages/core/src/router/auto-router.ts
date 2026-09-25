@@ -19,14 +19,6 @@ export interface RateLimitParseResult {
 
 const DEFAULT_COOLDOWN_MS = 60_000;
 
-/**
- * Cooldown applied when an upstream rejects a model as unavailable
- * (e.g. ModelScope 400 "has no provider supported"). Long enough to ride
- * out platform-side deployments without hammering a dead model, short
- * enough to self-heal when the provider recovers.
- */
-export const MODEL_UNAVAILABLE_COOLDOWN_MS = 10 * 60_000;
-
 const MODEL_UNAVAILABLE_PATTERNS: RegExp[] = [
   /no provider supported/i,
   /\bmodel_not_found\b/i,
@@ -188,7 +180,8 @@ export function formatModelId(m: ModelInfo): string {
 }
 
 export function formatResetTime(resetAt: number | undefined): string {
-  if (!resetAt) return '未知';
+  if (resetAt === undefined) return '未知';
+  if (!Number.isFinite(resetAt)) return '已永久剔除';
   const d = new Date(resetAt);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
@@ -274,9 +267,11 @@ export class AutoRouter {
   }
 
   /**
-   * Cooldown a single model the upstream declared unavailable. Unlike
-   * markRateLimited this never escalates to a provider-wide cooldown:
-   * "no provider supported" affects one model id, not the whole account.
+   * Permanently remove a single model the upstream declared unavailable.
+   * Unlike markRateLimited this never escalates to a provider-wide
+   * cooldown: "no provider supported" affects one model id, not the whole
+   * account. The marker uses resetAt = Infinity so it never expires for
+   * the process lifetime (restart restores it).
    */
   markModelUnavailable(
     model: string,
@@ -288,7 +283,7 @@ export class AutoRouter {
       model,
       provider,
       hitAt: Date.now(),
-      resetAt: resetAt ?? Date.now() + MODEL_UNAVAILABLE_COOLDOWN_MS,
+      resetAt: resetAt ?? Number.POSITIVE_INFINITY,
       message,
       scope: 'model',
     };
