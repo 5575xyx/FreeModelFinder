@@ -139,6 +139,7 @@ describe('model-unavailable auto failover', () => {
     assert.doesNotMatch(res.body, /no provider supported/);
     assert.deepEqual(seenModels(), ['deepseek-v3.1-dead', 'alive-mini']);
     assert.match(res.body, /fmf_route_notice/, 'failover must emit a switch notice');
+    assert.match(res.body, /"cause":"unavailable"/);
   });
 
   it('non-stream fails over from an unavailable model to a healthy one', async () => {
@@ -307,6 +308,9 @@ describe('full-pool failover semantics', () => {
     assert.deepEqual(seenModels(), ['deepseek-v3.0-dead', 'deepseek-v3.1-dead', 'alive-mini']);
     const body = res.json() as { fmf_route_notices?: unknown[] };
     assert.equal(body.fmf_route_notices?.length, 2, 'each switch emits a notice');
+    const notices =
+      (body as { fmf_route_notices?: Array<{ cause?: string }> }).fmf_route_notices ?? [];
+    assert.equal(notices[0]?.cause, 'rate-limit');
   });
 
   it('switches on upstream 5xx without permanently removing the model', async () => {

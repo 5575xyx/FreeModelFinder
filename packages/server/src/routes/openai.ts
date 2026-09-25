@@ -77,13 +77,13 @@ function classifyStatus(err: unknown): { status: CallStatus; httpStatus?: number
 
 type FailureKind = 'unavailable' | 'rate-limit' | 'request' | 'upstream';
 
-function classifyFailure(err: unknown): { kind: FailureKind; message: string } {
+export function classifyFailure(err: unknown): { kind: FailureKind; message: string } {
   const message = err instanceof Error ? err.message : String(err);
+  if (parseRateLimitError(err).isRateLimit) return { kind: 'rate-limit', message };
   const unavailable = parseModelUnavailableError(err);
   if (unavailable.isModelUnavailable) {
     return { kind: 'unavailable', message: unavailable.message };
   }
-  if (parseRateLimitError(err).isRateLimit) return { kind: 'rate-limit', message };
   const match = message.match(/failed\s+(\d{3})/i);
   const status = match ? Number(match[1]) : undefined;
   if (status !== undefined && status >= 400 && status < 500) return { kind: 'request', message };
@@ -94,9 +94,10 @@ class CandidatesExhaustedError extends Error {
   constructor(
     readonly tried: number,
     readonly counts: { unavailable: number; rateLimit: number; upstream: number },
+    readonly triedIds: string[],
   ) {
     super(
-      `tried ${tried} models: ${counts.unavailable} unavailable, ${counts.rateLimit} rate-limited, ${counts.upstream} upstream errors`,
+      `tried ${tried} models: ${counts.unavailable} unavailable, ${counts.rateLimit} rate-limited, ${counts.upstream} upstream errors (attempted: ${triedIds.join(', ')})`,
     );
     this.name = 'CandidatesExhaustedError';
   }
@@ -106,10 +107,16 @@ type FailoverSeq = {
   ranked: ModelInfo[] | null;
   attempts: number;
   counts: { unavailable: number; rateLimit: number; upstream: number };
+  triedIds: string[];
 };
 
 function newFailoverSeq(): FailoverSeq {
-  return { ranked: null, attempts: 0, counts: { unavailable: 0, rateLimit: 0, upstream: 0 } };
+  return {
+    ranked: null,
+    attempts: 0,
+    counts: { unavailable: 0, rateLimit: 0, upstream: 0 },
+    triedIds: [],
+  };
 }
 
 /**
@@ -127,6 +134,7 @@ async function advanceFailover(
 ): Promise<ModelInfo | null> {
   seq.ranked ??= await router.rankCandidates();
   seq.attempts++;
+  seq.triedIds.push(failedKey);
   if (kind === 'unavailable') seq.counts.unavailable++;
   else if (kind === 'rate-limit') seq.counts.rateLimit++;
   else seq.counts.upstream++;
@@ -224,7 +232,7 @@ async function dispatchWithAutoRoute(
           chatReq.model = `${next.provider}:${next.id}`;
           continue;
         }
-        throw new CandidatesExhaustedError(seq.attempts, seq.counts);
+        throw new CandidatesExhaustedError(seq.attempts, seq.counts, seq.triedIds);
       }
 
       // Explicit (or router disabled / request-shape errors): mark, then the
@@ -933,6 +941,7 @@ export function registerOpenAIRoutes(
                   to: `${fallback.provider}:${fallback.id}`,
                   strategy: router.getStrategy(),
                   reason: `⚠️ 模型 "${failedModel}" 上游不可用，已临时冷却并自动切换到：${fallback.provider}:${fallback.id}`,
+                  cause: 'unavailable',
                 };
                 router.notify(notice);
                 reply.raw.write(
