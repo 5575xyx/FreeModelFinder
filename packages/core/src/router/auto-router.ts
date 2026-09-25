@@ -511,7 +511,22 @@ export class AutoRouter {
     const preferred = this.originalPreference;
     if (!preferred) return null;
     if (preferred.toLowerCase() === currentModel.toLowerCase()) return null;
-    if (this.isRateLimited(preferred)) return null;
+    // Preferred may be remembered prefixed ("provider:model") while
+    // cooldowns are keyed by bare model id — check both forms, like
+    // preflight does.
+    const preferredState =
+      this.isRateLimited(preferred) ??
+      (preferred.includes(':')
+        ? this.isRateLimited(preferred.split(':').slice(1).join(':'))
+        : null);
+    if (preferredState) {
+      if (!Number.isFinite(preferredState.resetAt)) {
+        // Permanent marker: the model will never come back this process.
+        // Release the latch so a later switch can remember a new preference.
+        this.resetPreference();
+      }
+      return null;
+    }
     // Do not switch back while the preferred model's provider is still cooling down.
     if (preferred.includes(':')) {
       const providerId = preferred.split(':', 1)[0] as ProviderId;

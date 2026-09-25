@@ -59,7 +59,7 @@ describe('parseModelUnavailableError', () => {
 });
 
 describe('AutoRouter.markModelUnavailable', () => {
-  it('cools down only the model (not the provider) and makes pickFallback skip it', async () => {
+  it('removes only the model (not the provider) and makes pickFallback skip it', async () => {
     const harness = makeRouter([
       makeModel('deepseek-v3.1-dead', 'custom'),
       makeModel('alive-mini', 'custom'),
@@ -100,5 +100,64 @@ describe('formatResetTime with permanent markers', () => {
   it('keeps normal timestamps unchanged', () => {
     const ts = new Date(2026, 8, 25, 10, 30, 0).getTime();
     assert.equal(formatResetTime(ts), '2026-09-25 10:30:00');
+  });
+});
+
+describe('preference latch with permanent markers', () => {
+  it('clears the remembered preference when it is permanently removed', async () => {
+    const harness = makeRouter([
+      makeModel('deepseek-v3.1-dead', 'custom'),
+      makeModel('alive-mini', 'custom'),
+    ]);
+    harness.router.rememberPreference('custom:deepseek-v3.1-dead');
+    harness.router.markModelUnavailable('deepseek-v3.1-dead', 'custom', 'no provider supported');
+
+    const back = await harness.router.maybeSwitchBack('custom:alive-mini');
+    assert.equal(back, null, 'no switch back to a permanently removed model');
+    assert.equal(
+      harness.router.getRememberedPreference(),
+      null,
+      'latch must release so a new preference can be remembered',
+    );
+
+    harness.router.rememberPreference('custom:alive-mini');
+    assert.equal(harness.router.getRememberedPreference(), 'custom:alive-mini');
+  });
+
+  it('keeps the latch for ordinary rate-limited preferred models', async () => {
+    const harness = makeRouter([
+      makeModel('deepseek-v3.1-dead', 'custom'),
+      makeModel('alive-mini', 'custom'),
+    ]);
+    harness.router.rememberPreference('custom:deepseek-v3.1-dead');
+    harness.router.markRateLimited('deepseek-v3.1-dead', 'custom', {
+      isRateLimit: true,
+      resetAt: Date.now() + 60_000,
+      message: '429',
+    });
+    const back = await harness.router.maybeSwitchBack('custom:alive-mini');
+    assert.equal(back, null);
+    assert.equal(
+      harness.router.getRememberedPreference(),
+      'custom:deepseek-v3.1-dead',
+      'rate-limited (finite) preferences must keep the latch for later switch-back',
+    );
+  });
+
+  it('clearCooldown removes a permanent marker (manual recovery)', async () => {
+    const harness = makeRouter([
+      makeModel('deepseek-v3.1-dead', 'custom'),
+      makeModel('alive-mini', 'custom'),
+    ]);
+    harness.router.markModelUnavailable('deepseek-v3.1-dead', 'custom', 'no provider supported');
+    assert.ok(harness.router.isRateLimited('deepseek-v3.1-dead'));
+    assert.equal(harness.router.clearCooldown('deepseek-v3.1-dead'), true);
+    assert.equal(harness.router.isRateLimited('deepseek-v3.1-dead'), null);
+    const ranked = await harness.router.rankCandidates();
+    assert.deepEqual(
+      ranked.map((m) => m.id),
+      ['deepseek-v3.1-dead', 'alive-mini'],
+      'cleared model re-enters scoring',
+    );
   });
 });
