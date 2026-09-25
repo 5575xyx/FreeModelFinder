@@ -394,6 +394,27 @@ export class AutoRouter {
     return scored[0]?.m ?? null;
   }
 
+  /**
+   * Full scored ranking of every candidate currently eligible for auto
+   * routing (cooldown/removed models excluded). Used by the gateway to
+   * walk the ENTIRE pool on failover instead of stopping at Top-3.
+   * Ties break by model id so ordering matches pickFromScoredPool.
+   */
+  async rankCandidates(): Promise<ModelInfo[]> {
+    const settings = this.opts.getSettings();
+    if (!settings?.enabled) return [];
+    const all = await this.opts.listAllModels();
+    const candidates = all.filter((m) => {
+      if (this.isProviderRateLimited(m.provider)) return false;
+      if (this.isRateLimited(m.id) || this.isRateLimited(`${m.provider}:${m.id}`)) return false;
+      return true;
+    });
+    return candidates
+      .map((m) => ({ m, s: scoreModel(m, settings.strategy, this.getProfile(m.id)) }))
+      .sort((a, b) => b.s - a.s || a.m.id.localeCompare(b.m.id))
+      .map((x) => x.m);
+  }
+
   notify(notice: SwitchNotice): void {
     this.opts.onNotice?.(notice);
   }
