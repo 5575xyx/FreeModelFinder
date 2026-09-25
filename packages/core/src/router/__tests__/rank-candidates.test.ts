@@ -3,15 +3,24 @@ import { describe, it } from 'node:test';
 import { makeModel, makeRouter, makeSettings } from './fixtures.js';
 
 describe('AutoRouter.rankCandidates', () => {
-  it('returns every healthy model in descending score order', async () => {
+  it('sorts models by descending score regardless of input order', async () => {
     const harness = makeRouter([
-      makeModel('deepseek-v3.1-dead', 'custom'),
       makeModel('alive-mini', 'custom'),
+      makeModel('deepseek-v3.1-dead', 'custom'),
     ]);
     const ranked = await harness.router.rankCandidates();
     assert.deepEqual(
       ranked.map((m) => m.id),
       ['deepseek-v3.1-dead', 'alive-mini'],
+    );
+  });
+
+  it('breaks score ties by model id', async () => {
+    const harness = makeRouter([makeModel('zzz-tie', 'custom'), makeModel('aaa-tie', 'custom')]);
+    const ranked = await harness.router.rankCandidates();
+    assert.deepEqual(
+      ranked.map((m) => m.id),
+      ['aaa-tie', 'zzz-tie'],
     );
   });
 
@@ -31,6 +40,25 @@ describe('AutoRouter.rankCandidates', () => {
     assert.deepEqual(
       ranked.map((m) => m.id),
       ['alive-mini'],
+    );
+  });
+
+  it('excludes every model of a provider-wide (shared quota) cooldown', async () => {
+    const harness = makeRouter([
+      makeModel('model-a', 'openrouter'),
+      makeModel('model-b', 'openrouter'),
+      makeModel('alive-mini', 'custom'),
+    ]);
+    harness.router.markRateLimited('model-a', 'openrouter', {
+      isRateLimit: true,
+      resetAt: Date.now() + 60_000,
+      message: '429',
+    });
+    const ranked = await harness.router.rankCandidates();
+    assert.deepEqual(
+      ranked.map((m) => m.id),
+      ['alive-mini'],
+      'shared-quota provider cooldown removes all of its models',
     );
   });
 
