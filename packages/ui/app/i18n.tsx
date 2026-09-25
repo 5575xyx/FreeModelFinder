@@ -242,6 +242,7 @@ const zh: Dict = {
   'settings.autoRoute.cooldown.title': '正在冷却中的模型',
   'settings.autoRoute.cooldown.clear': '清除全部',
   'settings.autoRoute.cooldown.reset': '重置：',
+  'settings.autoRoute.cooldown.permanent': '永久剔除',
   'settings.autoRoute.remembered': '原偏好模型：{model}（限制解除后将自动切回）',
   'settings.autoRoute.recent.title': '最近路由动作',
   'settings.autoRoute.saved': '智能路由配置已更新',
@@ -715,6 +716,7 @@ const en: Dict = {
   'settings.autoRoute.cooldown.title': 'Models on cooldown',
   'settings.autoRoute.cooldown.clear': 'Clear all',
   'settings.autoRoute.cooldown.reset': 'Reset: ',
+  'settings.autoRoute.cooldown.permanent': 'permanently excluded',
   'settings.autoRoute.remembered':
     'Preferred model: {model} (will auto switch back after limit clears)',
   'settings.autoRoute.recent.title': 'Recent routing actions',

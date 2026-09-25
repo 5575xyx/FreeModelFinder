@@ -352,6 +352,32 @@ describe('SettingsView', () => {
     await waitFor(() => expect(writes.length).toBeGreaterThan(0));
     expect(writes.at(-1)!.visionModel).toContain('custom:fixture:mm-chat');
   });
+
+  it('renders a permanent cooldown as 永久剔除 instead of Invalid Date', async () => {
+    server.use(
+      http.get(`${gateway}/api/config`, () => HttpResponse.json(configPayload)),
+      http.get(`${gateway}/api/auto-route`, () =>
+        HttpResponse.json({
+          enabled: true,
+          strategy: 'capability',
+          fallbackChain: [],
+          imageModel: [],
+          videoModel: [],
+          visionModel: [],
+          textTiers: { simple: [], medium: [], complex: [] },
+          cooldowns: [
+            { model: 'custom:fixture:dead', provider: 'custom', resetAt: null },
+            { model: 'custom:fixture:slow', provider: 'custom', resetAt: 1_700_000_000_000 },
+          ],
+          recentNotices: [],
+        }),
+      ),
+    );
+    render(<SettingsView />);
+    expect(await screen.findByText(/永久剔除/)).toBeTruthy();
+    expect(screen.queryByText(/Invalid Date/)).toBeNull();
+    expect(screen.getAllByText(/^重置：/).length).toBe(2);
+  });
 });
 
 describe('matchesCapability', () => {

@@ -1407,7 +1407,9 @@ export function SettingsView({
                       <code className="truncate font-mono text-foreground">{c.model}</code>
                       <span>
                         {t('settings.autoRoute.cooldown.reset')}
-                        {new Date(c.resetAt).toLocaleString()}
+                        {Number.isFinite(c.resetAt)
+                          ? new Date(c.resetAt).toLocaleString()
+                          : t('settings.autoRoute.cooldown.permanent')}
                       </span>
                     </li>
                   ))}
