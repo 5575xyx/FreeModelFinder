@@ -19,6 +19,39 @@ export interface RateLimitParseResult {
 
 const DEFAULT_COOLDOWN_MS = 60_000;
 
+/**
+ * Cooldown applied when an upstream rejects a model as unavailable
+ * (e.g. ModelScope 400 "has no provider supported"). Long enough to ride
+ * out platform-side deployments without hammering a dead model, short
+ * enough to self-heal when the provider recovers.
+ */
+export const MODEL_UNAVAILABLE_COOLDOWN_MS = 10 * 60_000;
+
+const MODEL_UNAVAILABLE_PATTERNS: RegExp[] = [
+  /no provider supported/i,
+  /\bmodel_not_found\b/i,
+  /no available channel/i,
+  /model[^.\n"']{0,60}\b(?:not found|not available|does not exist|unavailable)\b/i,
+  /\b(?:unknown|unsupported) model\b/i,
+];
+
+export interface ModelUnavailableParseResult {
+  isModelUnavailable: boolean;
+  message: string;
+}
+
+/**
+ * Detects deterministic "this model cannot serve requests" upstream
+ * rejections — distinct from rate limits (429) and from request-shape
+ * errors (max_tokens overflow, vision input) which must not trigger a
+ * model switch.
+ */
+export function parseModelUnavailableError(err: unknown): ModelUnavailableParseResult {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  const isModelUnavailable = MODEL_UNAVAILABLE_PATTERNS.some((re) => re.test(message));
+  return { isModelUnavailable, message };
+}
+
 const RATE_LIMIT_PATTERNS: RegExp[] = [
   /\brpm\b/i,
   /\brate[\s_-]?limit/i,
@@ -237,6 +270,29 @@ export class AutoRouter {
         message: parsed.message,
       });
     }
+    return state;
+  }
+
+  /**
+   * Cooldown a single model the upstream declared unavailable. Unlike
+   * markRateLimited this never escalates to a provider-wide cooldown:
+   * "no provider supported" affects one model id, not the whole account.
+   */
+  markModelUnavailable(
+    model: string,
+    provider: ProviderId,
+    message: string,
+    resetAt?: number,
+  ): RateLimitState {
+    const state: RateLimitState = {
+      model,
+      provider,
+      hitAt: Date.now(),
+      resetAt: resetAt ?? Date.now() + MODEL_UNAVAILABLE_COOLDOWN_MS,
+      message,
+      scope: 'model',
+    };
+    this.cooldowns.set(model.toLowerCase(), state);
     return state;
   }
 

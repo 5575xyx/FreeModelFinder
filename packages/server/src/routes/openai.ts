@@ -6,6 +6,7 @@ import {
   isMaxTokensTooLargeError,
   isVisionCapable,
   openAIToChatRequest,
+  parseModelUnavailableError,
   parseRateLimitError,
   scoreModel,
   streamChunkToOpenAI,
@@ -60,6 +61,9 @@ function resolveGatewayKeyId(reg: ProviderRegistry, req: FastifyRequest): string
   return undefined;
 }
 
+/** Max in-request switches when the upstream declares models unavailable. */
+const MAX_MODEL_UNAVAILABLE_RETRIES = 4;
+
 function classifyStatus(err: unknown): { status: CallStatus; httpStatus?: number } {
   const parsed = parseRateLimitError(err);
   if (parsed.isRateLimit) return { status: 'rate_limited', httpStatus: 429 };
@@ -101,6 +105,7 @@ async function dispatchWithAutoRoute(
   // 2. Resolve provider & dispatch. On rate-limit failure, fall back exactly
   //    ONCE (we intentionally do not interrupt a live stream elsewhere).
   let attempt = 0;
+  let unavailableRetries = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const resolved = reg.resolveModel(chatReq.model);
@@ -120,6 +125,32 @@ async function dispatchWithAutoRoute(
       };
     } catch (err) {
       const parsed = parseRateLimitError(err);
+      // Upstream declared this model unavailable (e.g. ModelScope 400
+      // "has no provider supported"): cool it down and move to the next
+      // healthy candidate instead of surfacing a deterministic failure.
+      if (router.isEnabled() && !parsed.isRateLimit) {
+        const unavailable = parseModelUnavailableError(err);
+        if (unavailable.isModelUnavailable && unavailableRetries < MAX_MODEL_UNAVAILABLE_RETRIES) {
+          const failedModel = `${provider.id}:${realModelId}`;
+          router.markModelUnavailable(realModelId, provider.id, unavailable.message);
+          const fallback = await router.pickFallback(failedModel);
+          if (fallback) {
+            router.rememberPreference(originalRequested);
+            const notice: SwitchNotice = {
+              type: 'switch-away',
+              from: failedModel,
+              to: `${fallback.provider}:${fallback.id}`,
+              strategy: router.getStrategy(),
+              reason: `⚠️ 模型 "${failedModel}" 上游不可用，已临时冷却并自动切换到：${fallback.provider}:${fallback.id}`,
+            };
+            router.notify(notice);
+            notices.push(notice);
+            chatReq.model = `${fallback.provider}:${fallback.id}`;
+            unavailableRetries++;
+            continue;
+          }
+        }
+      }
       if (parsed.isRateLimit && router.isEnabled() && attempt === 0) {
         router.markRateLimited(chatReq.model, provider.id, parsed);
         const fallback = await router.pickFallback(chatReq.model);
@@ -688,7 +719,7 @@ export function registerOpenAIRoutes(
         preNotices.push(pre.notice);
       }
 
-      let provider: { id: string; stream(req: ChatRequest): AsyncIterable<StreamChunk> };
+      let provider: { id: ProviderId; stream(req: ChatRequest): AsyncIterable<StreamChunk> };
       let realModelId: string;
       try {
         const resolved = reg.resolveModel(chatReq.model);
@@ -725,6 +756,7 @@ export function registerOpenAIRoutes(
       let wroteChunk = false;
       let maxTokensRetried = false;
       let visionIndex = 0;
+      let modelUnavailableRetries = 0;
       try {
         // eslint-disable-next-line no-constant-condition
         while (true) {
@@ -788,6 +820,44 @@ export function registerOpenAIRoutes(
                 continue;
               } catch {
                 // fall through to error reporting
+              }
+            }
+            // Upstream declared the model unavailable (e.g. ModelScope 400
+            // "has no provider supported"): cool it down and fail over to the
+            // next healthy candidate while nothing has been streamed yet.
+            const unavailable = parseModelUnavailableError(err);
+            if (
+              !wroteChunk &&
+              unavailable.isModelUnavailable &&
+              router.isEnabled() &&
+              modelUnavailableRetries < MAX_MODEL_UNAVAILABLE_RETRIES
+            ) {
+              const failedModel = `${provider.id}:${realModelId}`;
+              router.markModelUnavailable(realModelId, provider.id, unavailable.message);
+              router.rememberPreference(originalRequested);
+              const fallback = await router.pickFallback(failedModel);
+              if (fallback) {
+                const notice: SwitchNotice = {
+                  type: 'switch-away',
+                  from: failedModel,
+                  to: `${fallback.provider}:${fallback.id}`,
+                  strategy: router.getStrategy(),
+                  reason: `⚠️ 模型 "${failedModel}" 上游不可用，已临时冷却并自动切换到：${fallback.provider}:${fallback.id}`,
+                };
+                router.notify(notice);
+                reply.raw.write(
+                  `data: ${JSON.stringify({ fmf_route_notice: notice, id: 'fmf', object: 'chat.completion.chunk', choices: [] })}\n\n`,
+                );
+                chatReq.model = `${fallback.provider}:${fallback.id}`;
+                try {
+                  const resolved = reg.resolveModel(chatReq.model);
+                  provider = resolved.provider;
+                  realModelId = resolved.modelId;
+                  modelUnavailableRetries++;
+                  continue;
+                } catch {
+                  // fall through to error reporting
+                }
               }
             }
             const parsed = parseRateLimitError(err);

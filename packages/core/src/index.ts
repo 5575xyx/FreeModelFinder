@@ -15,9 +15,12 @@ export { ProviderRegistry, resetAutoPoolCursor, type ListAllModelsResult } from 
 export {
   AutoRouter,
   parseRateLimitError,
+  parseModelUnavailableError,
+  MODEL_UNAVAILABLE_COOLDOWN_MS,
   scoreModel,
   formatResetTime,
   formatModelId,
   type AutoRouterOptions,
   type RateLimitParseResult,
+  type ModelUnavailableParseResult,
 } from './router/auto-router.js';
