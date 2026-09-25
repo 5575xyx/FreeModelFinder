@@ -48,6 +48,10 @@
 
 - `markModelUnavailable` 默认 `resetAt = Infinity`，删除
   `MODEL_UNAVAILABLE_COOLDOWN_MS`（10 分钟）语义；
+- **cooldown key 作用域决策**：标记以裸 model id 为键（不含 provider），
+  与既有限流标记（`markRateLimited`）完全同构 —— 同名模型跨 provider 共命运
+  （如 openrouter/kilo 同名 id）是既有全局冷却语义的延续，本次接受为预期
+  行为，不引入 provider 维度隔离；
 - 复用现有 `cooldowns` map：`gc` 只删 `resetAt <= now`，`Infinity` 永不过期，
   过滤/`isRateLimited`/诊断接口零改动；
 - 兼容两处显示：
