@@ -375,6 +375,31 @@ describe('full-pool failover semantics', () => {
     assert.deepEqual(seenModels(), ['deepseek-v3.1-dead'], 'param errors must not walk the pool');
   });
 
+  it('does not consume a pool pick while recording a non-walked auto failure', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-dead', 'alive-mini'],
+      failures: { 'deepseek-v3.1-dead': PARAM_400 },
+    });
+    resetAutoPoolCursor();
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: false },
+    });
+    assert.equal(first.statusCode, 400);
+    const second = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: false },
+    });
+    assert.equal(second.statusCode, 200);
+    assert.deepEqual(
+      seenModels(),
+      ['deepseek-v3.1-dead', 'alive-mini'],
+      'error recording must not resolve `auto` and re-roll the pool cursor',
+    );
+  });
+
   it('cools the rate-limited model under its own id so the next request skips it', async () => {
     const { app, seenModels } = await appWithPool({
       models: ['deepseek-v3.0-dead', 'alive-mini'],

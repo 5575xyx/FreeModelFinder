@@ -180,7 +180,7 @@ export function SettingsView({
     videoModel?: string[];
     visionModel?: string[];
     textTiers?: { simple?: string[]; medium?: string[]; complex?: string[] };
-    cooldowns?: { model: string; provider: string; resetAt: number }[];
+    cooldowns?: { model: string; provider: string; resetAt: number | null }[];
     rememberedPreference?: string | null;
     recentNotices?: {
       type: 'switch-away' | 'switch-back';
@@ -1407,7 +1407,7 @@ export function SettingsView({
                       <code className="truncate font-mono text-foreground">{c.model}</code>
                       <span>
                         {t('settings.autoRoute.cooldown.reset')}
-                        {Number.isFinite(c.resetAt)
+                        {typeof c.resetAt === 'number' && Number.isFinite(c.resetAt)
                           ? new Date(c.resetAt).toLocaleString()
                           : t('settings.autoRoute.cooldown.permanent')}
                       </span>

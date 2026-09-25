@@ -237,6 +237,10 @@ async function dispatchWithAutoRoute(
           chatReq.model = `${next.provider}:${next.id}`;
           continue;
         }
+        // Pin the last attempted key before leaving: the handler catch records
+        // this call via resolvePM(chatReq.model), and a leftover `auto` would
+        // consume a fresh pool pick while merely logging the failure.
+        chatReq.model = failedKey;
         throw new CandidatesExhaustedError(seq.attempts, seq.counts, seq.triedIds);
       }
 
@@ -273,6 +277,10 @@ async function dispatchWithAutoRoute(
           continue;
         }
       }
+      // Same pin as the exhaustion throw above: a request-shape or router
+      // disabled failure leaves `auto` in chatReq.model, and the handler catch
+      // would resolve it again (re-rolling the pool) just to log the call.
+      chatReq.model = failedKey;
       throw err;
     }
   }
