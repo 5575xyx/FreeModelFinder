@@ -12,8 +12,16 @@ function renderInChinese(ui: ReactNode) {
   return render(<I18nProvider>{ui}</I18nProvider>);
 }
 
+type User = ReturnType<typeof userEvent.setup>;
+
+async function openFinder(user: User) {
+  await screen.findByRole('button', { name: '统计' });
+  await user.click(screen.getAllByRole('button', { name: '模型' })[0]!);
+}
+
 async function openTester() {
   const user = userEvent.setup();
+  await openFinder(user);
   await screen.findByText('Fixture Model');
   await user.click(screen.getAllByRole('button', { name: '测试' })[0]!);
   return user;
@@ -53,6 +61,8 @@ describe('Home', () => {
       ),
     );
     renderInChinese(<Home />);
+    const user = userEvent.setup();
+    await openFinder(user);
     expect(await screen.findByRole('button', { name: '连接第一个 Provider' })).toBeTruthy();
   });
 
@@ -71,8 +81,16 @@ describe('Home', () => {
     expect(await screen.findByText('先连接一个免费模型来源')).toBeTruthy();
   });
 
-  it('loads free models and surfaces provider failures', async () => {
+  it('lands on the stats page by default', async () => {
     renderInChinese(<Home />);
+    expect(await screen.findByText('调用统计')).toBeTruthy();
+    expect(screen.queryByText('Fixture Model')).toBeNull();
+  });
+
+  it('loads free models and surfaces provider failures', async () => {
+    const user = userEvent.setup();
+    renderInChinese(<Home />);
+    await openFinder(user);
     expect(await screen.findByText('Fixture Model')).toBeTruthy();
     expect(screen.getByText(/1 个来源本次同步失败/)).toBeTruthy();
     expect(screen.getByText(/temporary provider error/)).toBeTruthy();
@@ -120,6 +138,7 @@ describe('Home', () => {
     );
     const user = userEvent.setup();
     renderInChinese(<Home />);
+    await openFinder(user);
     await screen.findByText('Fixture Model');
     await user.click(screen.getByRole('button', { name: '同步' }));
     expect(await screen.findByText('本地网关没有响应')).toBeTruthy();

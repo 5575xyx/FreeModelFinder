@@ -82,7 +82,7 @@ export default function Home() {
   const { t } = useI18n();
   const [models, setModels] = useState<ModelItem[]>([]);
   const [model, setModel] = useState('');
-  const [tab, setTab] = useState<TabKey>('finder');
+  const [tab, setTab] = useState<TabKey>('stats');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [inputImages, setInputImages] = useState<string[]>([]);
