@@ -227,6 +227,7 @@ describe('model-unavailable auto failover', () => {
     });
     assert.equal(res.statusCode, 200);
     assert.match(res.body, /tried 2 models: 2 unavailable, 0 rate-limited, 0 upstream errors/);
+    assert.match(res.body, /attempted: /, 'exhaustion message lists attempted models');
     assert.doesNotMatch(res.body, /healthy reply/);
     assert.deepEqual(seenModels(), ['deepseek-v3.1-dead', 'deepseek-v3.2-dead']);
   });
@@ -371,5 +372,67 @@ describe('full-pool failover semantics', () => {
       1,
       'rate-limited model must be cooled under its own id and skipped next request',
     );
+  });
+});
+
+describe('stream full-pool failover', () => {
+  it('keeps walking rate-limited candidates while nothing has been streamed', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.0-dead', 'deepseek-v3.1-dead', 'alive-mini'],
+      failures: {
+        'deepseek-v3.0-dead': RATE_LIMIT_429,
+        'deepseek-v3.1-dead': RATE_LIMIT_429,
+      },
+    });
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: true },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /healthy reply/);
+    assert.deepEqual(seenModels(), ['deepseek-v3.0-dead', 'deepseek-v3.1-dead', 'alive-mini']);
+    assert.equal(res.body.match(/fmf_route_notice/g)?.length, 2, 'two switch notices on the wire');
+  });
+
+  it('never switches after a chunk has been written', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-fail', 'alive-mini'],
+      failures: { 'deepseek-v3.1-fail': UNAVAILABLE_400 },
+      failAfterChunk: ['deepseek-v3.1-fail'],
+    });
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: true },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /partial reply/);
+    assert.doesNotMatch(res.body, /healthy reply/);
+    assert.deepEqual(seenModels(), ['deepseek-v3.1-fail'], 'no candidate tried after first byte');
+    assert.match(res.body, /no provider supported/, 'the error surfaces to the client');
+  });
+
+  it('marks but does not switch for explicit stream requests', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-dead', 'alive-mini'],
+      failures: { 'deepseek-v3.1-dead': UNAVAILABLE_400 },
+    });
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: {
+        model: 'custom:deepseek-v3.1-dead',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+      },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /no provider supported/);
+    assert.deepEqual(seenModels(), ['deepseek-v3.1-dead']);
+    assert.doesNotMatch(res.body, /fmf_route_notice/, 'explicit streams never fail over');
   });
 });

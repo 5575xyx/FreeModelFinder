@@ -63,9 +63,6 @@ function resolveGatewayKeyId(reg: ProviderRegistry, req: FastifyRequest): string
   return undefined;
 }
 
-/** Max in-request switches when the upstream declares models unavailable. */
-const MAX_MODEL_UNAVAILABLE_RETRIES = 4;
-
 function classifyStatus(err: unknown): { status: CallStatus; httpStatus?: number } {
   const parsed = parseRateLimitError(err);
   if (parsed.isRateLimit) return { status: 'rate_limited', httpStatus: 429 };
@@ -854,7 +851,7 @@ export function registerOpenAIRoutes(
       let wroteChunk = false;
       let maxTokensRetried = false;
       let visionIndex = 0;
-      let modelUnavailableRetries = 0;
+      const seq = newFailoverSeq();
       try {
         // eslint-disable-next-line no-constant-condition
         while (true) {
@@ -920,52 +917,46 @@ export function registerOpenAIRoutes(
                 // fall through to error reporting
               }
             }
-            // Upstream declared the model unavailable (e.g. ModelScope 400
-            // "has no provider supported"): cool it down and fail over to the
-            // next healthy candidate while nothing has been streamed yet.
-            const unavailable = parseModelUnavailableError(err);
-            if (
-              !wroteChunk &&
-              unavailable.isModelUnavailable &&
-              router.isEnabled() &&
-              modelUnavailableRetries < MAX_MODEL_UNAVAILABLE_RETRIES
-            ) {
-              const failedModel = `${provider.id}:${realModelId}`;
-              router.markModelUnavailable(realModelId, provider.id, unavailable.message);
-              router.rememberPreference(originalRequested);
-              const fallback = await router.pickFallback(failedModel);
-              if (fallback) {
-                const notice: SwitchNotice = {
-                  type: 'switch-away',
-                  from: failedModel,
-                  to: `${fallback.provider}:${fallback.id}`,
-                  strategy: router.getStrategy(),
-                  reason: `⚠️ 模型 "${failedModel}" 上游不可用，已临时冷却并自动切换到：${fallback.provider}:${fallback.id}`,
-                  cause: 'unavailable',
-                };
+            const failure = classifyFailure(err);
+            const failedKey = `${provider.id}:${realModelId}`;
+            const isAutoReq = originalRequested === 'auto' || originalRequested === 'default';
+            const mark = () => {
+              if (failure.kind === 'unavailable') {
+                router.markModelUnavailable(realModelId, provider.id, failure.message);
+              } else if (failure.kind === 'rate-limit') {
+                router.markRateLimited(realModelId, provider.id, parseRateLimitError(err));
+              }
+            };
+
+            let reportErr: unknown = err;
+            if (isAutoReq && router.isEnabled() && !wroteChunk && failure.kind !== 'request') {
+              const next = await advanceFailover(router, seq, failedKey, failure.kind, mark);
+              if (next) {
+                router.rememberPreference(originalRequested);
+                const notice = buildFailoverNotice(router, failure.kind, failedKey, next);
                 router.notify(notice);
                 reply.raw.write(
                   `data: ${JSON.stringify({ fmf_route_notice: notice, id: 'fmf', object: 'chat.completion.chunk', choices: [] })}\n\n`,
                 );
-                chatReq.model = `${fallback.provider}:${fallback.id}`;
+                chatReq.model = `${next.provider}:${next.id}`;
                 try {
                   const resolved = reg.resolveModel(chatReq.model);
                   provider = resolved.provider;
                   realModelId = resolved.modelId;
-                  modelUnavailableRetries++;
+                  maxTokensRetried = false;
                   continue;
                 } catch {
-                  // fall through to error reporting
+                  // fall through to error reporting below
                 }
+              } else {
+                reportErr = new CandidatesExhaustedError(seq.attempts, seq.counts, seq.triedIds);
               }
+            } else {
+              mark();
             }
-            const parsed = parseRateLimitError(err);
-            if (parsed.isRateLimit && router.isEnabled()) {
-              router.markRateLimited(realModelId, provider.id, parsed);
-              router.rememberPreference(originalRequested);
-            }
-            const msg = err instanceof Error ? err.message : String(err);
-            const { status, httpStatus } = classifyStatus(err);
+
+            const msg = reportErr instanceof Error ? reportErr.message : String(reportErr);
+            const { status, httpStatus } = classifyStatus(reportErr);
             record(req, t0, {
               kind: 'chat',
               ...resolvePM(reg, chatReq.model),
@@ -974,7 +965,15 @@ export function registerOpenAIRoutes(
               error: msg,
             });
             reply.raw.write(
-              `data: ${JSON.stringify({ error: { message: msg, type: streamErrorType(msg, err) } })}\n\n`,
+              `data: ${JSON.stringify({
+                error: {
+                  message: msg,
+                  type:
+                    reportErr instanceof CandidatesExhaustedError
+                      ? 'model_unavailable'
+                      : streamErrorType(msg, reportErr),
+                },
+              })}\n\n`,
             );
             break;
           }
