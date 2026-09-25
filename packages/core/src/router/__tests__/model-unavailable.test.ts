@@ -70,7 +70,11 @@ describe('AutoRouter.markModelUnavailable', () => {
       'has no provider supported',
     );
     assert.equal(state.scope, 'model');
-    assert.equal(state.resetAt, Number.POSITIVE_INFINITY, 'unavailable models are removed permanently');
+    assert.equal(
+      state.resetAt,
+      Number.POSITIVE_INFINITY,
+      'unavailable models are removed permanently',
+    );
     assert.ok(harness.router.isRateLimited('deepseek-v3.1-dead'));
     assert.equal(harness.router.isProviderRateLimited('custom'), null);
 
