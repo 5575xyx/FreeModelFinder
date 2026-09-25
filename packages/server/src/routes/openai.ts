@@ -63,7 +63,10 @@ function resolveGatewayKeyId(reg: ProviderRegistry, req: FastifyRequest): string
   return undefined;
 }
 
-function classifyStatus(err: unknown): { status: CallStatus; httpStatus?: number } {
+export function classifyStatus(err: unknown): { status: CallStatus; httpStatus?: number } {
+  // Exhaustion summaries mention "rate-limited" counts, which would trip the
+  // rate-limit detector below; they are hard failures (503), never 429.
+  if (err instanceof CandidatesExhaustedError) return { status: 'error', httpStatus: 503 };
   const parsed = parseRateLimitError(err);
   if (parsed.isRateLimit) return { status: 'rate_limited', httpStatus: 429 };
   const msg = err instanceof Error ? err.message : String(err);
@@ -87,7 +90,7 @@ export function classifyFailure(err: unknown): { kind: FailureKind; message: str
   return { kind: 'upstream', message };
 }
 
-class CandidatesExhaustedError extends Error {
+export class CandidatesExhaustedError extends Error {
   constructor(
     readonly tried: number,
     readonly counts: { unavailable: number; rateLimit: number; upstream: number },
@@ -168,6 +171,7 @@ function buildFailoverNotice(
 async function dispatchWithAutoRoute(
   reg: ProviderRegistry,
   chatReq: ChatRequest,
+  scope: { requestedModel: string; poolWalk: boolean },
 ): Promise<{
   finalModel: string;
   finalProviderId: string;
@@ -177,7 +181,11 @@ async function dispatchWithAutoRoute(
   const router = reg.getAutoRouter();
   const notices: SwitchNotice[] = [];
   const originalRequested = chatReq.model;
-  const isAuto = originalRequested === 'auto' || originalRequested === 'default';
+  // Walk the pool only when the CLIENT asked for auto (modality rewrites such
+  // as vision/tier picks must not turn a concrete model into an auto request)
+  // and no modality-specific dispatch owns the request.
+  const allowPoolWalk =
+    scope.poolWalk && (scope.requestedModel === 'auto' || scope.requestedModel === 'default');
   const seq = newFailoverSeq();
 
   // 1. Pre-flight: honor existing cooldowns before we even try upstream.
@@ -219,7 +227,7 @@ async function dispatchWithAutoRoute(
         }
       };
 
-      if (isAuto && router.isEnabled() && failure.kind !== 'request') {
+      if (allowPoolWalk && router.isEnabled() && failure.kind !== 'request') {
         const next = await advanceFailover(router, seq, failedKey, failure.kind, mark);
         if (next) {
           router.rememberPreference(originalRequested);
@@ -491,6 +499,10 @@ export function registerOpenAIRoutes(
       const t0 = Date.now();
       const reg = getRegistry();
       const chatReq = openAIToChatRequest(body);
+      // Captured before auto modality rewrites (vision/image/video/text-tier)
+      // replace chatReq.model: the pool-walk gate must look at what the client
+      // asked for, not at the rewritten model.
+      const requestedModel = String(body.model);
 
       // Auto-route: detect modality from request content when model is "auto"
       let forcedImageModality = false;
@@ -715,7 +727,13 @@ export function registerOpenAIRoutes(
               (u) => {
                 usage = u;
               },
-              async () => dispatchWithAutoRoute(reg, chatReq),
+              async () =>
+                dispatchWithAutoRoute(reg, chatReq, {
+                  requestedModel,
+                  // The vision loop below owns vision requests; let it pick
+                  // the next vision candidate instead of the generic pool.
+                  poolWalk: visionCandidates.length === 0,
+                }),
             );
           let result;
           if (visionCandidates.length) {
@@ -792,10 +810,9 @@ export function registerOpenAIRoutes(
         }
       }
 
-      // Streaming path: never interrupt an active stream. Only preflight
-      // and switch-back notices are surfaced; a mid-stream 429 is passed
-      // through as an error (per user requirement: only switch on the NEXT
-      // request after a limit-triggered interruption).
+      // Streaming path: never interrupt an active stream. Auto requests walk
+      // the whole pool only while nothing has been written yet; once the first
+      // chunk is out the failure surfaces as an error event instead.
       const origin = req.headers.origin;
       const corsHeaders: Record<string, string> = origin
         ? {
@@ -886,7 +903,9 @@ export function registerOpenAIRoutes(
             reply.raw.write('data: [DONE]\n\n');
             record(req, t0, {
               kind: 'chat',
-              ...resolvePM(reg, chatReq.model),
+              // Never resolve `auto` here: that would re-roll the pool cursor
+              // and record a model that never served this request.
+              ...resolvePM(reg, `${provider.id}:${realModelId}`),
               status: 'success',
               httpStatus: 200,
               promptTokens: streamUsage?.prompt_tokens,
@@ -919,7 +938,9 @@ export function registerOpenAIRoutes(
             }
             const failure = classifyFailure(err);
             const failedKey = `${provider.id}:${realModelId}`;
-            const isAutoReq = originalRequested === 'auto' || originalRequested === 'default';
+            // Gate on the model the CLIENT asked for: a modality rewrite
+            // (vision/tier/image/video) must not unlock the generic pool walk.
+            const isAutoReq = requestedModel === 'auto' || requestedModel === 'default';
             const mark = () => {
               if (failure.kind === 'unavailable') {
                 router.markModelUnavailable(realModelId, provider.id, failure.message);
@@ -929,7 +950,13 @@ export function registerOpenAIRoutes(
             };
 
             let reportErr: unknown = err;
-            if (isAutoReq && router.isEnabled() && !wroteChunk && failure.kind !== 'request') {
+            if (
+              isAutoReq &&
+              visionCandidates.length === 0 &&
+              router.isEnabled() &&
+              !wroteChunk &&
+              failure.kind !== 'request'
+            ) {
               const next = await advanceFailover(router, seq, failedKey, failure.kind, mark);
               if (next) {
                 router.rememberPreference(originalRequested);
@@ -959,7 +986,7 @@ export function registerOpenAIRoutes(
             const { status, httpStatus } = classifyStatus(reportErr);
             record(req, t0, {
               kind: 'chat',
-              ...resolvePM(reg, chatReq.model),
+              ...resolvePM(reg, `${provider.id}:${realModelId}`),
               status,
               httpStatus,
               error: msg,

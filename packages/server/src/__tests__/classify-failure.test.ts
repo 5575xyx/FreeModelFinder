@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { classifyFailure } from '../routes/openai.js';
+import { CandidatesExhaustedError, classifyFailure, classifyStatus } from '../routes/openai.js';
 
 describe('classifyFailure', () => {
   it('prefers rate-limit when a 429 also looks model-unavailable', () => {
@@ -38,5 +38,31 @@ describe('classifyFailure', () => {
   it('classifies 5xx and unknown errors as upstream', () => {
     assert.equal(classifyFailure(new Error('custom stream failed 500: boom')).kind, 'upstream');
     assert.equal(classifyFailure(new Error('socket hang up')).kind, 'upstream');
+  });
+});
+
+describe('classifyStatus', () => {
+  it('reports pool exhaustion as error/503, never rate_limited/429', () => {
+    const err = new CandidatesExhaustedError(2, { unavailable: 2, rateLimit: 0, upstream: 0 }, [
+      'custom:deepseek-v3.1-dead',
+      'custom:deepseek-v3.2-dead',
+    ]);
+    // The summary text contains "0 rate-limited", which the rate-limit
+    // detector would otherwise match.
+    assert.deepEqual(classifyStatus(err), { status: 'error', httpStatus: 503 });
+  });
+
+  it('still flags genuine rate limits as rate_limited/429', () => {
+    assert.deepEqual(classifyStatus(new Error('custom stream failed 429: rate limit exceeded')), {
+      status: 'rate_limited',
+      httpStatus: 429,
+    });
+  });
+
+  it('keeps plain upstream failures as error with their status code', () => {
+    assert.deepEqual(classifyStatus(new Error('custom stream failed 500: boom')), {
+      status: 'error',
+      httpStatus: 500,
+    });
   });
 });

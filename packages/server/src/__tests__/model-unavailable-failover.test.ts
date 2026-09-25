@@ -12,13 +12,27 @@ import {
 } from '@freemodelfinder/core';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../server.js';
+import { resetModalityCursors } from '../routes/openai.js';
 
 const apps: FastifyInstance[] = [];
 
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
   resetAutoPoolCursor();
+  resetModalityCursors();
 });
+
+type SseEvent = {
+  fmf_route_notice?: { cause?: string; from?: string; to?: string };
+  error?: { message?: string; type?: string };
+};
+
+function parseSseData(body: string): SseEvent[] {
+  return body
+    .split('\n')
+    .filter((line) => line.startsWith('data: ') && !line.includes('[DONE]'))
+    .map((line) => JSON.parse(line.slice(6)) as SseEvent);
+}
 
 const UNAVAILABLE_400 =
   'custom stream failed 400: {"error":{"message":"Model id : deepseek-v3.1-dead , has no provider supported","request_id":"req-unavailable"}}';
@@ -27,8 +41,14 @@ async function appWithPool(opts: {
   models: string[];
   failures?: Record<string, string>;
   failAfterChunk?: string[];
+  autoRoute?: AppConfig['autoRoute'];
 }): Promise<{ app: FastifyInstance; seenModels: () => string[] }> {
-  const { models, failures = {}, failAfterChunk = [] } = opts;
+  const {
+    models,
+    failures = {},
+    failAfterChunk = [],
+    autoRoute = { enabled: true, strategy: 'capability' },
+  } = opts;
   const pool: ModelInfo[] = models.map((id) => ({
     id,
     provider: 'custom' as const,
@@ -58,7 +78,7 @@ async function appWithPool(opts: {
       },
     },
     gateway: { requireAuth: false },
-    autoRoute: { enabled: true, strategy: 'capability' },
+    autoRoute,
   };
   const registry = new ProviderRegistry(config);
   const seen: string[] = [];
@@ -227,9 +247,17 @@ describe('model-unavailable auto failover', () => {
     });
     assert.equal(res.statusCode, 200);
     assert.match(res.body, /tried 2 models: 2 unavailable, 0 rate-limited, 0 upstream errors/);
-    assert.match(res.body, /attempted: /, 'exhaustion message lists attempted models');
+    assert.match(res.body, /attempted: .*deepseek/, 'exhaustion message lists attempted models');
     assert.doesNotMatch(res.body, /healthy reply/);
     assert.deepEqual(seenModels(), ['deepseek-v3.1-dead', 'deepseek-v3.2-dead']);
+    const events = parseSseData(res.body);
+    const envelope = events.find((e) => e.error);
+    assert.ok(envelope?.error, 'stream carries an error envelope');
+    assert.equal(
+      envelope.error.type,
+      'model_unavailable',
+      'exhaustion is reported as model_unavailable, never rate_limited',
+    );
   });
 });
 
@@ -394,6 +422,44 @@ describe('stream full-pool failover', () => {
     assert.match(res.body, /healthy reply/);
     assert.deepEqual(seenModels(), ['deepseek-v3.0-dead', 'deepseek-v3.1-dead', 'alive-mini']);
     assert.equal(res.body.match(/fmf_route_notice/g)?.length, 2, 'two switch notices on the wire');
+    const firstNotice = parseSseData(res.body).find((e) => e.fmf_route_notice)?.fmf_route_notice;
+    assert.equal(
+      firstNotice?.cause,
+      'rate-limit',
+      'the wire notice keeps the real cause (not a generic error)',
+    );
+  });
+
+  it('switches on upstream 5xx without marking the model (stream)', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-dead', 'alive-mini'],
+      failures: { 'deepseek-v3.1-dead': UPSTREAM_500 },
+    });
+    resetAutoPoolCursor();
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'first' }], stream: true },
+    });
+    assert.equal(first.statusCode, 200);
+    assert.match(first.body, /healthy reply/);
+    assert.deepEqual(seenModels(), ['deepseek-v3.1-dead', 'alive-mini']);
+    assert.equal(first.body.match(/fmf_route_notice/g)?.length, 1, 'one switch notice on the wire');
+    for (let i = 0; i < 2; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        payload: {
+          model: 'auto',
+          messages: [{ role: 'user', content: `next-${i}` }],
+          stream: true,
+        },
+      });
+      assert.equal(res.statusCode, 200);
+      assert.match(res.body, /healthy reply/);
+    }
+    const deadCalls = seenModels().filter((m) => m === 'deepseek-v3.1-dead').length;
+    assert.ok(deadCalls >= 2, `5xx models stay eligible in streams (seen ${deadCalls} times)`);
   });
 
   it('never switches after a chunk has been written', async () => {
@@ -434,5 +500,110 @@ describe('stream full-pool failover', () => {
     assert.match(res.body, /no provider supported/);
     assert.deepEqual(seenModels(), ['deepseek-v3.1-dead']);
     assert.doesNotMatch(res.body, /fmf_route_notice/, 'explicit streams never fail over');
+  });
+});
+
+const VISION_503 =
+  'custom stream failed 503: {"error":{"message":"No available channel","type":"new_api_error","code":"model_not_found"}}';
+
+const imageMessage = {
+  role: 'user' as const,
+  content: [
+    { type: 'text' as const, text: '这是什么?' },
+    { type: 'image_url' as const, image_url: { url: 'https://example.com/a.png' } },
+  ],
+};
+
+describe('pool walks stay gated on the originally requested model', () => {
+  it('walks past a failed text-tier rewrite on non-stream', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['alive-mini', 'other-alive'],
+      failures: { 'ghost-deep': UNAVAILABLE_400 },
+      autoRoute: {
+        enabled: true,
+        strategy: 'capability',
+        textTiers: { simple: ['custom:ghost-deep'] },
+      },
+    });
+    resetAutoPoolCursor();
+    resetModalityCursors();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: false },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(seenModels(), ['ghost-deep', 'alive-mini']);
+    const body = res.json() as { fmf_route_notices?: Array<{ cause?: string }> };
+    assert.equal(body.fmf_route_notices?.[0]?.cause, 'unavailable');
+  });
+
+  it('walks past a failed text-tier rewrite on stream', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['alive-mini', 'other-alive'],
+      failures: { 'ghost-deep': UNAVAILABLE_400 },
+      autoRoute: {
+        enabled: true,
+        strategy: 'capability',
+        textTiers: { simple: ['custom:ghost-deep'] },
+      },
+    });
+    resetAutoPoolCursor();
+    resetModalityCursors();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: true },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /healthy reply/);
+    assert.deepEqual(seenModels(), ['ghost-deep', 'alive-mini']);
+    const firstNotice = parseSseData(res.body).find((e) => e.fmf_route_notice)?.fmf_route_notice;
+    assert.equal(firstNotice?.cause, 'unavailable');
+  });
+
+  it('never walks a vision rewrite over to a text-only model (non-stream)', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['vision-dead-1', 'vision-dead-2', 'alive-mini'],
+      failures: { 'vision-dead-1': VISION_503, 'vision-dead-2': VISION_503 },
+      autoRoute: {
+        enabled: true,
+        strategy: 'capability',
+        visionModel: ['custom:vision-dead-1', 'custom:vision-dead-2'],
+      },
+    });
+    resetAutoPoolCursor();
+    resetModalityCursors();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [imageMessage], stream: false },
+    });
+    assert.equal(res.statusCode, 503, 'vision pool exhausted stays an error');
+    assert.deepEqual(seenModels(), ['vision-dead-1', 'vision-dead-2']);
+    assert.ok(!seenModels().includes('alive-mini'), 'vision requests must not reach text models');
+  });
+
+  it('never walks a vision rewrite over to a text-only model (stream)', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['vision-dead-1', 'vision-dead-2', 'alive-mini'],
+      failures: { 'vision-dead-1': VISION_503, 'vision-dead-2': VISION_503 },
+      autoRoute: {
+        enabled: true,
+        strategy: 'capability',
+        visionModel: ['custom:vision-dead-1', 'custom:vision-dead-2'],
+      },
+    });
+    resetAutoPoolCursor();
+    resetModalityCursors();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [imageMessage], stream: true },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(seenModels(), ['vision-dead-1', 'vision-dead-2']);
+    assert.ok(!seenModels().includes('alive-mini'), 'vision requests must not reach text models');
+    assert.doesNotMatch(res.body, /healthy reply/);
   });
 });
