@@ -218,6 +218,8 @@ export interface SwitchNotice {
   strategy?: AutoRouteStrategy;
   reason: string;
   resetAt?: number;
+  /** Machine-readable failure category behind this switch. */
+  cause?: 'unavailable' | 'rate-limit' | 'upstream';
 }
 
 export interface ProviderCredentials {

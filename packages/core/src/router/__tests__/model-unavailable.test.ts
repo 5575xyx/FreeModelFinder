@@ -161,3 +161,35 @@ describe('preference latch with permanent markers', () => {
     );
   });
 });
+
+describe('buildSwitchAwayMessage with permanent markers', () => {
+  it('reports permanent removal instead of a reset time', () => {
+    const harness = makeRouter([
+      makeModel('deepseek-v3.1-dead', 'custom'),
+      makeModel('alive-mini', 'custom'),
+    ]);
+    const state = harness.router.markModelUnavailable(
+      'deepseek-v3.1-dead',
+      'custom',
+      'no provider supported',
+    );
+    const msg = harness.router.buildSwitchAwayMessage(state, makeModel('alive-mini', 'custom'));
+    assert.match(msg, /已永久剔除/);
+    assert.doesNotMatch(msg, /下次重置时间/);
+  });
+
+  it('keeps reset time wording for finite cooldowns', () => {
+    const harness = makeRouter([
+      makeModel('deepseek-v3.1-dead', 'custom'),
+      makeModel('alive-mini', 'custom'),
+    ]);
+    const state = harness.router.markRateLimited('deepseek-v3.1-dead', 'custom', {
+      isRateLimit: true,
+      resetAt: Date.now() + 60_000,
+      message: '429',
+    });
+    const msg = harness.router.buildSwitchAwayMessage(state, makeModel('alive-mini', 'custom'));
+    assert.match(msg, /下次重置时间/);
+    assert.doesNotMatch(msg, /永久剔除/);
+  });
+});

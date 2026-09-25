@@ -273,17 +273,12 @@ export class AutoRouter {
    * account. The marker uses resetAt = Infinity so it never expires for
    * the process lifetime (restart restores it).
    */
-  markModelUnavailable(
-    model: string,
-    provider: ProviderId,
-    message: string,
-    resetAt?: number,
-  ): RateLimitState {
+  markModelUnavailable(model: string, provider: ProviderId, message: string): RateLimitState {
     const state: RateLimitState = {
       model,
       provider,
       hitAt: Date.now(),
-      resetAt: resetAt ?? Number.POSITIVE_INFINITY,
+      resetAt: Number.POSITIVE_INFINITY,
       message,
       scope: 'model',
     };
@@ -415,13 +410,18 @@ export class AutoRouter {
   }
 
   buildSwitchAwayMessage(state: RateLimitState, target: ModelInfo): string {
+    const permanent = !Number.isFinite(state.resetAt);
     const providerScope = state.scope === 'provider' || isSharedQuotaProvider(state.provider);
-    const header = providerScope
-      ? `⚠️ Provider "${state.provider}" 的免费额度已耗尽（该服务商所有模型共享此配额），已整体暂停使用。`
-      : `⚠️ 模型 "${state.model}" 已达到请求限制（RPM/配额）。`;
+    const header = permanent
+      ? `⚠️ 模型 "${state.model}" 上游不可用，已永久剔除。`
+      : providerScope
+        ? `⚠️ Provider "${state.provider}" 的免费额度已耗尽（该服务商所有模型共享此配额），已整体暂停使用。`
+        : `⚠️ 模型 "${state.model}" 已达到请求限制（RPM/配额）。`;
     return [
       header,
-      `   下次重置时间：${formatResetTime(state.resetAt)}`,
+      permanent
+        ? `   恢复方式：重启网关或在设置中手动清除冷却`
+        : `   下次重置时间：${formatResetTime(state.resetAt)}`,
       `   已根据「${this.strategyLabel()}」原则自动切换到：${formatModelId(target)}`,
     ].join('\n');
   }
@@ -495,7 +495,7 @@ export class AutoRouter {
       to: formatModelId(fallback),
       strategy: this.getStrategy(),
       reason: this.buildSwitchAwayMessage(effectiveState, fallback),
-      resetAt: effectiveState.resetAt,
+      resetAt: Number.isFinite(effectiveState.resetAt) ? effectiveState.resetAt : undefined,
     };
     this.notify(notice);
     return { switched: true, model: fallback, notice, original: requestedModel };
