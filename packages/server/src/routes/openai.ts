@@ -11,6 +11,7 @@ import {
   scoreModel,
   streamChunkToOpenAI,
   usageCaptureStore,
+  type AutoRouter,
   type CallLogEntry,
   type CallLogger,
   type CallStatus,
@@ -18,6 +19,7 @@ import {
   type ChatResponse,
   type GatewayKeyEntry,
   type ImageGenerationRequest,
+  type ModelInfo,
   type OpenAIChatCompletionRequest,
   type ProviderId,
   type ProviderRegistry,
@@ -82,6 +84,91 @@ function extractProviderIdFromError(chatReq: ChatRequest, reg: ProviderRegistry)
   }
 }
 
+type FailureKind = 'unavailable' | 'rate-limit' | 'request' | 'upstream';
+
+function classifyFailure(err: unknown): { kind: FailureKind; message: string } {
+  const message = err instanceof Error ? err.message : String(err);
+  const unavailable = parseModelUnavailableError(err);
+  if (unavailable.isModelUnavailable) {
+    return { kind: 'unavailable', message: unavailable.message };
+  }
+  if (parseRateLimitError(err).isRateLimit) return { kind: 'rate-limit', message };
+  const match = message.match(/failed\s+(\d{3})/i);
+  const status = match ? Number(match[1]) : undefined;
+  if (status !== undefined && status >= 400 && status < 500) return { kind: 'request', message };
+  return { kind: 'upstream', message };
+}
+
+class CandidatesExhaustedError extends Error {
+  constructor(
+    readonly tried: number,
+    readonly counts: { unavailable: number; rateLimit: number; upstream: number },
+  ) {
+    super(
+      `tried ${tried} models: ${counts.unavailable} unavailable, ${counts.rateLimit} rate-limited, ${counts.upstream} upstream errors`,
+    );
+    this.name = 'CandidatesExhaustedError';
+  }
+}
+
+type FailoverSeq = {
+  ranked: ModelInfo[] | null;
+  attempts: number;
+  counts: { unavailable: number; rateLimit: number; upstream: number };
+};
+
+function newFailoverSeq(): FailoverSeq {
+  return { ranked: null, attempts: 0, counts: { unavailable: 0, rateLimit: 0, upstream: 0 } };
+}
+
+/**
+ * Snapshot the healthy ranked pool (BEFORE marking the current failure so
+ * the failed model stays findable for ring positioning), record the failure,
+ * apply the mark, then return the next candidate walking the ring. Returns
+ * null once every candidate has been attempted.
+ */
+async function advanceFailover(
+  router: AutoRouter,
+  seq: FailoverSeq,
+  failedKey: string,
+  kind: FailureKind,
+  mark: () => void,
+): Promise<ModelInfo | null> {
+  seq.ranked ??= await router.rankCandidates();
+  seq.attempts++;
+  if (kind === 'unavailable') seq.counts.unavailable++;
+  else if (kind === 'rate-limit') seq.counts.rateLimit++;
+  else seq.counts.upstream++;
+  mark();
+  if (seq.attempts >= seq.ranked.length) return null;
+  const idx = seq.ranked.findIndex((m) => `${m.provider}:${m.id}` === failedKey);
+  return seq.ranked[(idx + 1) % seq.ranked.length] ?? null;
+}
+
+function buildFailoverNotice(
+  router: AutoRouter,
+  kind: FailureKind,
+  failedKey: string,
+  next: ModelInfo,
+): SwitchNotice {
+  const to = `${next.provider}:${next.id}`;
+  const cause = kind === 'unavailable' || kind === 'rate-limit' ? kind : 'upstream';
+  const reason =
+    kind === 'rate-limit'
+      ? `⚠️ 模型 "${failedKey}" 已被限流（冷却中），已自动切换到：${to}`
+      : kind === 'unavailable'
+        ? `⚠️ 模型 "${failedKey}" 上游不可用，已永久剔除并自动切换到：${to}`
+        : `⚠️ 模型 "${failedKey}" 上游请求失败，已自动切换到：${to}`;
+  return {
+    type: 'switch-away',
+    from: failedKey,
+    to,
+    strategy: router.getStrategy(),
+    reason,
+    cause,
+  };
+}
+
 async function dispatchWithAutoRoute(
   reg: ProviderRegistry,
   chatReq: ChatRequest,
@@ -94,6 +181,8 @@ async function dispatchWithAutoRoute(
   const router = reg.getAutoRouter();
   const notices: SwitchNotice[] = [];
   const originalRequested = chatReq.model;
+  const isAuto = originalRequested === 'auto' || originalRequested === 'default';
+  const seq = newFailoverSeq();
 
   // 1. Pre-flight: honor existing cooldowns before we even try upstream.
   const pre = await router.preflight(chatReq.model);
@@ -102,10 +191,10 @@ async function dispatchWithAutoRoute(
     notices.push(pre.notice);
   }
 
-  // 2. Resolve provider & dispatch. On rate-limit failure, fall back exactly
-  //    ONCE (we intentionally do not interrupt a live stream elsewhere).
+  // 2. Resolve provider & dispatch. Auto requests keep walking the scored
+  //    pool until every candidate has been tried; explicit requests fail
+  //    fast (the original one-shot rate-limit switch still applies).
   let attempt = 0;
-  let unavailableRetries = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const resolved = reg.resolveModel(chatReq.model);
@@ -124,35 +213,34 @@ async function dispatchWithAutoRoute(
         notices,
       };
     } catch (err) {
-      const parsed = parseRateLimitError(err);
-      // Upstream declared this model unavailable (e.g. ModelScope 400
-      // "has no provider supported"): cool it down and move to the next
-      // healthy candidate instead of surfacing a deterministic failure.
-      if (router.isEnabled() && !parsed.isRateLimit) {
-        const unavailable = parseModelUnavailableError(err);
-        if (unavailable.isModelUnavailable && unavailableRetries < MAX_MODEL_UNAVAILABLE_RETRIES) {
-          const failedModel = `${provider.id}:${realModelId}`;
-          router.markModelUnavailable(realModelId, provider.id, unavailable.message);
-          const fallback = await router.pickFallback(failedModel);
-          if (fallback) {
-            router.rememberPreference(originalRequested);
-            const notice: SwitchNotice = {
-              type: 'switch-away',
-              from: failedModel,
-              to: `${fallback.provider}:${fallback.id}`,
-              strategy: router.getStrategy(),
-              reason: `⚠️ 模型 "${failedModel}" 上游不可用，已临时冷却并自动切换到：${fallback.provider}:${fallback.id}`,
-            };
-            router.notify(notice);
-            notices.push(notice);
-            chatReq.model = `${fallback.provider}:${fallback.id}`;
-            unavailableRetries++;
-            continue;
-          }
+      const failure = classifyFailure(err);
+      const failedKey = `${provider.id}:${realModelId}`;
+      const mark = () => {
+        if (failure.kind === 'unavailable') {
+          router.markModelUnavailable(realModelId, provider.id, failure.message);
+        } else if (failure.kind === 'rate-limit') {
+          router.markRateLimited(chatReq.model, provider.id, parseRateLimitError(err));
         }
+      };
+
+      if (isAuto && router.isEnabled() && failure.kind !== 'request') {
+        const next = await advanceFailover(router, seq, failedKey, failure.kind, mark);
+        if (next) {
+          router.rememberPreference(originalRequested);
+          const notice = buildFailoverNotice(router, failure.kind, failedKey, next);
+          router.notify(notice);
+          notices.push(notice);
+          chatReq.model = `${next.provider}:${next.id}`;
+          continue;
+        }
+        throw new CandidatesExhaustedError(seq.attempts, seq.counts);
       }
+
+      // Explicit (or router disabled / request-shape errors): mark, then the
+      // legacy one-shot rate-limit switch for explicit models still applies.
+      mark();
+      const parsed = parseRateLimitError(err);
       if (parsed.isRateLimit && router.isEnabled() && attempt === 0) {
-        router.markRateLimited(chatReq.model, provider.id, parsed);
         const fallback = await router.pickFallback(chatReq.model);
         if (fallback) {
           router.rememberPreference(originalRequested);
@@ -172,6 +260,7 @@ async function dispatchWithAutoRoute(
               fallback,
             ),
             resetAt: parsed.resetAt,
+            cause: 'rate-limit',
           };
           router.notify(notice);
           notices.push(notice);
@@ -676,6 +765,16 @@ export function registerOpenAIRoutes(
           return reply.send(payload);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
+          if (err instanceof CandidatesExhaustedError) {
+            record(req, t0, {
+              kind: 'chat',
+              ...resolvePM(reg, chatReq.model),
+              status: 'error',
+              httpStatus: 503,
+              error: msg,
+            });
+            return reply.code(503).send({ error: { message: msg, type: 'model_unavailable' } });
+          }
           const match = msg.match(/failed\s+(\d{3})/i);
           const upstream = match ? Number(match[1]) : undefined;
           const { status, httpStatus } = classifyStatus(err);

@@ -23,28 +23,18 @@ afterEach(async () => {
 const UNAVAILABLE_400 =
   'custom stream failed 400: {"error":{"message":"Model id : deepseek-v3.1-dead , has no provider supported","request_id":"req-unavailable"}}';
 
-function makePool(deadIds: string[], includeAlive = true): ModelInfo[] {
-  return [
-    ...deadIds.map((id): ModelInfo => ({
-      id,
-      provider: 'custom',
-      displayName: id,
-      free: true,
-    })),
-    ...(includeAlive
-      ? [{ id: 'alive-mini', provider: 'custom' as const, displayName: 'Alive Mini', free: true }]
-      : []),
-  ];
-}
-
-async function appWithUnavailableModels(
-  deadIds: string[],
-  includeAlive = true,
-): Promise<{
-  app: FastifyInstance;
-  seenModels: () => string[];
-}> {
-  const pool = makePool(deadIds, includeAlive);
+async function appWithPool(opts: {
+  models: string[];
+  failures?: Record<string, string>;
+  failAfterChunk?: string[];
+}): Promise<{ app: FastifyInstance; seenModels: () => string[] }> {
+  const { models, failures = {}, failAfterChunk = [] } = opts;
+  const pool: ModelInfo[] = models.map((id) => ({
+    id,
+    provider: 'custom' as const,
+    displayName: id,
+    free: true,
+  }));
   const config: AppConfig = {
     version: 2,
     port: 11435,
@@ -76,7 +66,8 @@ async function appWithUnavailableModels(
     id: 'custom',
     async chat(request: ChatRequest): Promise<ChatResponse> {
       seen.push(request.model);
-      if (deadIds.includes(request.model)) throw new Error(UNAVAILABLE_400);
+      const failure = failures[request.model];
+      if (failure) throw new Error(failure);
       return {
         id: 'ok',
         model: request.model,
@@ -88,7 +79,17 @@ async function appWithUnavailableModels(
     },
     async *stream(request: ChatRequest): AsyncGenerator<StreamChunk> {
       seen.push(request.model);
-      if (deadIds.includes(request.model)) throw new Error(UNAVAILABLE_400);
+      if (failAfterChunk.includes(request.model)) {
+        yield {
+          id: 's',
+          model: request.model,
+          created: 1,
+          delta: 'partial reply',
+          finish_reason: 'stop' as const,
+        };
+      }
+      const failure = failures[request.model];
+      if (failure) throw new Error(failure);
       yield {
         id: 's',
         model: request.model,
@@ -123,16 +124,15 @@ async function appWithUnavailableModels(
 
 describe('model-unavailable auto failover', () => {
   it('stream fails over from an unavailable model to a healthy one', async () => {
-    const { app, seenModels } = await appWithUnavailableModels(['deepseek-v3.1-dead']);
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-dead', 'alive-mini'],
+      failures: { 'deepseek-v3.1-dead': UNAVAILABLE_400 },
+    });
     resetAutoPoolCursor();
     const res = await app.inject({
       method: 'POST',
       url: '/v1/chat/completions',
-      payload: {
-        model: 'auto',
-        messages: [{ role: 'user', content: '你好' }],
-        stream: true,
-      },
+      payload: { model: 'auto', messages: [{ role: 'user', content: '你好' }], stream: true },
     });
     assert.equal(res.statusCode, 200);
     assert.match(res.body, /healthy reply/);
@@ -142,48 +142,39 @@ describe('model-unavailable auto failover', () => {
   });
 
   it('non-stream fails over from an unavailable model to a healthy one', async () => {
-    const { app, seenModels } = await appWithUnavailableModels(['deepseek-v3.1-dead']);
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-dead', 'alive-mini'],
+      failures: { 'deepseek-v3.1-dead': UNAVAILABLE_400 },
+    });
     resetAutoPoolCursor();
     const res = await app.inject({
       method: 'POST',
       url: '/v1/chat/completions',
-      payload: {
-        model: 'auto',
-        messages: [{ role: 'user', content: '你好' }],
-        stream: false,
-      },
+      payload: { model: 'auto', messages: [{ role: 'user', content: '你好' }], stream: false },
     });
     assert.equal(res.statusCode, 200);
-    const body = res.json() as {
-      choices: Array<{ message: { content: string } }>;
-      fmf_auto_route?: { picked: string };
-    };
+    const body = res.json() as { choices: Array<{ message: { content: string } }> };
     assert.equal(body.choices[0]!.message.content, 'healthy reply');
     assert.deepEqual(seenModels(), ['deepseek-v3.1-dead', 'alive-mini']);
   });
 
-  it('cools the unavailable model down so the next request skips it', async () => {
-    const { app, seenModels } = await appWithUnavailableModels(['deepseek-v3.1-dead']);
+  it('permanently removes the unavailable model so the next request skips it', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-dead', 'alive-mini'],
+      failures: { 'deepseek-v3.1-dead': UNAVAILABLE_400 },
+    });
     resetAutoPoolCursor();
     const first = await app.inject({
       method: 'POST',
       url: '/v1/chat/completions',
-      payload: {
-        model: 'auto',
-        messages: [{ role: 'user', content: 'first' }],
-        stream: false,
-      },
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'first' }], stream: false },
     });
     assert.equal(first.statusCode, 200);
     const afterFirst = seenModels().length;
     const second = await app.inject({
       method: 'POST',
       url: '/v1/chat/completions',
-      payload: {
-        model: 'auto',
-        messages: [{ role: 'user', content: 'second' }],
-        stream: false,
-      },
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'second' }], stream: false },
     });
     assert.equal(second.statusCode, 200);
     const calls = seenModels();
@@ -195,45 +186,159 @@ describe('model-unavailable auto failover', () => {
     assert.ok(calls.length > afterFirst, 'second request still reaches a healthy model');
   });
 
-  it('propagates the error when every candidate is unavailable (no infinite loop)', async () => {
-    const { app, seenModels } = await appWithUnavailableModels(
-      ['deepseek-v3.1-dead', 'deepseek-v3.2-dead'],
-      false,
-    );
+  it('exhausts every candidate then answers 503 with a failure summary', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-dead', 'deepseek-v3.2-dead'],
+      failures: {
+        'deepseek-v3.1-dead': UNAVAILABLE_400,
+        'deepseek-v3.2-dead': UNAVAILABLE_400,
+      },
+    });
     resetAutoPoolCursor();
     const res = await app.inject({
       method: 'POST',
       url: '/v1/chat/completions',
-      payload: {
-        model: 'auto',
-        messages: [{ role: 'user', content: '你好' }],
-        stream: false,
-      },
+      payload: { model: 'auto', messages: [{ role: 'user', content: '你好' }], stream: false },
     });
-    assert.equal(res.statusCode, 400);
-    const body = res.json() as { error: { message: string } };
-    assert.match(body.error.message, /no provider supported/);
-    assert.ok(seenModels().length <= 4, `bounded retries, saw ${seenModels().length}`);
+    assert.equal(res.statusCode, 503);
+    const body = res.json() as { error: { message: string; type: string } };
+    assert.match(
+      body.error.message,
+      /tried 2 models: 2 unavailable, 0 rate-limited, 0 upstream errors/,
+    );
+    assert.equal(body.error.type, 'model_unavailable');
+    assert.deepEqual(seenModels(), ['deepseek-v3.1-dead', 'deepseek-v3.2-dead']);
   });
 
   it('propagates the error on stream when every candidate is unavailable', async () => {
-    const { app, seenModels } = await appWithUnavailableModels(
-      ['deepseek-v3.1-dead', 'deepseek-v3.2-dead'],
-      false,
-    );
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-dead', 'deepseek-v3.2-dead'],
+      failures: {
+        'deepseek-v3.1-dead': UNAVAILABLE_400,
+        'deepseek-v3.2-dead': UNAVAILABLE_400,
+      },
+    });
     resetAutoPoolCursor();
     const res = await app.inject({
       method: 'POST',
       url: '/v1/chat/completions',
-      payload: {
-        model: 'auto',
-        messages: [{ role: 'user', content: '你好' }],
-        stream: true,
-      },
+      payload: { model: 'auto', messages: [{ role: 'user', content: '你好' }], stream: true },
     });
     assert.equal(res.statusCode, 200);
-    assert.match(res.body, /no provider supported/);
+    assert.match(res.body, /tried 2 models: 2 unavailable, 0 rate-limited, 0 upstream errors/);
     assert.doesNotMatch(res.body, /healthy reply/);
-    assert.ok(seenModels().length <= 4, `bounded retries, saw ${seenModels().length}`);
+    assert.deepEqual(seenModels(), ['deepseek-v3.1-dead', 'deepseek-v3.2-dead']);
+  });
+});
+
+const RATE_LIMIT_429 = 'custom stream failed 429: rate limit exceeded, retry later';
+const UPSTREAM_500 = 'custom stream failed 500: internal server error';
+const PARAM_400 =
+  'custom stream failed 400: {"error":{"message":"temperature must be between 0 and 2","type":"invalid_request_error"}}';
+
+describe('full-pool failover semantics', () => {
+  it('walks past the whole Top-3 down to a lower-ranked healthy model', async () => {
+    const dead = [
+      'deepseek-v3.0-dead',
+      'deepseek-v3.1-dead',
+      'deepseek-v3.2-dead',
+      'deepseek-v3.3-dead',
+    ];
+    const failures = Object.fromEntries(dead.map((id) => [id, UNAVAILABLE_400]));
+    const { app, seenModels } = await appWithPool({
+      models: [...dead, 'alive-mini'],
+      failures,
+    });
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: false },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(seenModels(), [...dead, 'alive-mini']);
+  });
+
+  it('marks but does not switch for an explicitly requested model', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-dead', 'alive-mini'],
+      failures: { 'deepseek-v3.1-dead': UNAVAILABLE_400 },
+    });
+    resetAutoPoolCursor();
+    const explicit = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: {
+        model: 'custom:deepseek-v3.1-dead',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+      },
+    });
+    assert.equal(explicit.statusCode, 400);
+    assert.deepEqual(seenModels(), ['deepseek-v3.1-dead'], 'explicit failures must not fail over');
+    const auto = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: false },
+    });
+    assert.equal(auto.statusCode, 200);
+    assert.deepEqual(
+      seenModels(),
+      ['deepseek-v3.1-dead', 'alive-mini'],
+      'the explicitly failed model is now removed from auto scoring',
+    );
+  });
+
+  it('cools rate-limited models down and keeps walking to the next candidate', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.0-dead', 'deepseek-v3.1-dead', 'alive-mini'],
+      failures: {
+        'deepseek-v3.0-dead': RATE_LIMIT_429,
+        'deepseek-v3.1-dead': RATE_LIMIT_429,
+      },
+    });
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: false },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(seenModels(), ['deepseek-v3.0-dead', 'deepseek-v3.1-dead', 'alive-mini']);
+    const body = res.json() as { fmf_route_notices?: unknown[] };
+    assert.equal(body.fmf_route_notices?.length, 2, 'each switch emits a notice');
+  });
+
+  it('switches on upstream 5xx without permanently removing the model', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-dead', 'alive-mini'],
+      failures: { 'deepseek-v3.1-dead': UPSTREAM_500 },
+    });
+    resetAutoPoolCursor();
+    for (let i = 0; i < 3; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        payload: { model: 'auto', messages: [{ role: 'user', content: `hi-${i}` }], stream: false },
+      });
+      assert.equal(res.statusCode, 200);
+    }
+    const deadCalls = seenModels().filter((m) => m === 'deepseek-v3.1-dead').length;
+    assert.ok(deadCalls >= 2, `5xx models stay eligible (seen ${deadCalls} times)`);
+  });
+
+  it('fails fast on request-shape 4xx without switching', async () => {
+    const { app, seenModels } = await appWithPool({
+      models: ['deepseek-v3.1-dead', 'alive-mini'],
+      failures: { 'deepseek-v3.1-dead': PARAM_400 },
+    });
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: false },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(seenModels(), ['deepseek-v3.1-dead'], 'param errors must not walk the pool');
   });
 });
