@@ -33,13 +33,13 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-25（Asia/Shanghai）更新：103 个免费模型入口，覆盖 11/13 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-26（Asia/Shanghai）更新：97 个免费模型入口，覆盖 11/13 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 未配置密钥：Google Gemini、GitHub Models。
 
 | Provider                 | 状态      | 免费模型数 | 免费类型              |
 | ------------------------ | --------- | ---------: | --------------------- |
-| OpenRouter               | 🟢 正常   |         20 | 零价格模型            |
+| OpenRouter               | 🟢 正常   |         17 | 零价格模型            |
 | Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier        |
 | Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号          |
 | SiliconFlow              | 🟢 正常   |          5 | 免费白名单            |
@@ -49,20 +49,32 @@
 | Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production |
 | Hugging Face             | 🟢 正常   |          3 | 实时零价端点          |
 | SenseNova                | 🟢 正常   |          7 | 实时零价模型          |
-| Kilo Code                | 🟢 正常   |         25 | 聚合免费模型          |
+| Kilo Code                | 🟢 正常   |         22 | 聚合免费模型          |
 | Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型          |
 | Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型          |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-25.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-26.md)
 
 ### 今日变化
 
-与 2026-09-24 相比，成功比较的 11 个 Provider 模型清单没有变化。
+与 2026-09-25 相比，在成功比较的 11 个 Provider 中：**新增 0 个，移除 6 个**。
+
+<details>
+<summary>查看移除的 6 个模型</summary>
+
+- `openrouter:nex-agi/nex-n2.5-mini:free`
+- `openrouter:nex-agi/nex-n2.5-pro:free`
+- `openrouter:z-ai/glm-5.2:free`
+- `kilo:nex-agi/nex-n2.5-mini:free`
+- `kilo:nex-agi/nex-n2.5-pro:free`
+- `kilo:z-ai/glm-5.2:free`
+
+</details>
 
 ### 展开完整模型列表
 
 <details>
-<summary><strong>OpenRouter · 20 个模型</strong></summary>
+<summary><strong>OpenRouter · 17 个模型</strong></summary>
 
 - `openrouter:cohere/north-mini-code:free` — Cohere: North Mini Code (free)
 - `openrouter:dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
@@ -71,8 +83,6 @@
 - `openrouter:inclusionai/ling-3.0-flash-fin:free` — inclusionAI: Ling 3.0 Flash Fin (free)
 - `openrouter:inclusionai/ling-3.0-flash-sante:free` — inclusionAI: Ling 3.0 Flash Sante (free)
 - `openrouter:liquid/lfm-2.5-2.6b:free` — LiquidAI: LFM2.5-2.6B (free)
-- `openrouter:nex-agi/nex-n2.5-mini:free` — Nex AGI: Nex-N2.5-Mini (free)
-- `openrouter:nex-agi/nex-n2.5-pro:free` — Nex AGI: Nex-N2.5-Pro (free)
 - `openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` — NVIDIA: Nemotron 3 Nano Omni (free)
 - `openrouter:nvidia/nemotron-3-super-120b-a12b:free` — NVIDIA: Nemotron 3 Super (free)
 - `openrouter:nvidia/nemotron-3-ultra-550b-a55b:free` — NVIDIA: Nemotron 3 Ultra (free)
@@ -83,7 +93,6 @@
 - `openrouter:qwen/qwen3.8-27b:free` — Qwen: Qwen3.8 27B (free)
 - `openrouter:thinkingmachines/inkling-small:free` — Thinking Machines: Inkling Small (free)
 - `openrouter:thinkingmachines/inkling:free` — Thinking Machines: Inkling (free)
-- `openrouter:z-ai/glm-5.2:free` — Z.ai: GLM 5.2 (free)
 
 </details>
 
@@ -175,7 +184,7 @@
 </details>
 
 <details>
-<summary><strong>Kilo Code · 25 个模型</strong></summary>
+<summary><strong>Kilo Code · 22 个模型</strong></summary>
 
 - `kilo:cohere/north-mini-code:free` — Cohere: North Mini Code (free)
 - `kilo:dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
@@ -185,8 +194,6 @@
 - `kilo:inclusionai/ling-3.0-flash-sante:free` — inclusionAI: Ling 3.0 Flash Sante (free)
 - `kilo:kilo-auto/free` — Auto Free
 - `kilo:liquid/lfm-2.5-2.6b:free` — LiquidAI: LFM2.5-2.6B (free)
-- `kilo:nex-agi/nex-n2.5-mini:free` — Nex AGI: Nex-N2.5-Mini (free)
-- `kilo:nex-agi/nex-n2.5-pro:free` — Nex AGI: Nex-N2.5-Pro (free)
 - `kilo:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` — NVIDIA: Nemotron 3 Nano Omni (free)
 - `kilo:nvidia/nemotron-3-super-120b-a12b:free` — NVIDIA: Nemotron 3 Super (free)
 - `kilo:nvidia/nemotron-3-ultra-550b-a55b:free` — NVIDIA: Nemotron 3 Ultra (free)
@@ -201,7 +208,6 @@
 - `kilo:qwen/qwen3.8-27b:free` — Qwen: Qwen3.8 27B (free)
 - `kilo:stepfun/step-3.7-flash:free` — StepFun: Step 3.7 Flash (free)
 - `kilo:thinkingmachines/inkling-small:free` — Thinking Machines: Inkling Small (free)
-- `kilo:z-ai/glm-5.2:free` — Z.ai: GLM 5.2 (free)
 
 </details>
 
