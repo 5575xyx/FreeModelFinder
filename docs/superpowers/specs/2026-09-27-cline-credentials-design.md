@@ -1,7 +1,8 @@
 # Cline 凭据体系 + 网关内集成设计（产品级对标 CLIProxyAPI）
 
 日期：2026-09-27
-状态：已批准（设计经用户逐节确认，共 6 节；v2 修订合并独立审查意见——2 P0 / 6 P1 / 8 P2）
+状态：已批准（设计经用户逐节确认，共 6 节；经独立审查三轮：v1→v2 修 2 P0/6 P1/8 P2，
+v2→v3 修 3 P1/7 P2，v3 终审「可进入实施规划」，另含 2 条文案级备注已随 v3 一并修）
 
 ## 背景
 
@@ -269,8 +270,9 @@ cline listModels（内置清单）进聚合池即成为候选（依赖接缝 1 �
 ① 状态码匹配 `failed\s+(\d{3})` 形式（**裸「429 字样」不命中**，须写成
 `failed 429`）**或**命中 RATE_LIMIT_PATTERNS 关键词（auto-router.ts:47-55：
 `rate limit` / `too many requests` / `quota` / `resource exhausted` 等）；
-② 重置信息为 ISO 时间或 `retry-after N` 文本。任一不满足，池尽→模型冷却→
-failover 闭环静默失效。此契约为 ClineProvider 测试断言项。
+② 重置信息为 ISO 时间或 `retry-after N` 文本。**① 不满足 → 闭环失效**
+（classifyFailure 归 upstream、mark 空转）；**② 缺失 → 降级为 60s 默认冷却**
+（auto-router.ts:94-96，闭环仍通但精度损失）。此契约为 ClineProvider 测试断言项。
 
 ### 冒泡冷却的键语义（v2 修订，对应审查 P1-6）
 
