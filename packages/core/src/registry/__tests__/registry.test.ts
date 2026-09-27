@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { CredentialRuntime } from '../../credentials/runtime.js';
 import type { BaseProvider } from '../../providers/base.js';
 import { ProviderRegistry, resetAutoPoolCursor } from '../../registry.js';
 import type { AppConfig, ModelInfo, ProviderId } from '../../types.js';
@@ -526,5 +527,159 @@ describe('ProviderRegistry queue-full retry', () => {
       /400/,
     );
     assert.equal(calls, 1);
+  });
+});
+
+interface StubRuntimeResult {
+  runtime: CredentialRuntime;
+  getCalls: () => number;
+}
+
+function stubRuntime(active: boolean): StubRuntimeResult {
+  let getCalls = 0;
+  const runtime: CredentialRuntime = {
+    async getPool() {
+      getCalls += 1;
+      return {
+        accounts: active
+          ? [
+              {
+                id: 'acc-1',
+                label: 'a@example.com',
+                status: 'active' as const,
+                addedAt: 1,
+                payload: {},
+              },
+            ]
+          : [],
+      };
+    },
+    async upsertAccount() {},
+    async removeAccount() {},
+    async saveSettings() {},
+    hasActiveAccounts: () => active,
+    nextAccount: () => null,
+    reportRateLimit() {},
+    reportInvalid() {},
+    reportSuccess() {},
+    clearAccountCooldowns: () => 0,
+    listAccountCooldowns: () => [],
+    recordUsage() {},
+    snapshotUsage: () => [],
+  };
+  return { runtime, getCalls: () => getCalls };
+}
+
+function clineConfig(enabled: boolean): AppConfig {
+  return configWithProviders({
+    cline: { enabled, credentials: { apiKey: '' } },
+  });
+}
+
+describe('ProviderRegistry cline credential seams', () => {
+  it('gates getProvider on hasCredentials when the hook exists', () => {
+    const withAccounts = stubRuntime(true);
+    const registry = new ProviderRegistry(
+      clineConfig(true),
+      undefined,
+      undefined,
+      withAccounts.runtime,
+    );
+    const provider = registry.getProvider('cline');
+    assert.equal(provider.id, 'cline');
+    assert.equal(provider.hasCredentials?.(), true);
+    assert.equal(registry.getProvider('cline'), provider);
+
+    const empty = new ProviderRegistry(
+      clineConfig(true),
+      undefined,
+      undefined,
+      stubRuntime(false).runtime,
+    );
+    assert.throws(() => empty.getProvider('cline'), /has no available credentials/);
+
+    const disabled = new ProviderRegistry(
+      clineConfig(false),
+      undefined,
+      undefined,
+      stubRuntime(true).runtime,
+    );
+    assert.throws(() => disabled.getProvider('cline'), /not enabled/);
+  });
+
+  it('lists cline only when enabled and the pool has active accounts', () => {
+    const enabled = new ProviderRegistry(
+      clineConfig(true),
+      undefined,
+      undefined,
+      stubRuntime(true).runtime,
+    );
+    assert.deepEqual(enabled.listEnabledProviders(), ['cline']);
+
+    const noAccounts = new ProviderRegistry(
+      clineConfig(true),
+      undefined,
+      undefined,
+      stubRuntime(false).runtime,
+    );
+    assert.deepEqual(noAccounts.listEnabledProviders(), []);
+
+    const disabled = new ProviderRegistry(
+      clineConfig(false),
+      undefined,
+      undefined,
+      stubRuntime(true).runtime,
+    );
+    assert.deepEqual(disabled.listEnabledProviders(), []);
+  });
+
+  it('routes cline-prefixed and colon-qualified ids verbatim', () => {
+    const registry = new ProviderRegistry(
+      clineConfig(true),
+      undefined,
+      undefined,
+      stubRuntime(true).runtime,
+    );
+    const free = registry.resolveModel('cline-free/deepseek-v4.1-flash');
+    assert.equal(free.provider.id, 'cline');
+    assert.equal(free.modelId, 'cline-free/deepseek-v4.1-flash');
+
+    const slash = registry.resolveModel('cline/some-model');
+    assert.equal(slash.provider.id, 'cline');
+    assert.equal(slash.modelId, 'cline/some-model');
+
+    const colon = registry.resolveModel('cline:deepseek-v4-flash');
+    assert.equal(colon.provider.id, 'cline');
+    assert.equal(colon.modelId, 'deepseek-v4-flash');
+  });
+
+  it('falls back when cline is not configured', () => {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        cline: { enabled: false, credentials: { apiKey: '' } },
+        openrouter: { enabled: true, credentials: { apiKey: 'k' } },
+      }),
+    );
+    const resolved = registry.resolveModel('cline-free/deepseek-v4.1-flash');
+    assert.equal(resolved.provider.id, 'openrouter');
+    assert.equal(resolved.modelId, 'cline-free/deepseek-v4.1-flash');
+    assert.throws(() => registry.resolveModel('cline:deepseek-v4-flash'), /not enabled/);
+  });
+
+  it('warms the credential pool before aggregating models', async () => {
+    const stub = stubRuntime(true);
+    const registry = new ProviderRegistry(clineConfig(true), undefined, undefined, stub.runtime);
+    const result = await registry.listAllModels(true);
+    assert.ok(stub.getCalls() > 0, 'listAllModels must warm cline credentials first');
+    assert.deepEqual(result.succeededProviders, ['cline']);
+    assert.deepEqual(
+      result.models.filter((model) => model.provider === 'cline').map((model) => model.id),
+      [
+        'cline-free/deepseek-v4.1-flash',
+        'deepseek/deepseek-v4-flash',
+        'z-ai/glm-5.3-flash',
+        'poolside/laguna-s-2.1:free',
+      ],
+    );
   });
 });

@@ -1,5 +1,6 @@
 import { loadConfig } from './config/store.js';
 import { loadSnapshot, type ModelSnapshot } from './config/snapshot.js';
+import { getCredentialRuntime, type CredentialRuntime } from './credentials/runtime.js';
 import {
   BaseProvider,
   CohereProvider,
@@ -83,11 +84,13 @@ export class ProviderRegistry {
   private autoRouter: AutoRouter;
   private quotaTracker = new QuotaTracker();
   private noticeBuffer: SwitchNotice[] = [];
+  private warmPromise: Promise<void> | null = null;
 
   constructor(
     private config: AppConfig,
     private readonly loadModelSnapshot: () => Promise<ModelSnapshot> = loadSnapshot,
     private readonly queueRetry: RetryOnQueueFullOptions = {},
+    private readonly credentialRuntime?: CredentialRuntime,
   ) {
     this.autoRouter = new AutoRouter({
       getSettings: () => this.config.autoRoute,
@@ -101,7 +104,23 @@ export class ProviderRegistry {
 
   static async load(): Promise<ProviderRegistry> {
     const config = await loadConfig();
-    return new ProviderRegistry(config);
+    const registry = new ProviderRegistry(config);
+    await registry.warmCredentials().catch(() => undefined);
+    return registry;
+  }
+
+  async warmCredentials(): Promise<void> {
+    if (!this.config.providers.cline?.enabled) return;
+    if (!this.warmPromise) {
+      const runtime = this.credentialRuntimeFor('cline');
+      if (!runtime) return;
+      const promise = runtime.getPool('cline').then(() => undefined);
+      this.warmPromise = promise;
+      void promise.catch(() => {
+        if (this.warmPromise === promise) this.warmPromise = null;
+      });
+    }
+    return this.warmPromise;
   }
 
   getConfig(): AppConfig {
@@ -138,6 +157,19 @@ export class ProviderRegistry {
     if (!settings?.enabled) {
       throw new Error(`provider ${id} is not enabled`);
     }
+    if (id === 'ollama') {
+      if (!settings.credentials?.apiKey && !settings.credentials?.apiKeys?.length) {
+        throw new Error(`provider ${id} is missing api key`);
+      }
+      throw new Error('ollama provider not yet implemented');
+    }
+    const instance = this.instantiate(id);
+    if (instance.hasCredentials) {
+      if (!instance.hasCredentials()) {
+        throw new Error(`provider ${id} has no available credentials`);
+      }
+      return instance;
+    }
     if (
       id !== 'custom' &&
       !settings.credentials?.apiKey &&
@@ -145,13 +177,17 @@ export class ProviderRegistry {
     ) {
       throw new Error(`provider ${id} is missing api key`);
     }
-    if (id === 'ollama') {
-      throw new Error('ollama provider not yet implemented');
-    }
-    const Ctor = PROVIDER_CTORS[id];
-    const credentials = settings.credentials ?? { apiKey: '' };
+    return instance;
+  }
+
+  private instantiate(id: ProviderId): BaseProvider {
+    const cached = this.instances.get(id);
+    if (cached) return cached;
+    const settings = this.config.providers[id];
+    const Ctor = PROVIDER_CTORS[id as Exclude<ProviderId, 'ollama'>];
     const instance = new Ctor({
-      credentials,
+      credentials: settings?.credentials ?? { apiKey: '' },
+      credentialRuntime: this.credentialRuntimeFor(id),
       onResponse: (event) => this.quotaTracker.recordResponse(event),
       onUsage: (event) => {
         this.quotaTracker.recordUsage(event);
@@ -162,6 +198,12 @@ export class ProviderRegistry {
     });
     this.instances.set(id, instance);
     return instance;
+  }
+
+  private credentialRuntimeFor(id: ProviderId): CredentialRuntime | undefined {
+    if (this.credentialRuntime) return this.credentialRuntime;
+    if (id === 'cline') return getCredentialRuntime();
+    return undefined;
   }
 
   listEnabledProviders(): ProviderId[] {
@@ -177,6 +219,14 @@ export class ProviderRegistry {
         const hasLegacy = !!settings.credentials?.baseUrl;
         return hasSources || hasLegacy;
       }
+      const ctor = PROVIDER_CTORS[id];
+      if (typeof ctor.prototype.hasCredentials === 'function') {
+        try {
+          return this.instantiate(id).hasCredentials?.() ?? false;
+        } catch {
+          return false;
+        }
+      }
       return !!settings.credentials?.apiKey;
     });
   }
@@ -185,6 +235,7 @@ export class ProviderRegistry {
     if (!force && this.modelsCache && Date.now() - this.cacheAt < MODELS_CACHE_TTL_MS) {
       return this.modelsCache;
     }
+    await this.warmCredentials().catch(() => undefined);
     const enabled = this.listEnabledProviders();
     const results = await Promise.allSettled(
       enabled.map(async (id) => this.getProvider(id).listModels()),
@@ -332,6 +383,17 @@ export class ProviderRegistry {
       }
     }
     // heuristic
+    if (
+      modelId.startsWith('cline-free/') ||
+      modelId.startsWith('cline/') ||
+      modelId.startsWith('cline-pass/')
+    ) {
+      try {
+        return { provider: this.getProvider('cline'), modelId };
+      } catch {
+        // fallthrough
+      }
+    }
     if (modelId.startsWith('gemini') || modelId.startsWith('models/gemini')) {
       return { provider: this.getProvider('gemini'), modelId: modelId.replace(/^models\//, '') };
     }

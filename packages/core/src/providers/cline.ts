@@ -1,20 +1,672 @@
-import type { ChatResponse, ModelInfo, ProviderId, StreamChunk } from '../types.js';
+// Ported from cline-free (MIT), https://github.com/Patrick-mufeng/cline-free
+import type { CredentialRuntime } from '../credentials/runtime.js';
+import { getCredentialRuntime } from '../credentials/runtime.js';
+import { redact } from '../credentials/redact.js';
+import type {
+  ChatRequest,
+  ChatResponse,
+  CredentialAccountEntry,
+  ModelInfo,
+  ProviderId,
+  StreamChunk,
+} from '../types.js';
 import { BaseProvider } from './base.js';
+import { toOpenAIMessages } from './openai-messages.js';
+
+const REFRESH_URL = 'https://api.cline.bot/api/v1/auth/refresh';
+const CHAT_URL = 'https://api.cline.bot/api/v1/chat/completions';
+
+const BUILTIN_MODELS = [
+  'cline-free/deepseek-v4.1-flash',
+  'deepseek/deepseek-v4-flash',
+  'z-ai/glm-5.3-flash',
+  'poolside/laguna-s-2.1:free',
+] as const;
+
+const FORCE_STREAM_PREFIXES = ['deepseek/', 'cline-free/', 'cline-pass/'];
+
+const REFRESH_SKEW_MS = 60_000;
+const MAX_PARSED_COOLDOWN_MS = 24 * 3_600_000;
+
+const CLINE_FINGERPRINT_HEADERS: Record<string, string> = {
+  'User-Agent': 'Cline/3.0.47',
+  'HTTP-Referer': 'https://cline.bot',
+  'X-Title': 'Cline',
+  'X-IS-MULTIROOT': 'false',
+  'X-CLIENT-TYPE': 'cline-sdk',
+  'X-CLIENT-VERSION': '3.0.47',
+  'X-PLATFORM': 'terminal',
+  'X-PLATFORM-VERSION': '3.0.47',
+  'X-CORE-VERSION': '0.0.66',
+};
+
+const DURATION_RE = /(\d+)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b/g;
+const RESETS_AT_RE = /"resets_at"\s*:\s*"([^"]+)"/;
+const FREE_LIMIT_MARKER = 'free limit reached on model';
+const RETRY_IN_MARKER = 'try again in ';
+
+const FINISH_REASONS = new Set(['stop', 'length', 'tool_calls', 'content_filter']);
+
+type FinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
+
+export type ClineErrorKind = 'rate_limit' | 'invalid' | 'fatal' | 'network';
+
+export class ClineError extends Error {
+  readonly kind: ClineErrorKind;
+  readonly status?: number;
+  readonly resetAt?: number;
+
+  constructor(
+    message: string,
+    options: { kind: ClineErrorKind; status?: number; resetAt?: number },
+  ) {
+    super(redact(message));
+    this.name = 'ClineError';
+    this.kind = options.kind;
+    this.status = options.status;
+    this.resetAt = options.resetAt;
+  }
+}
+
+interface SseFrame {
+  id?: string;
+  created?: number;
+  delta: string;
+  finish?: FinishReason;
+  usage?: ChatResponse['usage'];
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function unwrapUpstream(value: unknown): Record<string, unknown> | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const nested = asRecord(record.data);
+  if (nested && Array.isArray(nested.choices)) return nested;
+  return record;
+}
+
+function finishReason(value: unknown): FinishReason {
+  return typeof value === 'string' && FINISH_REASONS.has(value) ? (value as FinishReason) : null;
+}
+
+function normalizeUsage(value: unknown): ChatResponse['usage'] {
+  const record = asRecord(value);
+  if (!record) return undefined;
+  const usage: NonNullable<ChatResponse['usage']> = {};
+  if (typeof record.prompt_tokens === 'number') usage.prompt_tokens = record.prompt_tokens;
+  if (typeof record.completion_tokens === 'number') {
+    usage.completion_tokens = record.completion_tokens;
+  }
+  if (typeof record.total_tokens === 'number') usage.total_tokens = record.total_tokens;
+  const details = asRecord(record.prompt_tokens_details);
+  if (details && typeof details.cached_tokens === 'number') {
+    usage.prompt_tokens_details = { cached_tokens: details.cached_tokens };
+  }
+  return usage;
+}
+
+function parseExpiryMs(raw: string | undefined, now = Date.now()): number {
+  if (raw && raw.trim()) {
+    const trimmed = raw.trim();
+    if (/^\d+$/.test(trimmed)) {
+      const numeric = Number(trimmed);
+      if (Number.isFinite(numeric) && numeric > 0) return numeric;
+    }
+    const parsed = Date.parse(trimmed);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return now + 10 * 60 * 1000;
+}
+
+function parseDurationMs(tail: string): number {
+  let total = 0;
+  DURATION_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = DURATION_RE.exec(tail)) !== null) {
+    const count = Number(match[1]);
+    if (!Number.isFinite(count) || count <= 0) continue;
+    const unit = match[2] ?? '';
+    if (unit.startsWith('h')) total += count * 3_600_000;
+    else if (unit.startsWith('m')) total += count * 60_000;
+    else total += count * 1_000;
+  }
+  return total;
+}
+
+function nextLocalMidnight(now: number): number {
+  const date = new Date(now);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1, 0, 0, 0, 0).getTime();
+}
+
+function framesFromText(text: string): SseFrame[] {
+  const frames: SseFrame[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith('data:')) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      continue;
+    }
+    const data = unwrapUpstream(parsed);
+    if (!data) continue;
+    const choices = data.choices;
+    if (!Array.isArray(choices) || choices.length === 0) continue;
+    const choice = asRecord(choices[0]);
+    if (!choice) continue;
+    const delta = asRecord(choice.delta) ?? asRecord(choice.message) ?? {};
+    const content =
+      typeof delta.content === 'string' && delta.content
+        ? delta.content
+        : typeof delta.reasoning === 'string'
+          ? delta.reasoning
+          : '';
+    const frame: SseFrame = { delta: content };
+    if (typeof parsed === 'object' && parsed !== null) {
+      const envelope = parsed as Record<string, unknown>;
+      if (typeof envelope.id === 'string') frame.id = envelope.id;
+      if (typeof envelope.created === 'number') frame.created = envelope.created;
+    }
+    const finish = finishReason(choice.finish_reason);
+    if (finish) frame.finish = finish;
+    const usage = normalizeUsage(data.usage);
+    if (usage) frame.usage = usage;
+    frames.push(frame);
+  }
+  return frames;
+}
 
 export class ClineProvider extends BaseProvider {
   readonly id: ProviderId = 'cline';
   readonly displayName = 'Cline';
 
+  private readonly refreshChains = new Map<string, Promise<string>>();
+  private sessionSeq = 0;
+
+  override hasCredentials(): boolean {
+    return this.runtime().hasActiveAccounts('cline');
+  }
+
   async listModels(): Promise<ModelInfo[]> {
-    return [];
+    return BUILTIN_MODELS.map((id): ModelInfo => ({
+      id,
+      provider: 'cline',
+      displayName: id,
+      free: true,
+      capabilities: ['text'],
+    }));
   }
 
-  async chat(): Promise<ChatResponse> {
-    throw new Error('cline provider not yet implemented');
+  async chat(req: ChatRequest): Promise<ChatResponse> {
+    return this.withSwitches(req.model, (account, forceRefresh) =>
+      this.chatAttempt(account, req, forceRefresh),
+    );
   }
 
-  async *stream(): AsyncIterable<StreamChunk> {
-    yield* [];
-    throw new Error('cline provider not yet implemented');
+  async *stream(req: ChatRequest): AsyncIterable<StreamChunk> {
+    const runtime = this.runtime();
+    const opened = await this.withSwitches(req.model, async (account, forceRefresh) => ({
+      accountId: account.id,
+      response: await this.openStream(account, req, forceRefresh),
+    }));
+    const { accountId, response } = opened;
+    let usage: ChatResponse['usage'];
+    try {
+      for await (const frame of this.parseSSE(response)) {
+        if (frame.usage) usage = frame.usage;
+        yield {
+          id: frame.id ?? `cline-${Date.now()}`,
+          model: req.model,
+          created: frame.created ?? Math.floor(Date.now() / 1000),
+          delta: frame.delta,
+          finish_reason: frame.finish ?? null,
+        };
+      }
+    } catch (error) {
+      runtime.recordUsage('cline', accountId, req.model, {
+        requests: 0,
+        error: errorText(error),
+      });
+      throw error;
+    }
+    runtime.reportSuccess('cline', accountId);
+    this.observeUsage(req.model, usage);
+    runtime.recordUsage('cline', accountId, req.model, {
+      promptTokens: usage?.prompt_tokens,
+      completionTokens: usage?.completion_tokens,
+      requests: 1,
+    });
+  }
+
+  private runtime(): CredentialRuntime {
+    return this.ctx.credentialRuntime ?? getCredentialRuntime();
+  }
+
+  private async withSwitches<T>(
+    model: string,
+    attempt: (account: CredentialAccountEntry, forceRefresh: boolean) => Promise<T>,
+  ): Promise<T> {
+    const runtime = this.runtime();
+    const pool = await runtime.getPool('cline');
+    const maxSwitches = Math.min(pool.accounts.length, 3);
+    const tried = new Set<string>();
+    let lastError: unknown = null;
+    let invalidCount = 0;
+    for (let step = 0; step <= maxSwitches; step += 1) {
+      const account = runtime.nextAccount('cline', model);
+      if (!account || tried.has(account.id)) break;
+      tried.add(account.id);
+      try {
+        return await attempt(account, false);
+      } catch (error) {
+        if (error instanceof ClineError && error.kind === 'fatal') throw error;
+        lastError = error;
+        if (error instanceof ClineError) {
+          if (error.kind === 'rate_limit') {
+            runtime.reportRateLimit('cline', account.id, model, error.resetAt);
+          } else if (error.kind === 'invalid') {
+            runtime.reportInvalid('cline', account.id);
+            invalidCount += 1;
+          }
+        }
+      }
+    }
+    throw this.poolExhaustedError(model, lastError, tried.size, invalidCount, pool, runtime);
+  }
+
+  private poolExhaustedError(
+    model: string,
+    lastError: unknown,
+    triedCount: number,
+    invalidCount: number,
+    pool: { accounts: CredentialAccountEntry[] },
+    runtime: CredentialRuntime,
+  ): Error {
+    if (
+      lastError instanceof ClineError &&
+      lastError.kind === 'invalid' &&
+      invalidCount > 0 &&
+      invalidCount === triedCount
+    ) {
+      return new ClineError(
+        `cline failed ${lastError.status ?? 401}: ${triedCount} 个账号凭据失效，请重新登录`,
+        { kind: 'invalid', status: lastError.status ?? 401 },
+      );
+    }
+    if (lastError instanceof Error) return lastError;
+    if (pool.accounts.length === 0) {
+      return new ClineError('cline has no available credentials', { kind: 'fatal' });
+    }
+    const resets: number[] = [];
+    for (const account of pool.accounts) {
+      const cooling = runtime
+        .listAccountCooldowns('cline', account.id)
+        .find((entry) => entry.model === model);
+      if (cooling) resets.push(cooling.resetAt);
+    }
+    const earliest = resets.length > 0 ? Math.min(...resets) : undefined;
+    const iso = earliest ? `, reset at ${new Date(earliest).toISOString()}` : '';
+    return new ClineError(
+      `cline failed 429 rate limit: all ${pool.accounts.length} accounts are cooling for ${model}${iso}`,
+      { kind: 'rate_limit', status: 429, resetAt: earliest },
+    );
+  }
+
+  private async getAccessToken(
+    account: CredentialAccountEntry,
+    forceRefresh: boolean,
+  ): Promise<string> {
+    const cached = account.payload.accessToken;
+    if (!forceRefresh && cached) {
+      const expiry = parseExpiryMs(account.payload.expiresAt);
+      if (Date.now() < expiry - REFRESH_SKEW_MS) return cached;
+    }
+    const inFlight = this.refreshChains.get(account.id);
+    if (inFlight && !forceRefresh) return inFlight;
+    const chain = this.refreshChain(account);
+    this.refreshChains.set(account.id, chain);
+    try {
+      return await chain;
+    } finally {
+      if (this.refreshChains.get(account.id) === chain) this.refreshChains.delete(account.id);
+    }
+  }
+
+  private async refreshChain(account: CredentialAccountEntry): Promise<string> {
+    const runtime = this.runtime();
+    let response: Response;
+    try {
+      response = await this.fetch(REFRESH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          refreshToken: account.payload.refreshToken,
+          grantType: 'refresh_token',
+        }),
+      });
+    } catch (error) {
+      throw new ClineError(`cline refresh failed: ${errorText(error)}`, { kind: 'network' });
+    }
+    if (!response.ok) {
+      const permanent = response.status === 401 || response.status === 403;
+      if (permanent) {
+        runtime.reportInvalid('cline', account.id);
+        throw new ClineError(`cline refresh failed ${response.status}: 账号凭据失效，请重新登录`, {
+          kind: 'invalid',
+          status: response.status,
+        });
+      }
+      const detail = (await response.text().catch(() => '')).slice(0, 200);
+      throw new ClineError(`cline refresh failed ${response.status}: ${detail}`, {
+        kind: 'network',
+        status: response.status,
+      });
+    }
+    const parsed = await response.json().catch(() => null);
+    const envelope = asRecord(parsed);
+    const data = (envelope && (asRecord(envelope.data) ?? envelope)) ?? null;
+    if (!data) {
+      throw new ClineError('cline refresh failed: upstream returned an unexpected body', {
+        kind: 'network',
+      });
+    }
+    const accessToken = data.accessToken;
+    if (typeof accessToken !== 'string' || !accessToken) {
+      throw new ClineError('cline refresh failed: upstream returned no access token', {
+        kind: 'network',
+      });
+    }
+    const payload: Record<string, string> = { ...account.payload, accessToken };
+    const rotated = typeof data.refreshToken === 'string' ? data.refreshToken.trim() : '';
+    if (rotated && rotated !== account.payload.refreshToken) payload.refreshToken = rotated;
+    if (typeof data.expiresAt === 'string' || typeof data.expiresAt === 'number') {
+      payload.expiresAt = String(data.expiresAt);
+    }
+    const userInfo = asRecord(data.userInfo);
+    const email = userInfo && typeof userInfo.email === 'string' ? userInfo.email.trim() : '';
+    if (email && !payload.email) payload.email = email;
+    await runtime.upsertAccount('cline', { ...account, payload });
+    return accessToken;
+  }
+
+  private nextSessionId(): string {
+    this.sessionSeq += 1;
+    return `sess_${Date.now()}_${this.sessionSeq}`;
+  }
+
+  private buildHeaders(sessionId: string, token: string): Record<string, string> {
+    return {
+      Authorization: `Bearer workos:${token}`,
+      'Content-Type': 'application/json',
+      ...CLINE_FINGERPRINT_HEADERS,
+      'X-Task-ID': sessionId,
+    };
+  }
+
+  private buildBody(
+    req: ChatRequest,
+    sessionId: string,
+    sendStream: boolean,
+  ): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      model: req.model,
+      session_id: sessionId,
+      reasoning_effort: 'high',
+      messages: toOpenAIMessages(req.messages),
+    };
+    if (sendStream) body.stream = true;
+    if (req.temperature !== undefined) body.temperature = req.temperature;
+    if (req.top_p !== undefined) body.top_p = req.top_p;
+    if (req.stop !== undefined) body.stop = req.stop;
+    return body;
+  }
+
+  private async chatAttempt(
+    account: CredentialAccountEntry,
+    req: ChatRequest,
+    forceRefresh: boolean,
+  ): Promise<ChatResponse> {
+    const runtime = this.runtime();
+    const token = await this.getAccessToken(account, forceRefresh);
+    const sessionId = this.nextSessionId();
+    const sendStream =
+      req.stream === true || FORCE_STREAM_PREFIXES.some((prefix) => req.model.startsWith(prefix));
+    const body = this.buildBody(req, sessionId, sendStream);
+    let response: Response;
+    try {
+      response = await this.fetch(CHAT_URL, {
+        method: 'POST',
+        headers: this.buildHeaders(sessionId, token),
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      throw new ClineError(`cline chat failed: ${errorText(error)}`, { kind: 'network' });
+    }
+    this.observeResponse(req.model, response);
+    try {
+      await this.ensureHttpOk('chat', response, req.model);
+    } catch (error) {
+      if (error instanceof ClineError && error.status === 401 && !forceRefresh) {
+        return this.chatAttempt(account, req, true);
+      }
+      throw error;
+    }
+    const contentType = response.headers.get('content-type') ?? '';
+    const chatResponse =
+      sendStream || contentType.includes('text/event-stream')
+        ? await this.aggregateSSE(response, req.model)
+        : await this.parseJSONResponse(response, req.model);
+    runtime.reportSuccess('cline', account.id);
+    this.observeUsage(req.model, chatResponse.usage);
+    runtime.recordUsage('cline', account.id, req.model, {
+      promptTokens: chatResponse.usage?.prompt_tokens,
+      completionTokens: chatResponse.usage?.completion_tokens,
+      requests: 1,
+    });
+    return chatResponse;
+  }
+
+  private async openStream(
+    account: CredentialAccountEntry,
+    req: ChatRequest,
+    forceRefresh: boolean,
+  ): Promise<Response> {
+    const token = await this.getAccessToken(account, forceRefresh);
+    const sessionId = this.nextSessionId();
+    const body = this.buildBody(req, sessionId, true);
+    let response: Response;
+    try {
+      response = await this.fetch(CHAT_URL, {
+        method: 'POST',
+        headers: this.buildHeaders(sessionId, token),
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      throw new ClineError(`cline stream failed: ${errorText(error)}`, { kind: 'network' });
+    }
+    this.observeResponse(req.model, response);
+    try {
+      await this.ensureHttpOk('stream', response, req.model);
+    } catch (error) {
+      if (error instanceof ClineError && error.status === 401 && !forceRefresh) {
+        return this.openStream(account, req, true);
+      }
+      throw error;
+    }
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('text/event-stream')) {
+      await response.text().catch(() => '');
+      throw new ClineError('cline stream failed: upstream did not return an event stream', {
+        kind: 'network',
+      });
+    }
+    return response;
+  }
+
+  private async ensureHttpOk(
+    op: 'chat' | 'stream',
+    response: Response,
+    model: string,
+  ): Promise<void> {
+    if (response.ok) return;
+    const status = response.status;
+    if (status === 401) {
+      throw new ClineError(`cline ${op} failed 401: access token rejected`, {
+        kind: 'invalid',
+        status,
+      });
+    }
+    if (status === 429) {
+      const text = await response.text().catch(() => '');
+      throw this.rateLimitError(op, response, text, model);
+    }
+    const detail = (await response.text().catch(() => '')).slice(0, 300);
+    if (status === 403) {
+      throw new ClineError(`cline ${op} failed 403: ${detail}`, { kind: 'invalid', status });
+    }
+    if (status >= 500) {
+      throw new ClineError(`cline ${op} failed ${status}: ${detail}`, { kind: 'network', status });
+    }
+    throw new ClineError(`cline ${op} failed ${status}: ${detail}`, { kind: 'fatal', status });
+  }
+
+  private rateLimitError(
+    op: 'chat' | 'stream',
+    response: Response,
+    text: string,
+    model: string,
+  ): ClineError {
+    const resetAt = this.parseResetAt(response, text);
+    const iso = resetAt ? `; reset at ${new Date(resetAt).toISOString()}` : '';
+    const detail = text ? `; detail ${text.slice(0, 300)}` : '';
+    return new ClineError(`cline ${op} failed 429 rate limit on ${model}${detail}${iso}`, {
+      kind: 'rate_limit',
+      status: 429,
+      resetAt,
+    });
+  }
+
+  private parseResetAt(response: Response, text: string): number | undefined {
+    const now = Date.now();
+    const header = response.headers.get('retry-after');
+    if (header) {
+      const trimmed = header.trim();
+      const seconds = Number(trimmed);
+      if (Number.isFinite(seconds) && seconds > 0) {
+        return this.clampReset(now + seconds * 1_000, now);
+      }
+      const date = Date.parse(trimmed);
+      if (Number.isFinite(date) && date > now) return this.clampReset(date, now);
+    }
+    const field = text.match(RESETS_AT_RE);
+    if (field?.[1]) {
+      const ts = Date.parse(field[1]);
+      if (Number.isFinite(ts) && ts > now) return this.clampReset(ts, now);
+    }
+    const lower = text.toLowerCase();
+    const marker = lower.indexOf(RETRY_IN_MARKER);
+    if (marker >= 0) {
+      const duration = parseDurationMs(
+        text.slice(marker + RETRY_IN_MARKER.length, marker + RETRY_IN_MARKER.length + 80),
+      );
+      if (duration > 0) return now + Math.min(duration, MAX_PARSED_COOLDOWN_MS);
+    }
+    if (lower.includes(FREE_LIMIT_MARKER)) return nextLocalMidnight(now);
+    return undefined;
+  }
+
+  private clampReset(ts: number, now: number): number | undefined {
+    if (ts <= now) return undefined;
+    if (ts - now > MAX_PARSED_COOLDOWN_MS) return now + MAX_PARSED_COOLDOWN_MS;
+    return ts;
+  }
+
+  private async parseJSONResponse(response: Response, model: string): Promise<ChatResponse> {
+    let parsed: unknown;
+    try {
+      parsed = await response.json();
+    } catch {
+      throw new ClineError('cline chat failed: upstream returned a non-JSON body', {
+        kind: 'network',
+      });
+    }
+    const data = unwrapUpstream(parsed);
+    if (!data) {
+      throw new ClineError('cline chat failed: upstream returned an unexpected body', {
+        kind: 'network',
+      });
+    }
+    const choices = Array.isArray(data.choices) ? data.choices : [];
+    const choice = asRecord(choices[0]) ?? {};
+    const message = asRecord(choice.message) ?? {};
+    const rawContent = typeof message.content === 'string' ? message.content.trim() : '';
+    const reasoning = typeof message.reasoning === 'string' ? message.reasoning : '';
+    return {
+      id: typeof data.id === 'string' ? data.id : `cline-${Date.now()}`,
+      model,
+      created: typeof data.created === 'number' ? data.created : Math.floor(Date.now() / 1000),
+      content: rawContent ? String(message.content) : reasoning,
+      finish_reason: finishReason(choice.finish_reason),
+      usage: normalizeUsage(data.usage),
+    };
+  }
+
+  private async aggregateSSE(response: Response, model: string): Promise<ChatResponse> {
+    let content = '';
+    let finish: FinishReason = null;
+    let usage: ChatResponse['usage'];
+    let id: string | undefined;
+    let created: number | undefined;
+    for await (const frame of this.parseSSE(response)) {
+      if (!id && frame.id) id = frame.id;
+      if (created === undefined && frame.created !== undefined) created = frame.created;
+      content += frame.delta;
+      if (frame.finish) finish = frame.finish;
+      if (frame.usage) usage = frame.usage;
+    }
+    return {
+      id: id ?? `cline-${Date.now()}`,
+      model,
+      created: created ?? Math.floor(Date.now() / 1000),
+      content,
+      finish_reason: finish,
+      ...(usage ? { usage } : {}),
+    };
+  }
+
+  private async *parseSSE(response: Response): AsyncGenerator<SseFrame> {
+    const body = response.body;
+    if (!body) {
+      throw new ClineError('cline stream failed: upstream returned an empty body', {
+        kind: 'network',
+      });
+    }
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split(/\r?\n\r?\n/);
+      buffer = parts.pop() ?? '';
+      for (const part of parts) {
+        for (const frame of framesFromText(part)) yield frame;
+      }
+    }
+    if (buffer.trim()) {
+      for (const frame of framesFromText(buffer)) yield frame;
+    }
   }
 }

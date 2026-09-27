@@ -12,6 +12,7 @@ export { isQueueFullError, retryOnQueueFull, type RetryOnQueueFullOptions } from
 export { extractMaxTokensLimit, isMaxTokensTooLargeError } from './max-tokens.js';
 export { looksVisionModelId, withVisionInput, isVisionCapable } from './vision.js';
 export { ProviderRegistry, resetAutoPoolCursor, type ListAllModelsResult } from './registry.js';
+export { redact } from './credentials/redact.js';
 export {
   getCredentialRuntime,
   createTestRuntime,

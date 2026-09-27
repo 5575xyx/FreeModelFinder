@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { CONFIG_DIR } from '../config/store.js';
 import type { CredentialPlatform } from '../types.js';
+import { redact } from './redact.js';
 
 export interface UsageRecordInput {
   promptTokens?: number;
@@ -33,13 +34,6 @@ interface UsageRecord {
 type UsageFileShape = Record<string, Record<string, UsageRecord>>;
 
 const DEFAULT_THROTTLE_MS = 5_000;
-
-function redactError(message: string): string {
-  return message
-    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]')
-    .replace(/(refresh_token=)[^&\s"']+/gi, '$1[REDACTED]')
-    .replace(/\b[A-Za-z0-9+/]{40,}={0,2}\b/g, '[REDACTED]');
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -111,7 +105,7 @@ export class UsageAggregator {
     record.requests += usage.requests ?? 1;
     record.promptTokens += usage.promptTokens ?? 0;
     record.completionTokens += usage.completionTokens ?? 0;
-    if (usage.error !== undefined) record.lastError = redactError(usage.error);
+    if (usage.error !== undefined) record.lastError = redact(usage.error);
     this.schedule();
   }
 
