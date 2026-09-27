@@ -7,7 +7,7 @@ import { ProviderIdSchema } from '../types.js';
 import type { AppConfig, GatewayKeyEntry, ProviderId, ProviderSettings } from '../types.js';
 import { decryptString, encryptString, looksEncrypted } from './crypto.js';
 
-function decryptSecret(payload: string, masterKey: Buffer): string {
+export function decryptSecret(payload: string, masterKey: Buffer): string {
   let current = payload;
   // Older releases could persist a ciphertext that had already been encrypted
   // once. Unwrap a small, bounded number of legacy layers so the UI never
@@ -80,6 +80,7 @@ const DEFAULT_CONFIG: AppConfig = {
     kilo: { enabled: false },
     agnes: { enabled: false },
     custom: { enabled: false },
+    cline: { enabled: false },
   },
   gateway: {
     requireAuth: false,
@@ -101,7 +102,7 @@ async function ensureDir(path: string): Promise<void> {
   }
 }
 
-async function loadMasterKey(): Promise<Buffer> {
+export async function loadMasterKey(): Promise<Buffer> {
   await ensureDir(CONFIG_DIR);
   try {
     const encoded = (await readFile(MASTER_KEY_PATH, 'utf8')).trim();

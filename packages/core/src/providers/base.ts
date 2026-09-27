@@ -1,3 +1,4 @@
+import type { CredentialRuntime } from '../credentials/runtime.js';
 import type {
   ChatRequest,
   ChatResponse,
@@ -14,6 +15,7 @@ import type {
 
 export interface ProviderContext {
   credentials: ProviderCredentials;
+  credentialRuntime?: CredentialRuntime;
   fetchImpl?: typeof fetch;
   onResponse?: (event: {
     provider: ProviderId;
@@ -87,6 +89,8 @@ export abstract class BaseProvider {
   abstract listModels(): Promise<ModelInfo[]>;
   abstract chat(req: ChatRequest): Promise<ChatResponse>;
   abstract stream(req: ChatRequest): AsyncIterable<StreamChunk>;
+
+  hasCredentials?(): boolean;
 
   generateImage?(req: ImageGenerationRequest): Promise<ImageGenerationResponse>;
   generateVideo?(req: VideoGenerationRequest): Promise<VideoGenerationResponse>;

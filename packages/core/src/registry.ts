@@ -17,6 +17,7 @@ import {
   KiloProvider,
   AgnesProvider,
   AgnesIntlProvider,
+  ClineProvider,
 } from './providers/index.js';
 import type { ProviderContext } from './providers/base.js';
 import { QuotaTracker } from './quota.js';
@@ -54,6 +55,7 @@ const PROVIDER_CTORS: Record<
   agnes: AgnesProvider,
   'agnes-intl': AgnesIntlProvider,
   custom: CustomProvider,
+  cline: ClineProvider,
 };
 
 const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;

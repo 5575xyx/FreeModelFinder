@@ -17,6 +17,7 @@ export const ProviderIdSchema = z.enum([
   'agnes',
   'agnes-intl',
   'custom',
+  'cline',
 ]);
 export type ProviderId = z.infer<typeof ProviderIdSchema>;
 
@@ -286,6 +287,23 @@ export interface CallLogEntry {
   error?: string;
 }
 
+export type CredentialPlatform = 'cline';
+
+export interface CredentialAccountEntry {
+  id: string;
+  label?: string;
+  status: 'active' | 'invalid';
+  addedAt: number;
+  lastUsedAt?: number;
+  payload: Record<string, string>;
+}
+
+export interface CredentialPoolConfig {
+  accounts: CredentialAccountEntry[];
+  strategy?: 'round_robin' | 'fill' | 'random';
+  cooldownFallbackMinutes?: number;
+}
+
 export interface AppConfig {
   version: number;
   port: number;
@@ -294,6 +312,7 @@ export interface AppConfig {
   gateway?: GatewaySettings;
   autoRoute?: AutoRouteSettings;
   onboarding?: OnboardingState;
+  credentials?: Partial<Record<CredentialPlatform, CredentialPoolConfig>>;
 }
 
 // ── Multimodal Generation Types ──────────────────────────────────
