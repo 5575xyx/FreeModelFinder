@@ -79,7 +79,10 @@ class CredentialRuntimeImpl implements TestCredentialRuntime {
       onAccountChange: (platform, entry, kind) => this.onAccountChange(platform, entry, kind),
     });
     this.usage = new UsageAggregator({ dir: options.usageDir });
-    void this.ensureInit();
+    void this.ensureInit().catch((error: unknown) => {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[credentials] startup init failed: ${reason}`);
+    });
   }
 
   getPool(platform: CredentialPlatform): Promise<CredentialPoolConfig> {
@@ -127,12 +130,14 @@ class CredentialRuntimeImpl implements TestCredentialRuntime {
     settings: Partial<Omit<CredentialPoolConfig, 'accounts'>>,
   ): Promise<void> {
     await this.ensureInit();
-    const pool = this.pools.get(platform);
-    if (pool) {
-      if (settings.strategy !== undefined) pool.strategy = settings.strategy;
-      if (settings.cooldownFallbackMinutes !== undefined) {
-        pool.cooldownFallbackMinutes = settings.cooldownFallbackMinutes;
-      }
+    let pool = this.pools.get(platform);
+    if (!pool) {
+      pool = { accounts: [] };
+      this.pools.set(platform, pool);
+    }
+    if (settings.strategy !== undefined) pool.strategy = settings.strategy;
+    if (settings.cooldownFallbackMinutes !== undefined) {
+      pool.cooldownFallbackMinutes = settings.cooldownFallbackMinutes;
     }
     await this.enqueue(() => saveSettingsToStore(platform, settings));
   }
@@ -210,7 +215,13 @@ class CredentialRuntimeImpl implements TestCredentialRuntime {
 
   private ensureInit(): Promise<void> {
     if (!this.initPromise) {
-      this.initPromise = this.doInit();
+      const promise = this.doInit();
+      this.initPromise = promise;
+      void promise.catch(() => {
+        if (this.initPromise === promise) {
+          this.initPromise = null;
+        }
+      });
     }
     return this.initPromise;
   }
@@ -242,12 +253,16 @@ class CredentialRuntimeImpl implements TestCredentialRuntime {
       });
       return;
     }
+    this.markMetaDirty(platform, entry.id);
+  }
+
+  private markMetaDirty(platform: CredentialPlatform, accountId: string): void {
     let dirty = this.metaDirty.get(platform);
     if (!dirty) {
       dirty = new Set();
       this.metaDirty.set(platform, dirty);
     }
-    dirty.add(entry.id);
+    dirty.add(accountId);
     this.scheduleMetaFlush();
   }
 
@@ -271,10 +286,11 @@ class CredentialRuntimeImpl implements TestCredentialRuntime {
           ?.accounts.find((account) => account.id === accountId);
         if (!entry) continue;
         try {
-          await upsertAccountToStore(platform, entry);
+          await this.enqueue(() => upsertAccountToStore(platform, entry));
         } catch (error) {
           const reason = error instanceof Error ? error.message : String(error);
           console.warn(`[credentials] persisting account metadata failed: ${reason}`);
+          this.markMetaDirty(platform, accountId);
         }
       }
     }

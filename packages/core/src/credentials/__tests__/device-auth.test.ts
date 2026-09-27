@@ -100,4 +100,22 @@ describe('DeviceAuthManager state machine', () => {
     const b = manager.start({ check });
     assert.notEqual(a.flowId, b.flowId);
   });
+
+  it('regenerates when the id factory collides with a live flow', () => {
+    const ids = ['taken', 'taken', 'free'];
+    const manager = new DeviceAuthManager({ idFactory: () => ids.shift() ?? 'exhausted' });
+    const check = async () => ({ status: 'pending' as const });
+    const first = manager.start({ check });
+    assert.equal(first.flowId, 'taken');
+    const second = manager.start({ check });
+    assert.equal(second.flowId, 'free');
+    assert.notEqual(first.flowId, second.flowId);
+  });
+
+  it('throws instead of silently overwriting when collisions never resolve', () => {
+    const manager = new DeviceAuthManager({ idFactory: () => 'always-dup' });
+    const check = async () => ({ status: 'pending' as const });
+    manager.start({ check });
+    assert.throws(() => manager.start({ check }), /collision/);
+  });
 });

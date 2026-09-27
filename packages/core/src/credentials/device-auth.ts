@@ -30,6 +30,7 @@ export interface DeviceAuthManagerOptions {
 }
 
 const DEFAULT_TTL_MS = 600_000;
+const MAX_ID_ATTEMPTS = 3;
 
 interface StoredFlow {
   flow: DeviceAuthFlow;
@@ -42,7 +43,13 @@ export class DeviceAuthManager {
   constructor(private readonly options: DeviceAuthManagerOptions = {}) {}
 
   start(options: DeviceAuthStartOptions): DeviceAuthFlow {
-    const flowId = (this.options.idFactory ?? randomUUID)();
+    let flowId = this.generateId();
+    for (let attempt = 1; attempt < MAX_ID_ATTEMPTS && this.flows.has(flowId); attempt += 1) {
+      flowId = this.generateId();
+    }
+    if (this.flows.has(flowId)) {
+      throw new Error('device auth flow id collision');
+    }
     const ttlMs = options.expiresInMs ?? this.options.ttlMs ?? DEFAULT_TTL_MS;
     const flow: DeviceAuthFlow = {
       flowId,
@@ -81,5 +88,9 @@ export class DeviceAuthManager {
 
   private now(): number {
     return this.options.now ? this.options.now() : Date.now();
+  }
+
+  private generateId(): string {
+    return (this.options.idFactory ?? randomUUID)();
   }
 }

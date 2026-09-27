@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, beforeEach, describe, it } from 'node:test';
@@ -196,5 +196,62 @@ describe('CredentialRuntime lifecycle', () => {
     await first.getPool('cline');
     const second = getCredentialRuntime();
     assert.equal(first, second);
+  });
+
+  it('survives a corrupt config at startup and recovers after the disk is fixed', async () => {
+    await writeFile(CONFIG_PATH, '{"version":2,', { mode: 0o600 });
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => {
+      rejections.push(reason);
+    };
+    process.on('unhandledRejection', onRejection);
+    try {
+      const runtime = createTestRuntime({ throttleMs: 60_000 });
+      await assert.rejects(() => runtime.getPool('cline'));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(rejections.length, 0);
+
+      await writeFile(CONFIG_PATH, JSON.stringify({ version: 2, port: 11435, providers: {} }), {
+        mode: 0o600,
+      });
+      const pool = await runtime.getPool('cline');
+      assert.deepEqual(pool, { accounts: [] });
+      await runtime.upsertAccount('cline', account({ id: 'recovered' }));
+      assert.equal(runtime.hasActiveAccounts('cline'), true);
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+  });
+
+  it('keeps saveSettings visible in memory before and after upsert', async () => {
+    const runtime = createTestRuntime({ throttleMs: 60_000 });
+    await runtime.saveSettings('cline', { strategy: 'fill', cooldownFallbackMinutes: 4 });
+
+    const pool = await runtime.getPool('cline');
+    assert.equal(pool.strategy, 'fill');
+    assert.equal(pool.cooldownFallbackMinutes, 4);
+
+    await runtime.upsertAccount('cline', account());
+    const after = await runtime.getPool('cline');
+    assert.equal(after.strategy, 'fill');
+    assert.equal(after.accounts.length, 1);
+
+    const persisted = (await readRawConfig()).credentials.cline;
+    assert.equal(persisted.strategy, 'fill');
+    assert.equal(persisted.accounts.length, 1);
+  });
+
+  it('keeps the disk clean when an account is removed after being marked dirty', async () => {
+    const runtime = createTestRuntime({ throttleMs: 60_000 });
+    await runtime.upsertAccount('cline', account({ id: 'gone' }));
+    await runtime.waitForPersist();
+
+    runtime.nextAccount('cline', 'model-x');
+    await runtime.removeAccount('cline', 'gone');
+    await runtime.waitForPersist();
+
+    const persisted = (await readRawConfig()).credentials.cline.accounts;
+    assert.deepEqual(persisted, []);
+    assert.equal(runtime.hasActiveAccounts('cline'), false);
   });
 });
