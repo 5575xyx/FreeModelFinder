@@ -20,6 +20,7 @@ export const ONBOARDING_ENVIRONMENT_KEYS: Readonly<
   cohere: ['COHERE_API_KEY'],
   huggingface: ['HF_TOKEN', 'HUGGINGFACE_API_KEY'],
   sensenova: ['SENSENOVA_API_KEY'],
+  qianfan: ['QIANFAN_API_KEY'],
   modelscope: ['MODELSCOPE_API_TOKEN', 'MODELSCOPE_TOKEN'],
   zhipu: ['ZHIPUAI_API_KEY'],
   nvidia: ['NVIDIA_API_KEY'],

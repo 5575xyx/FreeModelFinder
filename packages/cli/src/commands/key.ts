@@ -22,6 +22,11 @@ const KNOWN_PROVIDERS: Array<{ id: ProviderId; label: string; hint: string }> = 
   { id: 'cohere', label: 'Cohere', hint: 'https://dashboard.cohere.com/api-keys' },
   { id: 'huggingface', label: 'Hugging Face', hint: 'https://huggingface.co/settings/tokens' },
   { id: 'sensenova', label: 'SenseNova', hint: 'https://platform.sensenova.cn' },
+  {
+    id: 'qianfan',
+    label: 'Baidu Qianfan',
+    hint: 'https://console.bce.baidu.com/qianfan/ais/console/apiKey',
+  },
 ];
 
 export function keyCommand(dependencies: Partial<KeyCommandDependencies> = {}): Command {

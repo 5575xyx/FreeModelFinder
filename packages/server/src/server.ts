@@ -96,6 +96,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   cohere: 'Cohere',
   huggingface: 'Hugging Face',
   sensenova: 'SenseNova',
+  qianfan: 'Baidu Qianfan',
   custom: 'Custom',
 };
 

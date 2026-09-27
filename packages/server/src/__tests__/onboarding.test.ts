@@ -9,6 +9,7 @@ import {
   type ModelInfo,
 } from '@freemodelfinder/core';
 import type { FastifyInstance } from 'fastify';
+import { ONBOARDING_ENVIRONMENT_KEYS } from '../onboarding.js';
 import { createServer } from '../server.js';
 
 const localUiHeaders = {
@@ -94,6 +95,7 @@ describe('onboarding management API', () => {
       present: true,
     });
     assert.doesNotMatch(response.body, /environment-secret/);
+    assert.deepEqual(ONBOARDING_ENVIRONMENT_KEYS.qianfan, ['QIANFAN_API_KEY']);
   });
 
   it('rejects unsupported, empty and mismatched credentials without saving them', async () => {
