@@ -122,14 +122,22 @@ credentials?: Partial<Record<CredentialPlatform, CredentialPoolConfig>>;
 
 实测 `resolveModel`（registry.ts:285-403，审查复核属实）：
 
-| 输入形态                                    | 现有行为                                                      | 处理                                                                                       |
-| ------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `cline:deepseek/deepseek-v4-flash`          | 冒号分支 310-317 → PROVIDER_CTORS 硬路由                      | 注册 ctor 后天然可行（未配置直接报错，不兜底）                                             |
-| `cline-free/deepseek-v4-flash`（原生粘贴）  | 无冒号、启发式不命中 → 兜底 openrouter（402）                 | 启发式新增：剥 `cline-free/`、`cline/` 前缀 → cline provider（try/catch fallthrough 惯例） |
-| `deepseek/deepseek-v4-flash`（剥前缀裸 id） | `startsWith('deepseek')` → sensenova→modelscope 链（369-378） | 不裸露：对外规范 id 恒为 `cline:<上游原生id>`                                              |
+| 输入形态                                    | 现有行为                                                      | 处理                                                                                                                                      |
+| ------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `cline:deepseek/deepseek-v4-flash`          | 冒号分支 310-317 → PROVIDER_CTORS 硬路由                      | 注册 ctor 后天然可行（未配置直接报错，不兜底）                                                                                            |
+| `cline-free/deepseek-v4-flash`（原生粘贴）  | 无冒号、启发式不命中 → 兜底 openrouter（402）                 | 启发式识别 `cline-free/`、`cline/`（含 `cline-pass/`）前缀路由到 cline provider（try/catch fallthrough 惯例）；**modelId 原样保留发上游** |
+| `deepseek/deepseek-v4-flash`（剥前缀裸 id） | `startsWith('deepseek')` → sensenova→modelscope 链（369-378） | 不裸露：对外规范 id 恒为 `cline:<上游原生id>`                                                                                             |
 
-- **对外规范 id = `cline:<上游原生id>`**；Provider 内部只认剥净前缀的上游原生 id；
+- **对外规范 id = `cline:<上游原生id>`**（上游原生 id 自带 vendor 前缀，如
+  `cline:cline-free/deepseek-v4.1-flash`）；**Provider 与启发式路径一律把 modelId
+  原样透传上游**——前缀是上游 vendor/model id 的组成部分（worker.js
+  `normalizeModelId` 只 trim、原样发送；剥离会破坏上游路由。v3 修订：原稿
+  「剥前缀」「只认剥净前缀」表述与源码不符，以本条为准）；
 - 兼容意图：从 cline-free 迁移的用户粘贴原生模型名可直接命中。
+- **server/UI 拼接 `${provider}:${id}` 处**（server.ts:1044、ui models.ts:59）：
+  cline 的 id 已含 `cline:` 前缀，拼接时须防 `cline:cline:…` 双前缀（去重或
+  provider 内防御性剥一层）；裸上游 id 直入 resolveModel 会被 deepseek/glm 等
+  启发式抢占（实测），故规范 id 方案不可回退为裸 id。
 
 ## Token 生命周期与协议层
 
@@ -143,14 +151,15 @@ credentials?: Partial<Record<CredentialPlatform, CredentialPoolConfig>>;
 
 ### 移植清单（worker.js → providers/cline.ts，保留 MIT 版权头）
 
-| 移植项                                                | 说明                                                    |
-| ----------------------------------------------------- | ------------------------------------------------------- |
-| refreshToken→access 端点/字段/过期语义                | 逆向细节，逐函数对照源码                                |
-| 上游 chat 请求格式 + 双管道（direct/planner）渠道钉住 | 模型→管道映射照搬                                       |
-| 流式 SSE 解析与转换                                   | 已有逆向成果                                            |
-| 429/401/403 错误体解析 → 冷却时长/账号失效判定        | 输出喂给 cooling-map                                    |
-| 模型清单（三段式 enabled 集）                         | 首发内置精选清单（README 推荐 4 个起步），在线刷新留 S2 |
-| 重试放大语义                                          | 归 usage-aggregator 计数，UI 展示留 S2                  |
+| 移植项                                                | 说明                                                                                                                                                |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| refreshToken→access 端点/字段/过期语义                | 逆向细节，逐函数对照源码                                                                                                                            |
+| 上游 chat 请求格式 + 双管道（direct/planner）探测逻辑 | **无静态模型→管道映射表**（源码为运行时探测 + 控制台 per-model 配置，无 cfg 零注入）——移植探测逻辑；钉住配置属 Worker 控制台存储，不移植（v3 修订） |
+| 流式 SSE 解析与转换                                   | 已有逆向成果                                                                                                                                        |
+| 429/401/403 错误体解析 → 冷却时长/账号失效判定        | 输出喂给 cooling-map                                                                                                                                |
+| 200 空内容 → 该账号×模型冷却 30s 换号重试             | worker.js 已知质量问题对策（v3 裁决：移植，含测试）                                                                                                 |
+| 模型清单（三段式 enabled 集）                         | 首发内置精选清单（README 推荐 4 个起步），在线刷新留 S2                                                                                             |
+| 重试放大语义                                          | 归 usage-aggregator 计数（**含换号/失败的上游调用与 chat 失败 lastError**），UI 展示留 S2                                                           |
 
 **重写不移植**：Worker 特化 IO、控制台 HTML、其进程内存储——全部走我们的
 credential-store / account-pool / cooling-map。
@@ -241,6 +250,12 @@ UI 每 2.5s POST login/poll → pending 继续 | complete → 刷新账号列表
 cline listModels（内置清单）进聚合池即成为候选（依赖接缝 1 修通）；enabled 判定 =
 `config.providers.cline.enabled && 池内有 active 账号`；
 **池尽 429 → 冒泡为 auto-router 模型冷却 → failover**（复用现有机制）。
+
+> **启动暖机**（v3 修订，对应审查偏差 4）：server 不走 `ProviderRegistry.load()`
+> （server.ts:1407/1464 直接 `new`），而 runtime 的同步 API 在 init 完成前返回
+> false/null——**网关启动时必须 `await registry.warmCredentials()`**（core 已提供，
+> 挂在 load() 与 listAllModels；server 启动序列 Task 4 兑现），否则冷启动首查
+> `hasActiveAccounts` 假阴性、cline 被误判未配置。
 
 > **开关依赖**（v2 修订，对应审查 P2-13）：跨 provider failover 仅在
 > `autoRoute.enabled` 时生效（openai.ts:251、auto-router.ts:460，现状如此）；
