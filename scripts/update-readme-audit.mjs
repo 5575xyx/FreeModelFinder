@@ -28,7 +28,7 @@ const FREE_TYPE_BY_ID = {
   cohere: '免费 Trial/Production',
   huggingface: '实时零价端点',
   sensenova: '实时零价模型',
-  qianfan: '官方永久免费型号',
+  qianfan: '官方免费白名单（当前暂无免费型号）',
   kilo: '聚合免费模型',
   agnes: '官方免费模型',
   'agnes-intl': '官方免费模型',

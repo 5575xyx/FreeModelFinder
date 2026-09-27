@@ -313,7 +313,7 @@ describe('free provider catalogs', () => {
     assert.ok(models.every((model) => model.provider === 'agnes'));
   });
 
-  it('falls back to the audited ERNIE free list when the Qianfan catalog fails', async () => {
+  it('returns no models when the Qianfan catalog request fails', async () => {
     const provider = new QianfanProvider({
       credentials: { apiKey: 'test-key' },
       fetchImpl: (async () => {
@@ -321,22 +321,10 @@ describe('free provider catalogs', () => {
       }) as typeof fetch,
     });
     const models = await provider.listModels();
-    assert.deepEqual(
-      models.map((model) => model.id),
-      [
-        'ernie-speed-8k',
-        'ernie-speed-128k',
-        'ernie-lite-8k',
-        'ernie-lite-8k-0922',
-        'ernie-lite-128k',
-        'ernie-tiny',
-      ],
-    );
-    assert.ok(models.every((model) => model.free));
-    assert.ok(models.every((model) => model.provider === 'qianfan'));
+    assert.deepEqual(models, []);
   });
 
-  it('keeps only whitelisted Qianfan models from the dynamic catalog', async () => {
+  it('queries the dynamic Qianfan catalog but returns nothing while the free whitelist is empty', async () => {
     let requestedUrl = '';
     const provider = new QianfanProvider({
       credentials: { apiKey: 'test-key' },
@@ -353,39 +341,29 @@ describe('free provider catalogs', () => {
     });
     const models = await provider.listModels();
     assert.ok(requestedUrl.endsWith('/models'));
-    assert.deepEqual(
-      models.map((model) => model.id),
-      ['ERNIE-Speed-8k'],
-    );
-    assert.equal(models[0]!.displayName, 'ERNIE Speed 8K');
-    assert.ok(models.every((model) => model.free));
-    assert.ok(models.every((model) => model.provider === 'qianfan'));
+    assert.deepEqual(models, []);
   });
 
-  it('falls back to the static Qianfan list when no dynamic id matches', async () => {
+  it('returns no models when no whitelisted Qianfan id matches', async () => {
     const provider = new QianfanProvider({
       credentials: { apiKey: 'test-key' },
       fetchImpl: jsonFetch({ data: [{ id: 'ernie-5.0' }] }),
     });
     const models = await provider.listModels();
-    assert.equal(models.length, 6);
-    assert.ok(models.every((model) => model.free));
-    assert.ok(models.every((model) => model.provider === 'qianfan'));
+    assert.deepEqual(models, []);
   });
 
-  it('returns the static Qianfan list when no API key is configured', async () => {
+  it('returns no models and skips the network when no API key is configured', async () => {
     let called = false;
     const provider = new QianfanProvider({
       credentials: { apiKey: '' },
       fetchImpl: (async () => {
         called = true;
-        return jsonFetch({ data: [] })();
+        return jsonFetch({ data: [] })('/models');
       }) as typeof fetch,
     });
     const models = await provider.listModels();
-    assert.equal(models.length, 6);
+    assert.deepEqual(models, []);
     assert.equal(called, false);
-    assert.ok(models.every((model) => model.free));
-    assert.ok(models.every((model) => model.provider === 'qianfan'));
   });
 });

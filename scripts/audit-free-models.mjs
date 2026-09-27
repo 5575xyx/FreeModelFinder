@@ -114,10 +114,10 @@ const PROVIDER_META = [
     id: 'qianfan',
     display: 'Baidu Qianfan',
     envKeys: ['QIANFAN_API_KEY'],
-    freeType: '官方永久免费型号',
+    freeType: '官方免费白名单交集',
     freeBasis:
-      '官方公告永久免费的 ERNIE Speed / Lite 白名单，实时目录取交集（AppBuilder 已退役）；接口不可用时回退审核过的白名单',
-    risk: 'QPS 限速约 1 次/秒；免费清单与型号以官方政策为准，退役型号由交集自动剔除',
+      '实时目录取交集，仅收录官方公告永久免费的白名单型号；当前 Speed / Lite / Tiny 等旧免费型号已全部退役，暂无可用型号，新免费型号加入白名单即恢复',
+    risk: 'QPS 限速约 1 次/秒；免费与否以官方政策为准，退役型号由交集自动剔除',
   },
   {
     id: 'kilo',

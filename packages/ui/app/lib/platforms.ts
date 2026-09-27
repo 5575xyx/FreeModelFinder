@@ -46,7 +46,7 @@ export const SETTINGS_PROVIDERS = [
     label: '百度千帆 Baidu Qianfan',
     link: 'https://console.bce.baidu.com/qianfan/ais/console/apiKey',
     guide: 'https://cloud.baidu.com/doc/qianfan/s/rmh4stp0j',
-    hint: '官方公告永久免费的 ERNIE Speed / Lite 系列，QPS 限速约 1 次/秒',
+    hint: '免费白名单与官方实时目录取交集；当前暂无免费型号，上新自动接入',
   },
   {
     id: 'modelscope',

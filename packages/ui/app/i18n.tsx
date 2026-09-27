@@ -434,7 +434,7 @@ export const zh: Dict = {
   'platforms.huggingface.hint': '只显示上游标记为零价格的实时端点，普通按量模型会被排除',
   'platforms.sensenova.hint': '实时读取模型价格，只保留输入和输出价格都为零的文本模型',
   'platforms.sensenova.label': 'SenseNova 商汤',
-  'platforms.qianfan.hint': '官方公告永久免费的 ERNIE Speed / Lite 系列，QPS 限速约 1 次/秒',
+  'platforms.qianfan.hint': '免费白名单与官方实时目录取交集；当前暂无免费型号，上新自动接入',
   'platforms.qianfan.label': '百度千帆 Baidu Qianfan',
   'platforms.modelscope.hint': '免费调用受账号与平台配额限制，以模型服务接口返回为准',
   'platforms.modelscope.label': 'ModelScope 魔搭',
@@ -925,7 +925,7 @@ export const en: Dict = {
     'Reads model pricing live and keeps only text models with both input and output priced at zero',
   'platforms.sensenova.label': 'SenseNova',
   'platforms.qianfan.hint':
-    'Permanently free ERNIE Speed / Lite models officially announced by Baidu Qianfan, QPS limited (~1 req/s)',
+    'Free whitelist intersected with the official live catalog; no free models right now, new ones are picked up automatically',
   'platforms.qianfan.label': 'Baidu Qianfan',
   'platforms.modelscope.hint':
     'Free usage is bounded by your account and platform quotas, as returned by the model service API',

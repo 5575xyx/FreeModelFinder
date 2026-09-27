@@ -290,7 +290,7 @@ describe('provider empty-catalog contracts', () => {
           credentials: { apiKey: 'key' },
           fetchImpl: async () => jsonResponse({ data: [] }),
         }),
-        'fallback',
+        'empty',
       ],
     ];
 

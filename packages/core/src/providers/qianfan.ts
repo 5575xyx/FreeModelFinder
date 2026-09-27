@@ -7,57 +7,9 @@ interface QianfanModel {
   owned_by?: string;
 }
 
-const QIANFAN_STATIC_MODELS: ModelInfo[] = [
-  {
-    id: 'ernie-speed-8k',
-    provider: 'qianfan',
-    displayName: 'ERNIE Speed 8K',
-    contextWindow: 8_000,
-    free: true,
-    description: 'Baidu Qianfan permanently free ERNIE model, QPS limited (~1 req/s).',
-  },
-  {
-    id: 'ernie-speed-128k',
-    provider: 'qianfan',
-    displayName: 'ERNIE Speed 128K',
-    contextWindow: 128_000,
-    free: true,
-    description: 'Baidu Qianfan permanently free ERNIE model, QPS limited (~1 req/s).',
-  },
-  {
-    id: 'ernie-lite-8k',
-    provider: 'qianfan',
-    displayName: 'ERNIE Lite 8K',
-    contextWindow: 8_000,
-    free: true,
-    description: 'Baidu Qianfan permanently free ERNIE model, QPS limited (~1 req/s).',
-  },
-  {
-    id: 'ernie-lite-8k-0922',
-    provider: 'qianfan',
-    displayName: 'ERNIE Lite 8K 0922',
-    contextWindow: 8_000,
-    free: true,
-    description: 'Baidu Qianfan permanently free ERNIE model, QPS limited (~1 req/s).',
-  },
-  {
-    id: 'ernie-lite-128k',
-    provider: 'qianfan',
-    displayName: 'ERNIE Lite 128K',
-    contextWindow: 128_000,
-    free: true,
-    description: 'Baidu Qianfan permanently free ERNIE model, QPS limited (~1 req/s).',
-  },
-  {
-    id: 'ernie-tiny',
-    provider: 'qianfan',
-    displayName: 'ERNIE Tiny',
-    free: true,
-    description: 'Baidu Qianfan permanently free ERNIE model, QPS limited (~1 req/s).',
-  },
-];
+const QIANFAN_STATIC_MODELS: ModelInfo[] = [];
 
-const QIANFAN_FREE_MODELS = new Set(QIANFAN_STATIC_MODELS.map((m) => m.id));
+const QIANFAN_FREE_MODELS = new Set<string>(QIANFAN_STATIC_MODELS.map((m) => m.id));
 
 export class QianfanProvider extends OpenAICompatibleProvider {
   readonly id: ProviderId = 'qianfan';

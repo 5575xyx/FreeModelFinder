@@ -34,6 +34,12 @@ const registry = new ProviderRegistry({
 
 const provider = registry.getProvider('qianfan');
 const models = await provider.listModels();
+if (models.length === 0) {
+  console.log(
+    '[verify-qianfan] no free models published upstream right now (official Speed / Lite / Tiny models are retired); nothing to probe.',
+  );
+  process.exit(0);
+}
 console.log(
   'free models:',
   models.map((m) => m.id),
