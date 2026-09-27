@@ -122,7 +122,7 @@ nvidia:openai/gpt-oss-20b
 - 添加、编辑和删除自定义 OpenAI-compatible 来源；
 - 复制 OpenAI Base URL、模型列表和 `curl` 示例。
 
-首次向导只会报告支持的环境变量是否存在，绝不会把原始值传回浏览器或未经确认自动导入。支持的变量包括 `OPENROUTER_API_KEY`、`GEMINI_API_KEY` / `GOOGLE_API_KEY`、`SILICONFLOW_API_KEY`、`ZHIPUAI_API_KEY`、`NVIDIA_API_KEY`、`GH_TOKEN` / `GITHUB_TOKEN` 等。
+首次向导只会报告支持的环境变量是否存在，绝不会把原始值传回浏览器或未经确认自动导入。支持的变量包括 `OPENROUTER_API_KEY`、`GEMINI_API_KEY` / `GOOGLE_API_KEY`、`SILICONFLOW_API_KEY`、`ZHIPUAI_API_KEY`、`QIANFAN_API_KEY`、`NVIDIA_API_KEY`、`GH_TOKEN` / `GITHUB_TOKEN` 等。
 
 ## 6. 自动路由：何时切换、如何选择
 
@@ -264,6 +264,8 @@ curl http://127.0.0.1:11435/healthz
 4. 至少一个模型 ID；可额外填写显示名称和上下文窗口。
 
 保存后模型会显示为 `custom:<来源 ID>:<模型 ID>`，并参与模型目录和自动路由。自定义来源不经过项目的免费目录审核：价格、限额、隐私、内容政策和协议兼容性都需要自行确认。只有来源的 API 兼容性符合常规 OpenAI 聊天格式时，文本请求才会成功。
+
+cline-free 等本地反代的接入示例见 [CLINE_FREE.md](CLINE_FREE.md)。
 
 ## 10. 配置、安全与隐私
 

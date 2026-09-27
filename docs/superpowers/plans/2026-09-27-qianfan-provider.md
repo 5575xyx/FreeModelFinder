@@ -67,7 +67,7 @@
 ## Task 4 — 审计脚本 + 文档
 
 - `scripts/audit-free-models.mjs` `PROVIDER_META` 加：
-  `{ id: 'qianfan', display: 'Baidu Qianfan', envKeys: ['QIANFAN_API_KEY'], freeType: '官方永久免费模型', freeBasis: '官方公告永久免费的 ERNIE Speed / Lite 白名单，实时目录求交集（AppBuilder 已退役）', risk: 'QPS 限速约 1 次/秒；免费清单与型号以官方政策为准，退役型号由交集自动剔除' }`
+  `{ id: 'qianfan', display: 'Baidu Qianfan', envKeys: ['QIANFAN_API_KEY'], freeType: '官方永久免费型号', freeBasis: '官方公告永久免费的 ERNIE Speed / Lite 白名单，实时目录求交集（AppBuilder 已退役）', risk: 'QPS 限速约 1 次/秒；免费清单与型号以官方政策为准，退役型号由交集自动剔除' }`
 - `scripts/update-readme-audit.mjs` hint map 加 `qianfan: '官方永久免费型号'`
 - 新建 `scripts/verify-qianfan.mjs`（仿 `scripts/verify-sensenova.mjs` 结构）：读 `QIANFAN_API_KEY`，拉 `/v2/models` ∩ 白名单，逐模型发 1-token 最小 chat 实测，打印结果
 - 新建 `docs/CLINE_FREE.md`：cline-free 本地反代（`http://localhost:8787/v1`、`sk-cline-*`）走 FreeModelFinder「自定义来源」接入的步骤 + 风险说明（灰色逆向、依赖本机常驻进程、额度随时变、不做一等 provider 的原因）

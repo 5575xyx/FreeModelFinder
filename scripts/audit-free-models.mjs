@@ -111,6 +111,15 @@ const PROVIDER_META = [
     risk: '免费配额和型号可能变化；当前网关只处理文本，即使模型本身支持多模态',
   },
   {
+    id: 'qianfan',
+    display: 'Baidu Qianfan',
+    envKeys: ['QIANFAN_API_KEY'],
+    freeType: '官方永久免费型号',
+    freeBasis:
+      '官方公告永久免费的 ERNIE Speed / Lite 白名单，实时目录取交集（AppBuilder 已退役）；接口不可用时回退审核过的白名单',
+    risk: 'QPS 限速约 1 次/秒；免费清单与型号以官方政策为准，退役型号由交集自动剔除',
+  },
+  {
     id: 'kilo',
     display: 'Kilo Code',
     envKeys: ['KILO_API_KEY'],
@@ -123,7 +132,8 @@ const PROVIDER_META = [
     display: 'Agnes AI (China)',
     envKeys: ['AGNES_API_KEY'],
     freeType: '官方免费模型',
-    freeBasis: '官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）',
+    freeBasis:
+      '官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）',
     risk: '免费层 20 RPM；图像和视频模型有额外限制',
   },
   {
@@ -131,7 +141,8 @@ const PROVIDER_META = [
     display: 'Agnes AI (International)',
     envKeys: ['AGNES_INTL_API_KEY'],
     freeType: '官方免费模型',
-    freeBasis: '官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）',
+    freeBasis:
+      '官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）',
     risk: '免费层 20 RPM；图像和视频模型有额外限制',
   },
 ];
