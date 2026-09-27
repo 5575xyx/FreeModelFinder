@@ -8,6 +8,7 @@ export interface CredentialRuntime {
     platform: CredentialPlatform,
     settings: Partial<Omit<CredentialPoolConfig, 'accounts'>>,
   ): Promise<void>;
+  hasActiveAccounts(platform: CredentialPlatform): boolean;
   nextAccount(platform: CredentialPlatform, model: string): CredentialAccountEntry | null;
   reportRateLimit(
     platform: CredentialPlatform,

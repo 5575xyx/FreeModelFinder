@@ -10,10 +10,11 @@ export class ClineProvider extends BaseProvider {
   }
 
   async chat(): Promise<ChatResponse> {
-    throw new Error('cline provider not implemented yet');
+    throw new Error('cline provider not yet implemented');
   }
 
-  stream(): AsyncIterable<StreamChunk> {
-    throw new Error('cline provider not implemented yet');
+  async *stream(): AsyncIterable<StreamChunk> {
+    yield* [];
+    throw new Error('cline provider not yet implemented');
   }
 }
