@@ -42,7 +42,9 @@ packages/core
   credentials/            ← S1 骨架（平台无关，纯逻辑+测试）
     ├ credential-store    多凭据条目读写（加解密唯一边界，见存储 Schema 节）
     ├ account-pool        轮换策略 round_robin/fill/random + 切号状态机
-    ├ cooling-map         「账号×模型」冷却（明确时刻 > 文本时长 > 兜底分钟）
+    ├ cooling-map         「账号×模型」冷却（明确时刻 > 文本时长 > 兜底分钟；
+    │                        键 = accountId + model，model 为 `'*'` 表示账号级通配——
+    │                        该账号在全部模型上冷却；账号在 A 模型冷却不影响 B 模型）
     ├ device-auth         设备授权状态机（start/poll，平台无关形状）
     └ usage-aggregator    账号级用量聚合（持久化见下文；与既有 quota.ts 的
                             QuotaTracker 是不同组件，命名避让）
@@ -106,12 +108,14 @@ credentials?: Partial<Record<CredentialPlatform, CredentialPoolConfig>>;
 `gateway`——`credentials` 是新顶层字段，不扩展即**明文落盘**。决策：
 
 - **credential-store 是加解密唯一边界**：写盘前对 payload 敏感字段逐个
-  `encryptString`（密文原样随 config.json 保存），读盘时走既有 `decryptSecret`
-  多层解密兼容（store.ts:10-19）；
-- **`encryptProviders/decryptProviders` 保持不感知 credentials**（避免双重加密）；
+  `encryptString(plain, masterKey)`——**必须显式传 masterKey**（crypto.ts:41/46 否则
+  退化为 `v2:` 密文而非 `v3:`），读盘时走既有 `decryptSecret` 多层解密兼容；
+  为此 store.ts 需 **export `decryptSecret`（store.ts:10）与 `loadMasterKey`
+  （store.ts:104）**，二者目前模块私有；
+- **`encryptProviders/decryptProviders` 保持不感知 credentials**（避免双重加密）；  
   `normalizeConfig`（store.ts:359-374）`...input` 保留未知顶层键已验证可行；
-- `/api/config` GET（server.ts:489-557）不序列化 credentials 字段——天然不回显；
-- **测试断言**：写入后 `config.json` 中 refreshToken 为 `v3:` 密文（不是原文）。
+- `/api/config` GET（server.ts:489-557）不序列化 credentials 字段——不回显（断言见测试节 server 行）；
+- **测试断言**：写入后 `config.json` 中 refreshToken 为 `v3:` 密文（不是原文、不是 `v2:`）。
 
 ## 模型 id 路由设计（核心冲突与解法）
 
@@ -158,14 +162,15 @@ ClineProvider 不调用 base 的 `nextKey`/`requireKey`（无 apiKey 语义）�
 
 `'cline'` 加入 ProviderId 的连锁，**按检查时机区分**（v2 修订，对应审查 P2-15）：
 
-| 改动点                              | 类型           | 不改的后果                                                                                  |
-| ----------------------------------- | -------------- | ------------------------------------------------------------------------------------------- |
-| `types.ts` ProviderId union         | 编译期         | typecheck 报错                                                                              |
-| `ProviderIdSchema`（zod enum）      | **运行时必改** | loadConfig 静默丢弃未知 provider（store.ts:362-363）、`/api/providers` 400（server.ts:602） |
-| `store.ts` DEFAULT_CONFIG.providers | 运行时惯例     | 非穷举（先例：缺 `agnes-intl`），建议补                                                     |
-| `registry.ts` PROVIDER_CTORS        | **运行时必改** | 冒号路由/实例化失败                                                                         |
-| auto-router failover 池             | 运行时         | 候选缺失                                                                                    |
-| UI platforms/i18n（zh/en）          | 展示           | 卡片/文案缺失                                                                               |
+| 改动点                              | 类型                                                              | 不改的后果                                                                                  |
+| ----------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `types.ts` ProviderId union         | 编译期                                                            | typecheck 报错                                                                              |
+| `ProviderIdSchema`（zod enum）      | **运行时必改**                                                    | loadConfig 静默丢弃未知 provider（store.ts:362-363）、`/api/providers` 400（server.ts:602） |
+| `store.ts` DEFAULT_CONFIG.providers | 运行时惯例                                                        | 非穷举（先例：缺 `agnes-intl`），建议补                                                     |
+| `registry.ts` PROVIDER_CTORS        | **编译期**（`Record<Exclude<ProviderId,'ollama'>>` 穷举）+ 运行时 | 漏改 typecheck 报错                                                                         |
+| UI platforms/i18n（zh/en）          | 展示                                                              | 卡片/文案缺失                                                                               |
+
+（auto-router 无独立改动：候选由 `listAllModels` 派生，接缝 1 修通即自动纳入。）
 
 ## Server API 与登录时序
 
@@ -185,12 +190,15 @@ POST /api/providers  (cline)       → 沿用现有 provider 保存通道
   （页面关=流程作废，符合设备授权短时语义，无后台任务管理负担）；
 - **完成时刻 server 直接入库**：上游换到的 refreshToken → credential-store
   加密落盘 → 返回已脱敏 account 摘要；
-- **运行时对象注入机制**（v2 修订，对应审查 P2-12）：`ProviderContext` 增加可选
-  `credentials?: CredentialRuntime` 字段；`ProviderRegistry.load()` 构造 ctx 时注入
-  core 导出的**进程级单例工厂**；测试构造 ctx 时传入独立实例——不改
-  `PROVIDER_CTORS` 固定 `new Ctor(ctx)` 的结构。
+- **运行时对象注入机制**（v2/v3 修订，对应审查 P2-12、P1-新1/新2）：
+  `ProviderContext` 增加可选字段 **`credentialRuntime?: CredentialRuntime`**
+  （不能叫 `credentials`——base.ts:15-16 已有必填 `credentials: ProviderCredentials`，
+  同名异型会编译错误）；注入点 = **`getProvider` 构造 ctx 处（registry.ts:151-160）**，
+  生产环境填 core 导出的**进程级单例工厂**引用（`load()` 不构造 ctx，勿在彼处找落点）；
+  测试构造 ctx 时传入独立实例——不改 `PROVIDER_CTORS` 固定 `new Ctor(ctx)` 的结构。
 - **usage 持久化**（v2 修订，对应审查 P1-7）：usage-aggregator 内存聚合 +
-  节流写 `~/.freemodelfinder/credentials-usage.json`，启动时加载恢复，
+  节流写 `${CONFIG_DIR}/credentials-usage.json`（随 `FREEMODELFINDER_HOME`
+  覆盖，store.ts:38-60，不写死 `~/.freemodelfinder`），启动时加载恢复，
   重启不清零；`lastError` 存最近一次错误（脱敏后）。
 
 ### 登录交互
@@ -220,6 +228,9 @@ UI 每 2.5s POST login/poll → pending 继续 | complete → 刷新账号列表
 2. **`getProvider` 的 api-key 检查**（registry.ts:139-145）：`BaseProvider` 增加可选
    `hasCredentials(): boolean` 钩子；registry 改为「先问钩子，无钩子走 apiKey 老逻辑」；
    ClineProvider 报「池内有 active 账号」。
+   **钩子实例获取**（P2-①）：接缝 1 的 `listEnabledProviders` 现状不实例化 provider，
+   需要不触发 apiKey 门的惰性实例化路径——用与 `getProvider` 相同的私有构造缓存
+   （`instances` map 命中则复用），避免「为问钩子而构造、构造又要先过门」的循环。
 3. **`/api/config` GET 的 `hasKey` 耦合**（server.ts:540 → UI SettingsView:1806
    `enabled && state.hasKey`、enabledCount:1024）：`hasKey := !!credentials.apiKey` 会让
    cline 卡片永远显示未启用。**服务端 hasKey 判定接 hasCredentials/池状态**（UI 约定不变）。
@@ -253,17 +264,21 @@ cline listModels（内置清单）进聚合池即成为候选（依赖接缝 1 �
 
 ### 池尽冒泡的错误文案契约（v2 修订，对应审查 P1-4）
 
-池尽上抛的 429 错误 **message 必须含可被 `parseRateLimitError`
-（auto-router.ts:57-99）解析的要素**：状态码 `429` 字样 + 最早 resetAt 的
-ISO 时间或 `retry-after N` 文本。否则 failover 闭环（池尽→模型冷却→换 provider）
-静默失效。此契约为 ClineProvider 测试断言项。
+池尽上抛的 429 错误 **message 必须能被 `parseRateLimitError`
+（auto-router.ts:57-99）解析**——判定要素（v3 按源码修正）：
+① 状态码匹配 `failed\s+(\d{3})` 形式（**裸「429 字样」不命中**，须写成
+`failed 429`）**或**命中 RATE_LIMIT_PATTERNS 关键词（auto-router.ts:47-55：
+`rate limit` / `too many requests` / `quota` / `resource exhausted` 等）；
+② 重置信息为 ISO 时间或 `retry-after N` 文本。任一不满足，池尽→模型冷却→
+failover 闭环静默失效。此契约为 ClineProvider 测试断言项。
 
 ### 冒泡冷却的键语义（v2 修订，对应审查 P1-6）
 
 auto-router 模型冷却沿用**既有 bare model id 全局键语义**（同名跨 provider
 共命运）——该语义为 2026-09-25《Auto 全量候选 Failover 设计》已批准决策，本次
-不改结构。cline 上游原生 id 多带命名空间前缀（`deepseek/`、`qwen/` 斜杠形式），
-与既有 bare id（无斜杠）碰撞面有限；接受为既定全局语义的延续。
+不改结构。碰撞**仅在完全同名时发生**，且既有 provider 的 id 本就有大量斜杠形
+（modelscope 的 `Qwen/...`、`deepseek-ai/...`，openrouter 透传 `vendor/model`），
+cline 上游 id 并不特殊；接受共命运为既定全局语义的延续。
 
 ## 安全设计
 
@@ -290,13 +305,13 @@ usage-aggregator（聚合展示留 S2）。
 
 ## 测试策略
 
-| 层                   | 测试内容                                                                                                                                                                                                                                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 骨架单元             | store：**config.json 中 refreshToken 为 `v3:` 密文**（非原文）、多层解密兼容、invalid 持久化、`/api/config` 不回显 payload；pool：三策略轮换+跳过有冷却/invalid+空池；cooling：时刻优先级（含 Retry-After 头）/**`*` 账号级通配语义**/过期清理/手动解除；device-auth：状态机+过期；usage-aggregator：累加/flush/重启恢复 |
-| ClineProvider        | 刷新单飞（并发只发一次、失败并发传播）、401→刷新→重试、refresh 失效→invalid、429→冷却→换号、**403→invalid+换号**、池尽→429 冒泡（**断言文案契约可被 parseRateLimitError 解析**）、**400 不换号**、**流式中途断开不换号**、换号上限=min(池,3)、流式/非流式 fixture、listModels                                            |
-| registry/router 集成 | 三路径 id 路由（含 `cline-free/` 在 cline 未配置时回落）、**hasCredentials 三处接线**（getProvider/listEnabledProviders/hasKey：有账号、无账号、未启用）、池尽→模型冷却→failover 闭环（autoRoute.enabled 开/关两态）                                                                                                     |
-| server API           | login start/poll 生命周期、accounts 响应断言不含 refreshToken、cooldown clear/logout、**redact() 脱敏用例**                                                                                                                                                                                                              |
-| UI                   | 面板三状态渲染、登录向导轮询状态机、**enabled/hasKey 链下 cline 卡片状态**、zh/en 文案                                                                                                                                                                                                                                   |
+| 层                   | 测试内容                                                                                                                                                                                                                                                                                             |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 骨架单元             | store：**config.json 中 refreshToken 为 `v3:` 密文**（非原文、非 `v2:`）、多层解密兼容、invalid 持久化；pool：三策略轮换+跳过有冷却/invalid+空池；cooling：时刻优先级（含 Retry-After 头）/**`*` 账号级通配语义**/过期清理/手动解除；device-auth：状态机+过期；usage-aggregator：累加/flush/重启恢复 |
+| ClineProvider        | 刷新单飞（并发只发一次、失败并发传播）、401→刷新→重试、refresh 失效→invalid、429→冷却→换号、**403→invalid+换号**、池尽→429 冒泡（**断言文案契约可被 parseRateLimitError 解析**）、**400 不换号**、**流式中途断开不换号**、换号上限=min(池,3)、流式/非流式 fixture、listModels                        |
+| registry/router 集成 | 三路径 id 路由（含 `cline-free/` 在 cline 未配置时回落）、**hasCredentials 三处接线**（getProvider/listEnabledProviders/hasKey：有账号、无账号、未启用）、池尽→模型冷却→failover 闭环（autoRoute.enabled 开/关两态）                                                                                 |
+| server API           | login start/poll 生命周期、accounts 响应断言不含 refreshToken、**`/api/config` 不回显 credentials payload**、cooldown clear/logout、**redact() 脱敏用例**                                                                                                                                            |
+| UI                   | 面板展示态渲染（active / 冷却派生态 / invalid 三种展示，对应两态 schema）、登录向导轮询状态机、**enabled/hasKey 链下 cline 卡片状态**、zh/en 文案                                                                                                                                                    |
 
 覆盖率 core 85%/74% 门槛不降；验证链：逐文件 prettier → eslint（0 警告）→
 分包测试 → `pnpm build:runtime; if ($?) { pnpm typecheck }`。
