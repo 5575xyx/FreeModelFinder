@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   chatResponseToGemini,
+  composeModelId,
   geminiToChatRequest,
   parseRateLimitError,
   type ChatRequest,
@@ -65,7 +66,7 @@ async function handleGenerate(
           const notice: SwitchNotice = {
             type: 'switch-away',
             from: chatReq.model,
-            to: `${fallback.provider}:${fallback.id}`,
+            to: composeModelId(fallback.provider, fallback.id),
             strategy: router.getStrategy(),
             reason: router.buildSwitchAwayMessage(
               {
@@ -81,7 +82,7 @@ async function handleGenerate(
           };
           router.notify(notice);
           notices.push(notice);
-          chatReq.model = `${fallback.provider}:${fallback.id}`;
+          chatReq.model = composeModelId(fallback.provider, fallback.id);
           attempt++;
           continue;
         }

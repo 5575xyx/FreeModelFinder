@@ -1131,7 +1131,10 @@ export function SettingsView({
                 <option value="">{t('settings.section.currentModel.selectEmpty')}</option>
               )}
               {models.map((m) => (
-                <option key={`${m.provider}:${m.id}`} value={`${m.provider}:${m.id}`}>
+                <option
+                  key={`${m.provider}:${m.id}`}
+                  value={m.id.startsWith(`${m.provider}:`) ? m.id : `${m.provider}:${m.id}`}
+                >
                   [{m.provider}] {m.display_name ?? m.id}
                 </option>
               ))}

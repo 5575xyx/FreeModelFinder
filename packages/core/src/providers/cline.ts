@@ -27,6 +27,7 @@ const FORCE_STREAM_PREFIXES = ['deepseek/', 'cline-free/', 'cline-pass/'];
 
 const REFRESH_SKEW_MS = 60_000;
 const MAX_PARSED_COOLDOWN_MS = 24 * 3_600_000;
+const EMPTY_COOLDOWN_MS = 30_000;
 
 const CLINE_FINGERPRINT_HEADERS: Record<string, string> = {
   'User-Agent': 'Cline/3.0.47',
@@ -49,22 +50,33 @@ const FINISH_REASONS = new Set(['stop', 'length', 'tool_calls', 'content_filter'
 
 type FinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
 
-export type ClineErrorKind = 'rate_limit' | 'invalid' | 'fatal' | 'network';
+export type ClineErrorKind = 'rate_limit' | 'invalid' | 'fatal' | 'network' | 'empty';
 
 export class ClineError extends Error {
   readonly kind: ClineErrorKind;
   readonly status?: number;
   readonly resetAt?: number;
+  readonly platform = 'cline' as const;
+  readonly accountId?: string;
+  readonly model?: string;
 
   constructor(
     message: string,
-    options: { kind: ClineErrorKind; status?: number; resetAt?: number },
+    options: {
+      kind: ClineErrorKind;
+      status?: number;
+      resetAt?: number;
+      accountId?: string;
+      model?: string;
+    },
   ) {
     super(redact(message));
     this.name = 'ClineError';
     this.kind = options.kind;
     this.status = options.status;
     this.resetAt = options.resetAt;
+    this.accountId = options.accountId ? options.accountId.slice(0, 8) : undefined;
+    this.model = options.model;
   }
 }
 
@@ -200,7 +212,7 @@ export class ClineProvider extends BaseProvider {
 
   async listModels(): Promise<ModelInfo[]> {
     return BUILTIN_MODELS.map((id): ModelInfo => ({
-      id,
+      id: `cline:${id}`,
       provider: 'cline',
       displayName: id,
       free: true,
@@ -223,7 +235,7 @@ export class ClineProvider extends BaseProvider {
     const { accountId, response } = opened;
     let usage: ChatResponse['usage'];
     try {
-      for await (const frame of this.parseSSE(response)) {
+      for await (const frame of this.parseSSE(response, accountId, req.model)) {
         if (frame.usage) usage = frame.usage;
         yield {
           id: frame.id ?? `cline-${Date.now()}`,
@@ -235,10 +247,10 @@ export class ClineProvider extends BaseProvider {
       }
     } catch (error) {
       runtime.recordUsage('cline', accountId, req.model, {
-        requests: 0,
-        error: errorText(error),
+        requests: 1,
+        error: redact(errorText(error)),
       });
-      throw error;
+      throw error instanceof ClineError ? error : new Error(redact(errorText(error)));
     }
     runtime.reportSuccess('cline', accountId);
     this.observeUsage(req.model, usage);
@@ -270,11 +282,17 @@ export class ClineProvider extends BaseProvider {
       try {
         return await attempt(account, false);
       } catch (error) {
-        if (error instanceof ClineError && error.kind === 'fatal') throw error;
+        runtime.recordUsage('cline', account.id, model, {
+          requests: 1,
+          error: redact(errorText(error)),
+        });
         lastError = error;
         if (error instanceof ClineError) {
+          if (error.kind === 'fatal') throw error;
           if (error.kind === 'rate_limit') {
             runtime.reportRateLimit('cline', account.id, model, error.resetAt);
+          } else if (error.kind === 'empty') {
+            runtime.reportRateLimit('cline', account.id, model, Date.now() + EMPTY_COOLDOWN_MS);
           } else if (error.kind === 'invalid') {
             runtime.reportInvalid('cline', account.id);
             invalidCount += 1;
@@ -301,31 +319,41 @@ export class ClineProvider extends BaseProvider {
     ) {
       return new ClineError(
         `cline failed ${lastError.status ?? 401}: ${triedCount} 个账号凭据失效，请重新登录`,
-        { kind: 'invalid', status: lastError.status ?? 401 },
+        {
+          kind: 'invalid',
+          status: lastError.status ?? 401,
+          accountId: lastError.accountId,
+          model,
+        },
       );
     }
-    if (lastError instanceof Error) return lastError;
+    if (lastError instanceof ClineError) return lastError;
+    if (lastError instanceof Error) return new Error(redact(lastError.message));
     if (pool.accounts.length === 0) {
-      return new ClineError('cline has no available credentials', { kind: 'fatal' });
+      return new ClineError('cline has no available credentials', { kind: 'fatal', model });
     }
-    const resets: number[] = [];
+    let earliest: number | undefined;
+    let coolingAccountId: string | undefined;
     for (const account of pool.accounts) {
       const cooling = runtime
         .listAccountCooldowns('cline', account.id)
         .find((entry) => entry.model === model);
-      if (cooling) resets.push(cooling.resetAt);
+      if (cooling && (earliest === undefined || cooling.resetAt < earliest)) {
+        earliest = cooling.resetAt;
+        coolingAccountId = account.id;
+      }
     }
-    const earliest = resets.length > 0 ? Math.min(...resets) : undefined;
     const iso = earliest ? `, reset at ${new Date(earliest).toISOString()}` : '';
     return new ClineError(
       `cline failed 429 rate limit: all ${pool.accounts.length} accounts are cooling for ${model}${iso}`,
-      { kind: 'rate_limit', status: 429, resetAt: earliest },
+      { kind: 'rate_limit', status: 429, resetAt: earliest, accountId: coolingAccountId, model },
     );
   }
 
   private async getAccessToken(
     account: CredentialAccountEntry,
     forceRefresh: boolean,
+    model?: string,
   ): Promise<string> {
     const cached = account.payload.accessToken;
     if (!forceRefresh && cached) {
@@ -334,7 +362,7 @@ export class ClineProvider extends BaseProvider {
     }
     const inFlight = this.refreshChains.get(account.id);
     if (inFlight && !forceRefresh) return inFlight;
-    const chain = this.refreshChain(account);
+    const chain = this.refreshChain(account, model);
     this.refreshChains.set(account.id, chain);
     try {
       return await chain;
@@ -343,7 +371,7 @@ export class ClineProvider extends BaseProvider {
     }
   }
 
-  private async refreshChain(account: CredentialAccountEntry): Promise<string> {
+  private async refreshChain(account: CredentialAccountEntry, model?: string): Promise<string> {
     const runtime = this.runtime();
     let response: Response;
     try {
@@ -356,7 +384,11 @@ export class ClineProvider extends BaseProvider {
         }),
       });
     } catch (error) {
-      throw new ClineError(`cline refresh failed: ${errorText(error)}`, { kind: 'network' });
+      throw new ClineError(`cline refresh failed: ${errorText(error)}`, {
+        kind: 'network',
+        accountId: account.id,
+        model,
+      });
     }
     if (!response.ok) {
       const permanent = response.status === 401 || response.status === 403;
@@ -365,12 +397,16 @@ export class ClineProvider extends BaseProvider {
         throw new ClineError(`cline refresh failed ${response.status}: 账号凭据失效，请重新登录`, {
           kind: 'invalid',
           status: response.status,
+          accountId: account.id,
+          model,
         });
       }
       const detail = (await response.text().catch(() => '')).slice(0, 200);
       throw new ClineError(`cline refresh failed ${response.status}: ${detail}`, {
         kind: 'network',
         status: response.status,
+        accountId: account.id,
+        model,
       });
     }
     const parsed = await response.json().catch(() => null);
@@ -379,12 +415,16 @@ export class ClineProvider extends BaseProvider {
     if (!data) {
       throw new ClineError('cline refresh failed: upstream returned an unexpected body', {
         kind: 'network',
+        accountId: account.id,
+        model,
       });
     }
     const accessToken = data.accessToken;
     if (typeof accessToken !== 'string' || !accessToken) {
       throw new ClineError('cline refresh failed: upstream returned no access token', {
         kind: 'network',
+        accountId: account.id,
+        model,
       });
     }
     const payload: Record<string, string> = { ...account.payload, accessToken };
@@ -438,7 +478,7 @@ export class ClineProvider extends BaseProvider {
     forceRefresh: boolean,
   ): Promise<ChatResponse> {
     const runtime = this.runtime();
-    const token = await this.getAccessToken(account, forceRefresh);
+    const token = await this.getAccessToken(account, forceRefresh, req.model);
     const sessionId = this.nextSessionId();
     const sendStream =
       req.stream === true || FORCE_STREAM_PREFIXES.some((prefix) => req.model.startsWith(prefix));
@@ -451,13 +491,21 @@ export class ClineProvider extends BaseProvider {
         body: JSON.stringify(body),
       });
     } catch (error) {
-      throw new ClineError(`cline chat failed: ${errorText(error)}`, { kind: 'network' });
+      throw new ClineError(`cline chat failed: ${errorText(error)}`, {
+        kind: 'network',
+        accountId: account.id,
+        model: req.model,
+      });
     }
     this.observeResponse(req.model, response);
     try {
-      await this.ensureHttpOk('chat', response, req.model);
+      await this.ensureHttpOk('chat', response, req.model, account.id);
     } catch (error) {
       if (error instanceof ClineError && error.status === 401 && !forceRefresh) {
+        runtime.recordUsage('cline', account.id, req.model, {
+          requests: 1,
+          error: redact(errorText(error)),
+        });
         return this.chatAttempt(account, req, true);
       }
       throw error;
@@ -465,8 +513,15 @@ export class ClineProvider extends BaseProvider {
     const contentType = response.headers.get('content-type') ?? '';
     const chatResponse =
       sendStream || contentType.includes('text/event-stream')
-        ? await this.aggregateSSE(response, req.model)
-        : await this.parseJSONResponse(response, req.model);
+        ? await this.aggregateSSE(response, req.model, account.id)
+        : await this.parseJSONResponse(response, req.model, account.id);
+    if (!chatResponse.content?.trim()) {
+      throw new ClineError(`cline chat failed: upstream returned empty content for ${req.model}`, {
+        kind: 'empty',
+        accountId: account.id,
+        model: req.model,
+      });
+    }
     runtime.reportSuccess('cline', account.id);
     this.observeUsage(req.model, chatResponse.usage);
     runtime.recordUsage('cline', account.id, req.model, {
@@ -482,7 +537,7 @@ export class ClineProvider extends BaseProvider {
     req: ChatRequest,
     forceRefresh: boolean,
   ): Promise<Response> {
-    const token = await this.getAccessToken(account, forceRefresh);
+    const token = await this.getAccessToken(account, forceRefresh, req.model);
     const sessionId = this.nextSessionId();
     const body = this.buildBody(req, sessionId, true);
     let response: Response;
@@ -493,13 +548,21 @@ export class ClineProvider extends BaseProvider {
         body: JSON.stringify(body),
       });
     } catch (error) {
-      throw new ClineError(`cline stream failed: ${errorText(error)}`, { kind: 'network' });
+      throw new ClineError(`cline stream failed: ${errorText(error)}`, {
+        kind: 'network',
+        accountId: account.id,
+        model: req.model,
+      });
     }
     this.observeResponse(req.model, response);
     try {
-      await this.ensureHttpOk('stream', response, req.model);
+      await this.ensureHttpOk('stream', response, req.model, account.id);
     } catch (error) {
       if (error instanceof ClineError && error.status === 401 && !forceRefresh) {
+        this.runtime().recordUsage('cline', account.id, req.model, {
+          requests: 1,
+          error: redact(errorText(error)),
+        });
         return this.openStream(account, req, true);
       }
       throw error;
@@ -509,6 +572,8 @@ export class ClineProvider extends BaseProvider {
       await response.text().catch(() => '');
       throw new ClineError('cline stream failed: upstream did not return an event stream', {
         kind: 'network',
+        accountId: account.id,
+        model: req.model,
       });
     }
     return response;
@@ -518,6 +583,7 @@ export class ClineProvider extends BaseProvider {
     op: 'chat' | 'stream',
     response: Response,
     model: string,
+    accountId?: string,
   ): Promise<void> {
     if (response.ok) return;
     const status = response.status;
@@ -525,20 +591,37 @@ export class ClineProvider extends BaseProvider {
       throw new ClineError(`cline ${op} failed 401: access token rejected`, {
         kind: 'invalid',
         status,
+        accountId,
+        model,
       });
     }
     if (status === 429) {
       const text = await response.text().catch(() => '');
-      throw this.rateLimitError(op, response, text, model);
+      throw this.rateLimitError(op, response, text, model, accountId);
     }
     const detail = (await response.text().catch(() => '')).slice(0, 300);
     if (status === 403) {
-      throw new ClineError(`cline ${op} failed 403: ${detail}`, { kind: 'invalid', status });
+      throw new ClineError(`cline ${op} failed 403: ${detail}`, {
+        kind: 'invalid',
+        status,
+        accountId,
+        model,
+      });
     }
     if (status >= 500) {
-      throw new ClineError(`cline ${op} failed ${status}: ${detail}`, { kind: 'network', status });
+      throw new ClineError(`cline ${op} failed ${status}: ${detail}`, {
+        kind: 'network',
+        status,
+        accountId,
+        model,
+      });
     }
-    throw new ClineError(`cline ${op} failed ${status}: ${detail}`, { kind: 'fatal', status });
+    throw new ClineError(`cline ${op} failed ${status}: ${detail}`, {
+      kind: 'fatal',
+      status,
+      accountId,
+      model,
+    });
   }
 
   private rateLimitError(
@@ -546,6 +629,7 @@ export class ClineProvider extends BaseProvider {
     response: Response,
     text: string,
     model: string,
+    accountId?: string,
   ): ClineError {
     const resetAt = this.parseResetAt(response, text);
     const iso = resetAt ? `; reset at ${new Date(resetAt).toISOString()}` : '';
@@ -554,6 +638,8 @@ export class ClineProvider extends BaseProvider {
       kind: 'rate_limit',
       status: 429,
       resetAt,
+      accountId,
+      model,
     });
   }
 
@@ -592,19 +678,27 @@ export class ClineProvider extends BaseProvider {
     return ts;
   }
 
-  private async parseJSONResponse(response: Response, model: string): Promise<ChatResponse> {
+  private async parseJSONResponse(
+    response: Response,
+    model: string,
+    accountId?: string,
+  ): Promise<ChatResponse> {
     let parsed: unknown;
     try {
       parsed = await response.json();
     } catch {
       throw new ClineError('cline chat failed: upstream returned a non-JSON body', {
         kind: 'network',
+        accountId,
+        model,
       });
     }
     const data = unwrapUpstream(parsed);
     if (!data) {
       throw new ClineError('cline chat failed: upstream returned an unexpected body', {
         kind: 'network',
+        accountId,
+        model,
       });
     }
     const choices = Array.isArray(data.choices) ? data.choices : [];
@@ -622,13 +716,17 @@ export class ClineProvider extends BaseProvider {
     };
   }
 
-  private async aggregateSSE(response: Response, model: string): Promise<ChatResponse> {
+  private async aggregateSSE(
+    response: Response,
+    model: string,
+    accountId?: string,
+  ): Promise<ChatResponse> {
     let content = '';
     let finish: FinishReason = null;
     let usage: ChatResponse['usage'];
     let id: string | undefined;
     let created: number | undefined;
-    for await (const frame of this.parseSSE(response)) {
+    for await (const frame of this.parseSSE(response, accountId, model)) {
       if (!id && frame.id) id = frame.id;
       if (created === undefined && frame.created !== undefined) created = frame.created;
       content += frame.delta;
@@ -645,11 +743,17 @@ export class ClineProvider extends BaseProvider {
     };
   }
 
-  private async *parseSSE(response: Response): AsyncGenerator<SseFrame> {
+  private async *parseSSE(
+    response: Response,
+    accountId?: string,
+    model?: string,
+  ): AsyncGenerator<SseFrame> {
     const body = response.body;
     if (!body) {
       throw new ClineError('cline stream failed: upstream returned an empty body', {
         kind: 'network',
+        accountId,
+        model,
       });
     }
     const reader = body.getReader();

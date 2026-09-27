@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 import inquirer from 'inquirer';
 import ora from 'ora';
-import { ProviderRegistry, loadConfig, updateConfig } from '@freemodelfinder/core';
+import { ProviderRegistry, composeModelId, loadConfig, updateConfig } from '@freemodelfinder/core';
 
 type Prompt = <T>(questions: unknown[]) => Promise<T>;
 
@@ -76,7 +76,7 @@ export function modelCommand(dependencies: Partial<ModelCommandDependencies> = {
             pageSize: 20,
             choices: models.map((m) => ({
               name: `${m.provider.padEnd(10)} ${m.id}`,
-              value: `${m.provider}:${m.id}`,
+              value: composeModelId(m.provider, m.id),
             })),
           },
         ]);

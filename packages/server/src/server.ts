@@ -9,6 +9,7 @@ import {
   ProviderIdSchema,
   ProviderRegistry,
   asModelList,
+  composeModelId,
   isVisionCapable,
   loadConfig,
   updateConfig,
@@ -429,7 +430,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         if (opts.state.catalogSignature !== undefined) opts.state.catalogRevision += 1;
         opts.state.catalogSignature = catalogSignature;
       }
-      const available = new Set(models.map((model) => `${model.provider}:${model.id}`));
+      const available = new Set(models.map((model) => composeModelId(model.provider, model.id)));
       const defaultModel = cfg.defaultModel;
       const selectionValid =
         !defaultModel || defaultModel === 'auto' || available.has(defaultModel);
@@ -448,7 +449,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         const entries = grouped.get(model.provider) ?? [];
         entries.push({
           id: model.id,
-          value: `${model.provider}:${model.id}`,
+          value: composeModelId(model.provider, model.id),
           label: model.displayName ?? model.id,
         });
         grouped.set(model.provider, entries);
@@ -972,7 +973,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       if (!model) return reply.code(400).send({ error: 'model required' });
       if (model !== 'auto') {
         const { models } = await getRegistry().listAllModels();
-        const available = models.some((item) => `${item.provider}:${item.id}` === model);
+        const available = models.some((item) => composeModelId(item.provider, item.id) === model);
         if (!available) return reply.code(400).send({ error: `model is not available: ${model}` });
       }
       const next = await updateConfig((cfg) => ({ ...cfg, defaultModel: model }));
@@ -1041,7 +1042,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       };
 
       for (const m of local) {
-        const composedId = `${m.provider}:${m.id}`;
+        const composedId = composeModelId(m.provider, m.id);
         push({
           id: composedId,
           provider: m.provider,

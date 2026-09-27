@@ -25,6 +25,7 @@ import { QuotaTracker } from './quota.js';
 import { emitUsageCapture } from './call-logger.js';
 import { AutoRouter, parseRateLimitError, scoreModel } from './router/auto-router.js';
 import { retryOnQueueFull, type RetryOnQueueFullOptions } from './queue-retry.js';
+import { composeModelId, bareModelId } from './model-id.js';
 import type {
   AppConfig,
   ImageGenerationRequest,
@@ -271,7 +272,7 @@ export class ProviderRegistry {
     }
     const deduped = new Map<string, ModelInfo>();
     for (const model of models) {
-      deduped.set(`${model.provider}:${model.id}`.toLowerCase(), model);
+      deduped.set(composeModelId(model.provider, model.id).toLowerCase(), model);
     }
     const result: ListAllModelsResult = {
       models: [...deduped.values()],
@@ -354,7 +355,10 @@ export class ProviderRegistry {
       const cached = this.modelsCache?.models;
       if (cached && cached.length > 0) {
         const first = cached[0]!;
-        return { provider: this.getProvider(first.provider), modelId: first.id };
+        return {
+          provider: this.getProvider(first.provider),
+          modelId: bareModelId(first.provider, first.id),
+        };
       }
       throw new Error(
         'no model available for `auto`; wait for /v1/models to load or set a default model',
@@ -365,7 +369,7 @@ export class ProviderRegistry {
       const providerId = modelId.slice(0, sep) as ProviderId;
       const real = modelId.slice(sep + 1);
       if (PROVIDER_CTORS[providerId as Exclude<ProviderId, 'ollama'>]) {
-        return { provider: this.getProvider(providerId), modelId: real };
+        return { provider: this.getProvider(providerId), modelId: bareModelId(providerId, real) };
       }
     }
     // Bare custom source id ("cpa:Qwen3.8-27B"): if the first segment is a
@@ -480,8 +484,8 @@ export class ProviderRegistry {
     const candidates = cached.filter((m) => {
       if (this.autoRouter.isProviderRateLimited(m.provider)) return false;
       if (
-        this.autoRouter.isRateLimited(m.id) ||
-        this.autoRouter.isRateLimited(`${m.provider}:${m.id}`)
+        this.autoRouter.isRateLimited(bareModelId(m.provider, m.id)) ||
+        this.autoRouter.isRateLimited(composeModelId(m.provider, m.id))
       ) {
         return false;
       }
@@ -494,7 +498,10 @@ export class ProviderRegistry {
     const pool = scored.slice(0, 3);
     const pick = pool[autoPoolCursor % pool.length]!;
     autoPoolCursor = (autoPoolCursor + 1) % pool.length;
-    return { provider: this.getProvider(pick.m.provider), modelId: pick.m.id };
+    return {
+      provider: this.getProvider(pick.m.provider),
+      modelId: bareModelId(pick.m.provider, pick.m.id),
+    };
   }
 
   async generateImage(

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   anthropicToChatRequest,
   chatResponseToAnthropic,
+  composeModelId,
   parseRateLimitError,
   type AnthropicMessagesRequest,
   type ChatRequest,
@@ -49,7 +50,7 @@ async function dispatchWithAutoRoute(
           const notice: SwitchNotice = {
             type: 'switch-away',
             from: chatReq.model,
-            to: `${fallback.provider}:${fallback.id}`,
+            to: composeModelId(fallback.provider, fallback.id),
             strategy: router.getStrategy(),
             reason: router.buildSwitchAwayMessage(
               {
@@ -65,7 +66,7 @@ async function dispatchWithAutoRoute(
           };
           router.notify(notice);
           notices.push(notice);
-          chatReq.model = `${fallback.provider}:${fallback.id}`;
+          chatReq.model = composeModelId(fallback.provider, fallback.id);
           attempt++;
           continue;
         }

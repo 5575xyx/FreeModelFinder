@@ -4,6 +4,7 @@ import inquirer from 'inquirer';
 import readline from 'node:readline';
 import {
   ProviderRegistry,
+  composeModelId,
   loadConfig,
   updateConfig,
   type ChatMessage,
@@ -37,7 +38,7 @@ async function pickModel(reg: ProviderRegistry, prompt: Prompt): Promise<string 
       pageSize: 20,
       choices: models.map((m) => ({
         name: `${m.provider.padEnd(10)} ${m.id}`,
-        value: `${m.provider}:${m.id}`,
+        value: composeModelId(m.provider, m.id),
       })),
     },
   ]);

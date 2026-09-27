@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   asModelList,
   chatResponseToOpenAI,
+  composeModelId,
   extractMaxTokensLimit,
   isMaxTokensTooLargeError,
   isVisionCapable,
@@ -140,7 +141,7 @@ async function advanceFailover(
   else seq.counts.upstream++;
   mark();
   if (seq.attempts >= seq.ranked.length) return null;
-  const idx = seq.ranked.findIndex((m) => `${m.provider}:${m.id}` === failedKey);
+  const idx = seq.ranked.findIndex((m) => composeModelId(m.provider, m.id) === failedKey);
   return seq.ranked[(idx + 1) % seq.ranked.length] ?? null;
 }
 
@@ -150,7 +151,7 @@ function buildFailoverNotice(
   failedKey: string,
   next: ModelInfo,
 ): SwitchNotice {
-  const to = `${next.provider}:${next.id}`;
+  const to = composeModelId(next.provider, next.id);
   const cause = kind === 'unavailable' || kind === 'rate-limit' ? kind : 'upstream';
   const reason =
     kind === 'rate-limit'
@@ -234,7 +235,7 @@ async function dispatchWithAutoRoute(
           const notice = buildFailoverNotice(router, failure.kind, failedKey, next);
           router.notify(notice);
           notices.push(notice);
-          chatReq.model = `${next.provider}:${next.id}`;
+          chatReq.model = composeModelId(next.provider, next.id);
           continue;
         }
         // Pin the last attempted key before leaving: the handler catch records
@@ -255,7 +256,7 @@ async function dispatchWithAutoRoute(
           const notice: SwitchNotice = {
             type: 'switch-away',
             from: failedKey,
-            to: `${fallback.provider}:${fallback.id}`,
+            to: composeModelId(fallback.provider, fallback.id),
             strategy: router.getStrategy(),
             reason: router.buildSwitchAwayMessage(
               {
@@ -272,7 +273,7 @@ async function dispatchWithAutoRoute(
           };
           router.notify(notice);
           notices.push(notice);
-          chatReq.model = `${fallback.provider}:${fallback.id}`;
+          chatReq.model = composeModelId(fallback.provider, fallback.id);
           attempt++;
           continue;
         }
@@ -973,7 +974,7 @@ export function registerOpenAIRoutes(
                 reply.raw.write(
                   `data: ${JSON.stringify({ fmf_route_notice: notice, id: 'fmf', object: 'chat.completion.chunk', choices: [] })}\n\n`,
                 );
-                chatReq.model = `${next.provider}:${next.id}`;
+                chatReq.model = composeModelId(next.provider, next.id);
                 try {
                   const resolved = reg.resolveModel(chatReq.model);
                   provider = resolved.provider;

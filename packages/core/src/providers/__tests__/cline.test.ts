@@ -10,7 +10,7 @@ process.env.FREEMODELFINDER_HOME = testHome;
 
 const { createTestRuntime } = await import('../../credentials/runtime.js');
 const { loadPools } = await import('../../credentials/credential-store.js');
-const { ClineProvider } = await import('../cline.js');
+const { ClineProvider, ClineError } = await import('../cline.js');
 const { parseRateLimitError } = await import('../../router/auto-router.js');
 
 type TestRuntime = ReturnType<typeof createTestRuntime>;
@@ -621,6 +621,141 @@ describe('ClineProvider error matrix', () => {
     await assert.rejects(provider.chat(req('z-ai/glm-5.3-flash')), /has no available credentials/);
     assert.equal(chatCalls([]).length, 0);
   });
+
+  it('attaches platform, masked account id and model to rate limit errors', async () => {
+    const runtime = newRuntime();
+    const accountId = 'acct-0123456789abcdef';
+    await seed(runtime, [{ id: accountId, accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { fetchImpl } = harness(() => rateLimited('90'));
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const model = 'z-ai/glm-5.3-flash';
+    await assert.rejects(provider.chat(req(model)), (error: unknown) => {
+      assert.ok(error instanceof ClineError);
+      assert.equal(error.platform, 'cline');
+      assert.equal(error.accountId, accountId.slice(0, 8));
+      assert.notEqual(error.accountId, accountId);
+      assert.equal(error.model, model);
+      assert.equal(error.status, 429);
+      assert.equal(typeof error.resetAt, 'number');
+      return true;
+    });
+  });
+
+  it('attaches context to fatal upstream errors', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { fetchImpl } = harness(() => json({ error: { message: 'model unknown' } }, 400));
+    const provider = makeProvider(fetchImpl, runtime);
+
+    await assert.rejects(provider.chat(req('z-ai/glm-5.3-flash')), (error: unknown) => {
+      assert.ok(error instanceof ClineError);
+      assert.equal(error.platform, 'cline');
+      assert.equal(error.accountId, 'a1');
+      assert.equal(error.model, 'z-ai/glm-5.3-flash');
+      assert.equal(error.status, 400);
+      return true;
+    });
+  });
+
+  it('counts every failed upstream attempt once and writes lastError', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [
+      { id: 'a1', accessToken: 'at-a1', expiresAt: VALID_EXPIRY() },
+      { id: 'a2', accessToken: 'at-a2', expiresAt: VALID_EXPIRY() },
+    ]);
+    const { fetchImpl } = harness((call) =>
+      headerOf(call.init, 'authorization') === 'Bearer workos:at-a1'
+        ? rateLimited('120')
+        : chatOk('ok from a2'),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const response = await provider.chat(req('z-ai/glm-5.3-flash'));
+    assert.equal(response.content, 'ok from a2');
+
+    const usage = runtime.snapshotUsage('cline');
+    const byAccount = new Map(usage.map((entry) => [entry.accountId, entry]));
+    assert.equal(byAccount.get('a1')?.requests, 1);
+    assert.match(byAccount.get('a1')?.lastError ?? '', /failed 429/);
+    assert.equal(byAccount.get('a2')?.requests, 1);
+    assert.equal(byAccount.get('a2')?.lastError, undefined);
+  });
+
+  it('counts fatal failures before rethrowing without switching', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [
+      { id: 'a1', accessToken: 'at-a1', expiresAt: VALID_EXPIRY() },
+      { id: 'a2', accessToken: 'at-a2', expiresAt: VALID_EXPIRY() },
+    ]);
+    const { calls, fetchImpl } = harness(() => json({ error: { message: 'model unknown' } }, 400));
+    const provider = makeProvider(fetchImpl, runtime);
+
+    await assert.rejects(provider.chat(req('z-ai/glm-5.3-flash')), /failed 400/);
+    assert.equal(chatCalls(calls).length, 1);
+
+    const usage = runtime.snapshotUsage('cline');
+    assert.equal(usage.length, 1);
+    assert.equal(usage[0]?.accountId, 'a1');
+    assert.equal(usage[0]?.requests, 1);
+    assert.match(usage[0]?.lastError ?? '', /failed 400/);
+  });
+
+  it('cools the account 30s and switches when upstream returns empty content', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [
+      { id: 'a1', accessToken: 'at-a1', expiresAt: VALID_EXPIRY() },
+      { id: 'a2', accessToken: 'at-a2', expiresAt: VALID_EXPIRY() },
+    ]);
+    const { calls, fetchImpl } = harness((call) =>
+      headerOf(call.init, 'authorization') === 'Bearer workos:at-a1'
+        ? json({
+            id: 'chat-1',
+            created: 1,
+            choices: [{ index: 0, message: { role: 'assistant', content: '' } }],
+          })
+        : chatOk('ok from a2'),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const model = 'z-ai/glm-5.3-flash';
+    const before = Date.now();
+    const response = await provider.chat(req(model));
+    const after = Date.now();
+    assert.equal(response.content, 'ok from a2');
+    assert.equal(chatCalls(calls).length, 2);
+
+    const cooldown = runtime.listAccountCooldowns('cline', 'a1');
+    assert.equal(cooldown.length, 1);
+    assert.equal(cooldown[0]?.model, model);
+    expectInRange(cooldown[0]?.resetAt, before + 29_000, after + 31_000, 'empty cooldown');
+
+    const usage = runtime.snapshotUsage('cline');
+    const a1 = usage.find((entry) => entry.accountId === 'a1');
+    assert.equal(a1?.requests, 1);
+    assert.match(a1?.lastError ?? '', /empty content/);
+  });
+
+  it('bubbles an empty-content error when every account returns empty', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { calls, fetchImpl } = harness(() => sseResponse([deltaFrame('')]));
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const before = Date.now();
+    await assert.rejects(provider.chat(req('cline-free/deepseek-v4.1-flash')), /empty content/);
+    const after = Date.now();
+    assert.equal(chatCalls(calls).length, 1);
+
+    const cooldown = runtime.listAccountCooldowns('cline', 'a1');
+    assert.equal(cooldown.length, 1);
+    expectInRange(
+      cooldown[0]?.resetAt,
+      before + 29_000,
+      after + 31_000,
+      'empty cooldown single account',
+    );
+  });
 });
 
 describe('ClineProvider chat and stream fixtures', () => {
@@ -798,7 +933,7 @@ describe('ClineProvider chat and stream fixtures', () => {
 
     const usage = runtime.snapshotUsage('cline');
     assert.equal(usage[0]?.accountId, 'a1');
-    assert.equal(usage[0]?.requests, 0);
+    assert.equal(usage[0]?.requests, 1);
     assert.match(usage[0]?.lastError ?? '', /connection reset/);
   });
 
@@ -812,6 +947,15 @@ describe('ClineProvider chat and stream fixtures', () => {
     const models = await provider.listModels();
     assert.deepEqual(
       models.map((model) => model.id),
+      [
+        'cline:cline-free/deepseek-v4.1-flash',
+        'cline:deepseek/deepseek-v4-flash',
+        'cline:z-ai/glm-5.3-flash',
+        'cline:poolside/laguna-s-2.1:free',
+      ],
+    );
+    assert.deepEqual(
+      models.map((model) => model.displayName),
       [
         'cline-free/deepseek-v4.1-flash',
         'deepseek/deepseek-v4-flash',

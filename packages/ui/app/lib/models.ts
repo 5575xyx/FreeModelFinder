@@ -56,7 +56,7 @@ export type ModelsResponse = {
 };
 
 export function modelValue(model: Pick<ModelItem, 'provider' | 'id'>): string {
-  return `${model.provider}:${model.id}`;
+  return model.id.startsWith(`${model.provider}:`) ? model.id : `${model.provider}:${model.id}`;
 }
 
 export function splitModelValue(value: string): { provider: string; id: string } {

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import {
   ProviderIdSchema,
+  composeModelId,
   selectOnboardingModel,
   updateConfig,
   type AppConfig,
@@ -188,7 +189,7 @@ export function registerOnboardingRoutes(
       };
     }
 
-    const selectedModel = `${selected.provider}:${selected.id}`;
+    const selectedModel = composeModelId(selected.provider, selected.id);
     const startedAt = now();
     let replyText = '';
     try {

@@ -9,6 +9,7 @@ import {
   type RateLimitState,
   type SwitchNotice,
 } from '../types.js';
+import { composeModelId, bareModelId } from '../model-id.js';
 
 export interface RateLimitParseResult {
   isRateLimit: boolean;
@@ -177,7 +178,7 @@ export function scoreModel(
 }
 
 export function formatModelId(m: ModelInfo): string {
-  return `${m.provider}:${m.id}`;
+  return composeModelId(m.provider, m.id);
 }
 
 export function formatResetTime(resetAt: number | undefined): string {
@@ -359,21 +360,23 @@ export class AutoRouter {
     const all = await this.opts.listAllModels();
     const excludedKey = excludedModel.toLowerCase();
     const candidates = all.filter((m) => {
-      const key = m.id.toLowerCase();
-      const full = `${m.provider}:${m.id}`.toLowerCase();
+      const key = bareModelId(m.provider, m.id).toLowerCase();
+      const full = composeModelId(m.provider, m.id).toLowerCase();
       if (key === excludedKey || full === excludedKey) return false;
       // Skip any model whose provider is currently in cooldown (shared quota)
       if (this.isProviderRateLimited(m.provider)) return false;
-      if (this.isRateLimited(m.id) || this.isRateLimited(`${m.provider}:${m.id}`)) return false;
+      if (this.isRateLimited(key) || this.isRateLimited(full)) return false;
       return true;
     });
     if (candidates.length === 0) return null;
 
     if (settings.fallbackChain && settings.fallbackChain.length > 0) {
       for (const preferred of settings.fallbackChain) {
+        const pref = preferred.toLowerCase();
         const found = candidates.find((c) => {
-          const pref = preferred.toLowerCase();
-          return c.id.toLowerCase() === pref || `${c.provider}:${c.id}`.toLowerCase() === pref;
+          const key = bareModelId(c.provider, c.id).toLowerCase();
+          const full = composeModelId(c.provider, c.id).toLowerCase();
+          return key === pref || full === pref;
         });
         if (found) return found;
       }
@@ -397,7 +400,12 @@ export class AutoRouter {
     const all = await this.opts.listAllModels();
     const candidates = all.filter((m) => {
       if (this.isProviderRateLimited(m.provider)) return false;
-      if (this.isRateLimited(m.id) || this.isRateLimited(`${m.provider}:${m.id}`)) return false;
+      if (
+        this.isRateLimited(bareModelId(m.provider, m.id)) ||
+        this.isRateLimited(composeModelId(m.provider, m.id))
+      ) {
+        return false;
+      }
       return true;
     });
     return candidates
@@ -537,7 +545,9 @@ export class AutoRouter {
     const all = await this.opts.listAllModels();
     const match = all.find((m) => {
       const key = preferred.toLowerCase();
-      return m.id.toLowerCase() === key || `${m.provider}:${m.id}`.toLowerCase() === key;
+      const bare = bareModelId(m.provider, m.id).toLowerCase();
+      const full = composeModelId(m.provider, m.id).toLowerCase();
+      return bare === key || full === key;
     });
     if (!match) return null;
     if (this.isProviderRateLimited(match.provider)) return null;
