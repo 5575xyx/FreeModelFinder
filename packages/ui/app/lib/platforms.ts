@@ -42,6 +42,13 @@ export const SETTINGS_PROVIDERS = [
     hint: '实时读取模型价格，只保留输入和输出价格都为零的文本模型',
   },
   {
+    id: 'qianfan',
+    label: '百度千帆 Baidu Qianfan',
+    link: 'https://console.bce.baidu.com/qianfan/ais/console/apiKey',
+    guide: 'https://cloud.baidu.com/doc/qianfan/s/rmh4stp0j',
+    hint: '官方公告永久免费的 ERNIE Speed / Lite 系列，QPS 限速约 1 次/秒',
+  },
+  {
     id: 'modelscope',
     label: 'ModelScope 魔搭',
     link: 'https://modelscope.cn/my/myaccesstoken',
@@ -96,6 +103,7 @@ export function providerLabelKey(id: string): string | undefined {
   const map: Record<string, string> = {
     siliconflow: 'platforms.siliconflow.label',
     sensenova: 'platforms.sensenova.label',
+    qianfan: 'platforms.qianfan.label',
     modelscope: 'platforms.modelscope.label',
     zhipu: 'platforms.zhipu.label',
   };
