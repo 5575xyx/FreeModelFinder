@@ -101,6 +101,7 @@ To enable the audit for a given provider, add its API key as a repository secret
 | Cohere        | `COHERE_API_KEY`      |
 | Hugging Face  | `HUGGINGFACE_API_KEY` |
 | SenseNova     | `SENSENOVA_API_KEY`   |
+| Baidu Qianfan | `QIANFAN_API_KEY`     |
 
 GitHub reserves the `GITHUB_` prefix for Actions, so the repository secret is named
 `GH_MODELS_TOKEN`. The workflow exposes it to the audit process as the

@@ -374,14 +374,17 @@ describe('free provider catalogs', () => {
   });
 
   it('returns the static Qianfan list when no API key is configured', async () => {
+    let called = false;
     const provider = new QianfanProvider({
       credentials: { apiKey: '' },
       fetchImpl: (async () => {
-        throw new Error('must not be called without a key');
+        called = true;
+        return jsonFetch({ data: [] })();
       }) as typeof fetch,
     });
     const models = await provider.listModels();
     assert.equal(models.length, 6);
+    assert.equal(called, false);
     assert.ok(models.every((model) => model.free));
     assert.ok(models.every((model) => model.provider === 'qianfan'));
   });

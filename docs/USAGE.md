@@ -79,7 +79,7 @@ fmf serve --open
 
 ## 4. Provider、模型与“免费”的含义
 
-内置 Provider 包括 OpenRouter、Google Gemini、智谱 AI、SiliconFlow、ModelScope、NVIDIA NIM、GitHub Models、Cohere、Hugging Face 与 SenseNova。当前可用模型是实时目录与内置免费规则共同决定的，因此会随账号、地区和上游更新而变化。
+内置 Provider 包括 OpenRouter、Google Gemini、智谱 AI、SiliconFlow、ModelScope、NVIDIA NIM、GitHub Models、Cohere、Hugging Face、SenseNova 与百度千帆 Qianfan。当前可用模型是实时目录与内置免费规则共同决定的，因此会随账号、地区和上游更新而变化。
 
 项目每日发布的[免费模型清单](../FREE_MODELS.md)会说明每个 Provider 的免费判定依据、模型数、变化和风险。这里有三个容易混淆的点：
 

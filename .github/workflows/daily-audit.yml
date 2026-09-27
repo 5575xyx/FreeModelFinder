@@ -34,6 +34,7 @@ jobs:
       KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
       AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
       AGNES_INTL_API_KEY: ${{ secrets.AGNES_INTL_API_KEY }}
+      QIANFAN_API_KEY: ${{ secrets.QIANFAN_API_KEY }}
     steps:
       - uses: actions/checkout@v6
         with:

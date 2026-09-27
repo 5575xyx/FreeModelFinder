@@ -17,7 +17,7 @@ type Dict = Record<string, string>;
 
 const STORAGE_KEY = 'fmf-language';
 
-const zh: Dict = {
+export const zh: Dict = {
   'app.subtitle': 'Local model gateway',
   'app.tab.stats': '统计',
   'app.tab.finder': '模型',
@@ -435,7 +435,7 @@ const zh: Dict = {
   'platforms.sensenova.hint': '实时读取模型价格，只保留输入和输出价格都为零的文本模型',
   'platforms.sensenova.label': 'SenseNova 商汤',
   'platforms.qianfan.hint': '官方公告永久免费的 ERNIE Speed / Lite 系列，QPS 限速约 1 次/秒',
-  'platforms.qianfan.label': '百度千帆',
+  'platforms.qianfan.label': '百度千帆 Baidu Qianfan',
   'platforms.modelscope.hint': '免费调用受账号与平台配额限制，以模型服务接口返回为准',
   'platforms.modelscope.label': 'ModelScope 魔搭',
   'platforms.zhipu.hint': '只列入平台明确标记为免费的 Flash 型号',
@@ -484,7 +484,7 @@ const zh: Dict = {
   'drawer.close': '关闭',
 };
 
-const en: Dict = {
+export const en: Dict = {
   'app.subtitle': 'Local model gateway',
   'app.tab.stats': 'Stats',
   'app.tab.finder': 'Models',
