@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
   "date": "2026-09-27",
-  "generatedAt": "2026-09-27T00:41:04.073Z",
+  "generatedAt": "2026-09-27T12:41:54.790Z",
   "reportPath": "reports/provider-free-model-audit-2026-09-27.md",
-  "totalModels": 97,
+  "totalModels": 103,
   "providers": [
     {
       "id": "openrouter",
@@ -424,6 +424,47 @@
       ]
     },
     {
+      "id": "qianfan",
+      "display": "Baidu Qianfan",
+      "status": "ok",
+      "count": 6,
+      "freeType": "官方永久免费型号",
+      "freeBasis": "官方公告永久免费的 ERNIE Speed / Lite 白名单，实时目录取交集（AppBuilder 已退役）；接口不可用时回退审核过的白名单",
+      "risk": "QPS 限速约 1 次/秒；免费清单与型号以官方政策为准，退役型号由交集自动剔除",
+      "models": [
+        {
+          "id": "ernie-lite-128k",
+          "displayName": "ERNIE Lite 128K",
+          "contextWindow": 128000
+        },
+        {
+          "id": "ernie-lite-8k",
+          "displayName": "ERNIE Lite 8K",
+          "contextWindow": 8000
+        },
+        {
+          "id": "ernie-lite-8k-0922",
+          "displayName": "ERNIE Lite 8K 0922",
+          "contextWindow": 8000
+        },
+        {
+          "id": "ernie-speed-128k",
+          "displayName": "ERNIE Speed 128K",
+          "contextWindow": 128000
+        },
+        {
+          "id": "ernie-speed-8k",
+          "displayName": "ERNIE Speed 8K",
+          "contextWindow": 8000
+        },
+        {
+          "id": "ernie-tiny",
+          "displayName": "ERNIE Tiny",
+          "contextWindow": null
+        }
+      ]
+    },
+    {
       "id": "kilo",
       "display": "Kilo Code",
       "status": "ok",
@@ -633,7 +674,7 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-26",
+    "comparedWith": "2026-09-27",
     "added": [],
     "removed": [],
     "comparedProviders": [

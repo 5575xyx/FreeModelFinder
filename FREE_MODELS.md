@@ -2,7 +2,7 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-09-27（Asia/Shanghai）** · **97** 个免费模型入口 · **11/13** 个 Provider 正常。
+> 最近目录审计：**2026-09-27（Asia/Shanghai）** · **103** 个免费模型入口 · **12/14** 个 Provider 正常。
 
 [返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-27.md)
 
@@ -10,25 +10,26 @@
 
 ## 今日变化
 
-与 2026-09-26 相比，成功比较的 11 个 Provider 模型清单没有变化。
+与 2026-09-27 相比，成功比较的 11 个 Provider 模型清单没有变化。
 
 ## Provider 汇总
 
-| Provider                 | 状态      | 免费模型数 | 免费类型              | 免费依据                                                                                       |
-| ------------------------ | --------- | ---------: | --------------------- | ---------------------------------------------------------------------------------------------- |
-| OpenRouter               | 🟢 正常   |         17 | 零价格模型            | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型            |
-| Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier        | 账号实时目录与 Free Tier 白名单取交集，只保留支持 `generateContent` 的型号                     |
-| Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号          | 只列入官方免费 Flash 清单                                                                      |
-| SiliconFlow              | 🟢 正常   |          5 | 免费白名单            | 平台免费型号白名单与实时模型目录取交集                                                         |
-| ModelScope               | 🟢 正常   |         16 | 账号免费额度          | API-Inference 免费型号清单与可用目录取交集                                                     |
-| NVIDIA NIM               | 🟢 正常   |         11 | 免费开发端点          | 只保留审核过的 build.nvidia.com 免费开发端点                                                   |
-| GitHub Models            | ⚪ 未接入 |     未接入 | 原型开发额度          | 目录中的文本输出模型使用账号自带原型开发额度                                                   |
-| Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`                          |
-| Hugging Face             | 🟢 正常   |          3 | 实时零价端点          | 实时端点明确报告 `is_free`，或输入输出价格均为 0                                               |
-| SenseNova                | 🟢 正常   |          7 | 实时零价模型          | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单                    |
-| Kilo Code                | 🟢 正常   |         22 | 聚合免费模型          | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                                   |
-| Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型          | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_） |
-| Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型          | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_） |
+| Provider                 | 状态      | 免费模型数 | 免费类型              | 免费依据                                                                                                          |
+| ------------------------ | --------- | ---------: | --------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| OpenRouter               | 🟢 正常   |         17 | 零价格模型            | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型                               |
+| Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier        | 账号实时目录与 Free Tier 白名单取交集，只保留支持 `generateContent` 的型号                                        |
+| Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号          | 只列入官方免费 Flash 清单                                                                                         |
+| SiliconFlow              | 🟢 正常   |          5 | 免费白名单            | 平台免费型号白名单与实时模型目录取交集                                                                            |
+| ModelScope               | 🟢 正常   |         16 | 账号免费额度          | API-Inference 免费型号清单与可用目录取交集                                                                        |
+| NVIDIA NIM               | 🟢 正常   |         11 | 免费开发端点          | 只保留审核过的 build.nvidia.com 免费开发端点                                                                      |
+| GitHub Models            | ⚪ 未接入 |     未接入 | 原型开发额度          | 目录中的文本输出模型使用账号自带原型开发额度                                                                      |
+| Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`                                             |
+| Hugging Face             | 🟢 正常   |          3 | 实时零价端点          | 实时端点明确报告 `is_free`，或输入输出价格均为 0                                                                  |
+| SenseNova                | 🟢 正常   |          7 | 实时零价模型          | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单                                       |
+| Baidu Qianfan            | 🟢 正常   |          6 | 官方永久免费型号      | 官方公告永久免费的 ERNIE Speed / Lite 白名单，实时目录取交集（AppBuilder 已退役）；接口不可用时回退审核过的白名单 |
+| Kilo Code                | 🟢 正常   |         22 | 聚合免费模型          | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                                                      |
+| Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型          | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                    |
+| Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型          | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                    |
 
 ## 完整列表
 
@@ -191,6 +192,22 @@
 | `sensenova:glm-5.2`                  | glm-5.2                  |          — |
 | `sensenova:kimi-k3`                  | kimi-k3                  |          — |
 | `sensenova:sensenova-6.8-flash-lite` | sensenova-6.8-flash-lite |          — |
+
+### Baidu Qianfan
+
+- Provider ID：`qianfan`
+- 状态：🟢 正常
+- 免费依据：官方公告永久免费的 ERNIE Speed / Lite 白名单，实时目录取交集（AppBuilder 已退役）；接口不可用时回退审核过的白名单
+- 主要风险：QPS 限速约 1 次/秒；免费清单与型号以官方政策为准，退役型号由交集自动剔除
+
+| Gateway 模型 ID              | 显示名称           | 上下文窗口 |
+| ---------------------------- | ------------------ | ---------: |
+| `qianfan:ernie-lite-128k`    | ERNIE Lite 128K    |       128K |
+| `qianfan:ernie-lite-8k`      | ERNIE Lite 8K      |         8K |
+| `qianfan:ernie-lite-8k-0922` | ERNIE Lite 8K 0922 |         8K |
+| `qianfan:ernie-speed-128k`   | ERNIE Speed 128K   |       128K |
+| `qianfan:ernie-speed-8k`     | ERNIE Speed 8K     |         8K |
+| `qianfan:ernie-tiny`         | ERNIE Tiny         |          — |
 
 ### Kilo Code
 

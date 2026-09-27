@@ -1,14 +1,14 @@
 # FreeModelFinder Provider 与免费模型审计报告
 
 - 审计时间：2026-09-27（Asia/Shanghai）
-- 审计对象：13 个内置 provider
+- 审计对象：14 个内置 provider
 - 审计方法：GitHub Actions 每日调度，通过核心层 `ProviderRegistry.listModels()` 抓取各 provider 实时目录并套用 `free === true` 过滤；本次未执行真实推理测试。
 - 生成脚本：`scripts/audit-free-models.mjs`
 
 ## 结论
 
-- 11/13 个 provider 目录接口在本次运行中成功返回。
-- 命中免费过滤的模型合计 **97** 个。
+- 12/14 个 provider 目录接口在本次运行中成功返回。
+- 命中免费过滤的模型合计 **103** 个。
 - 未配置密钥的 provider 会在下表中标记为“跳过”，不会阻塞审计。
 
 ## Provider 汇总
@@ -25,6 +25,7 @@
 | Cohere | 1 | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0` | 成功 | 有速率限制；其他 Command 模型不再被标记为免费 |
 | Hugging Face | 3 | 实时端点明确报告 `is_free`，或输入输出价格均为 0 | 成功 | 普通 Router 模型可能消耗 credits 或按量收费，因此不会混入 |
 | SenseNova | 7 | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单 | 成功 | 免费配额和型号可能变化；当前网关只处理文本，即使模型本身支持多模态 |
+| Baidu Qianfan | 6 | 官方公告永久免费的 ERNIE Speed / Lite 白名单，实时目录取交集（AppBuilder 已退役）；接口不可用时回退审核过的白名单 | 成功 | QPS 限速约 1 次/秒；免费清单与型号以官方政策为准，退役型号由交集自动剔除 |
 | Kilo Code | 22 | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型 | 成功 | 免费层约 200 请求/小时；部分模型与 OpenRouter 重叠 |
 | Agnes AI (China) | 6 | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*） | 成功 | 免费层 20 RPM；图像和视频模型有额外限制 |
 | Agnes AI (International) | 7 | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*） | 成功 | 免费层 20 RPM；图像和视频模型有额外限制 |
@@ -124,6 +125,15 @@
 - `glm-5.2`
 - `kimi-k3`
 - `sensenova-6.8-flash-lite`
+
+### Baidu Qianfan (qianfan)
+
+- `ernie-lite-128k` — ERNIE Lite 128K
+- `ernie-lite-8k` — ERNIE Lite 8K
+- `ernie-lite-8k-0922` — ERNIE Lite 8K 0922
+- `ernie-speed-128k` — ERNIE Speed 128K
+- `ernie-speed-8k` — ERNIE Speed 8K
+- `ernie-tiny` — ERNIE Tiny
 
 ### Kilo Code (kilo)
 

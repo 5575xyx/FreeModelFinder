@@ -33,7 +33,7 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-27（Asia/Shanghai）更新：97 个免费模型入口，覆盖 11/13 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-27（Asia/Shanghai）更新：103 个免费模型入口，覆盖 12/14 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 未配置密钥：Google Gemini、GitHub Models。
 
@@ -49,6 +49,7 @@
 | Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production |
 | Hugging Face             | 🟢 正常   |          3 | 实时零价端点          |
 | SenseNova                | 🟢 正常   |          7 | 实时零价模型          |
+| Baidu Qianfan            | 🟢 正常   |          6 | 官方永久免费型号      |
 | Kilo Code                | 🟢 正常   |         22 | 聚合免费模型          |
 | Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型          |
 | Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型          |
@@ -57,7 +58,7 @@
 
 ### 今日变化
 
-与 2026-09-26 相比，成功比较的 11 个 Provider 模型清单没有变化。
+与 2026-09-27 相比，成功比较的 11 个 Provider 模型清单没有变化。
 
 ### 展开完整模型列表
 
@@ -168,6 +169,18 @@
 - `sensenova:glm-5.2`
 - `sensenova:kimi-k3`
 - `sensenova:sensenova-6.8-flash-lite`
+
+</details>
+
+<details>
+<summary><strong>Baidu Qianfan · 6 个模型</strong></summary>
+
+- `qianfan:ernie-lite-128k` — ERNIE Lite 128K
+- `qianfan:ernie-lite-8k` — ERNIE Lite 8K
+- `qianfan:ernie-lite-8k-0922` — ERNIE Lite 8K 0922
+- `qianfan:ernie-speed-128k` — ERNIE Speed 128K
+- `qianfan:ernie-speed-8k` — ERNIE Speed 8K
+- `qianfan:ernie-tiny` — ERNIE Tiny
 
 </details>
 
