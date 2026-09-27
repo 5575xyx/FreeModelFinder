@@ -154,6 +154,7 @@ function heuristicRpmScore(m: ModelInfo, profile?: ModelRoutingProfile): number 
     cohere: 55,
     huggingface: 30,
     sensenova: 50,
+    qianfan: 45,
     nvidia: 55,
     gemini: 45,
     ollama: 100,

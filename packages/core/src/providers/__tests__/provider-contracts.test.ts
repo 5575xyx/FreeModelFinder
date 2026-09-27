@@ -10,6 +10,7 @@ import { HuggingFaceProvider } from '../huggingface.js';
 import { ModelScopeProvider } from '../modelscope.js';
 import { NvidiaProvider } from '../nvidia.js';
 import { OpenRouterProvider } from '../openrouter.js';
+import { QianfanProvider } from '../qianfan.js';
 import { SenseNovaProvider } from '../sensenova.js';
 import { SiliconFlowProvider } from '../siliconflow.js';
 import { ZhipuProvider } from '../zhipu.js';
@@ -28,6 +29,7 @@ const openAiCompatibleProviders: Array<[string, ProviderConstructor]> = [
   ['cohere', CohereProvider],
   ['huggingface', HuggingFaceProvider],
   ['sensenova', SenseNovaProvider],
+  ['qianfan', QianfanProvider],
   ['kilo', KiloProvider],
   ['agnes', AgnesProvider],
 ];
@@ -277,6 +279,14 @@ describe('provider empty-catalog contracts', () => {
       [
         'sensenova',
         new SenseNovaProvider({
+          credentials: { apiKey: 'key' },
+          fetchImpl: async () => jsonResponse({ data: [] }),
+        }),
+        'fallback',
+      ],
+      [
+        'qianfan',
+        new QianfanProvider({
           credentials: { apiKey: 'key' },
           fetchImpl: async () => jsonResponse({ data: [] }),
         }),

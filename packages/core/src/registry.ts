@@ -10,6 +10,7 @@ import {
   ModelScopeProvider,
   NvidiaProvider,
   OpenRouterProvider,
+  QianfanProvider,
   SenseNovaProvider,
   SiliconFlowProvider,
   ZhipuProvider,
@@ -48,6 +49,7 @@ const PROVIDER_CTORS: Record<
   cohere: CohereProvider,
   huggingface: HuggingFaceProvider,
   sensenova: SenseNovaProvider,
+  qianfan: QianfanProvider,
   kilo: KiloProvider,
   agnes: AgnesProvider,
   'agnes-intl': AgnesIntlProvider,
@@ -346,6 +348,13 @@ export class ProviderRegistry {
     if (modelId.startsWith('glm-')) {
       try {
         return { provider: this.getProvider('zhipu'), modelId };
+      } catch {
+        // fallthrough
+      }
+    }
+    if (modelId.toLowerCase().startsWith('ernie')) {
+      try {
+        return { provider: this.getProvider('qianfan'), modelId };
       } catch {
         // fallthrough
       }

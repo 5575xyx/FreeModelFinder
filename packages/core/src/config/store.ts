@@ -76,6 +76,7 @@ const DEFAULT_CONFIG: AppConfig = {
     cohere: { enabled: false },
     huggingface: { enabled: false },
     sensenova: { enabled: false },
+    qianfan: { enabled: false },
     kilo: { enabled: false },
     agnes: { enabled: false },
     custom: { enabled: false },

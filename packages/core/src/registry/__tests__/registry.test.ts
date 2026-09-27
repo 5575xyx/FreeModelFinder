@@ -190,6 +190,30 @@ describe('ProviderRegistry model catalog', () => {
     assert.equal(resolved.modelId, 'cpa:Qwen3.8-27B');
   });
 
+  it('routes bare ERNIE ids to the qianfan provider', () => {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        qianfan: { enabled: true, credentials: { apiKey: 'k' } },
+      }),
+    );
+
+    const resolved = registry.resolveModel('ernie-speed-8k');
+    assert.equal(resolved.provider.id, 'qianfan');
+    assert.equal(resolved.modelId, 'ernie-speed-8k');
+  });
+
+  it('routes bare mixed-case ERNIE ids to the qianfan provider', () => {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        qianfan: { enabled: true, credentials: { apiKey: 'k' } },
+      }),
+    );
+
+    const resolved = registry.resolveModel('ERNIE-Speed-8k');
+    assert.equal(resolved.provider.id, 'qianfan');
+    assert.equal(resolved.modelId, 'ERNIE-Speed-8k');
+  });
+
   it('keeps the last successful models when a provider refresh fails', async () => {
     const registry = new ProviderRegistry(
       configWithProviders({

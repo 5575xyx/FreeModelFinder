@@ -7,6 +7,7 @@ import { HuggingFaceProvider } from '../huggingface.js';
 import { ModelScopeProvider } from '../modelscope.js';
 import { NvidiaProvider } from '../nvidia.js';
 import { OpenRouterProvider } from '../openrouter.js';
+import { QianfanProvider } from '../qianfan.js';
 import { SenseNovaProvider } from '../sensenova.js';
 import { SiliconFlowProvider } from '../siliconflow.js';
 import { ZhipuProvider } from '../zhipu.js';
@@ -304,12 +305,84 @@ describe('free provider catalogs', () => {
   it('falls back to static list when Agnes /models endpoint fails', async () => {
     const agnes = new AgnesProvider({
       credentials: { apiKey: 'test-key' },
-      fetchImpl: (async () =>
-        new Response(null, { status: 404 })) as typeof fetch,
+      fetchImpl: (async () => new Response(null, { status: 404 })) as typeof fetch,
     });
     const models = await agnes.listModels();
     assert.ok(models.length > 0, 'should return static models');
     assert.ok(models.every((model) => model.free));
     assert.ok(models.every((model) => model.provider === 'agnes'));
+  });
+
+  it('falls back to the audited ERNIE free list when the Qianfan catalog fails', async () => {
+    const provider = new QianfanProvider({
+      credentials: { apiKey: 'test-key' },
+      fetchImpl: (async () => {
+        throw new Error('network down');
+      }) as typeof fetch,
+    });
+    const models = await provider.listModels();
+    assert.deepEqual(
+      models.map((model) => model.id),
+      [
+        'ernie-speed-8k',
+        'ernie-speed-128k',
+        'ernie-lite-8k',
+        'ernie-lite-8k-0922',
+        'ernie-lite-128k',
+        'ernie-tiny',
+      ],
+    );
+    assert.ok(models.every((model) => model.free));
+    assert.ok(models.every((model) => model.provider === 'qianfan'));
+  });
+
+  it('keeps only whitelisted Qianfan models from the dynamic catalog', async () => {
+    let requestedUrl = '';
+    const provider = new QianfanProvider({
+      credentials: { apiKey: 'test-key' },
+      fetchImpl: (async (input: string | URL | Request) => {
+        requestedUrl = String(input);
+        return new Response(
+          JSON.stringify({ data: [{ id: 'ERNIE-Speed-8k' }, { id: 'ernie-5.0' }] }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }) as typeof fetch,
+    });
+    const models = await provider.listModels();
+    assert.ok(requestedUrl.endsWith('/models'));
+    assert.deepEqual(
+      models.map((model) => model.id),
+      ['ERNIE-Speed-8k'],
+    );
+    assert.equal(models[0]!.displayName, 'ERNIE Speed 8K');
+    assert.ok(models.every((model) => model.free));
+    assert.ok(models.every((model) => model.provider === 'qianfan'));
+  });
+
+  it('falls back to the static Qianfan list when no dynamic id matches', async () => {
+    const provider = new QianfanProvider({
+      credentials: { apiKey: 'test-key' },
+      fetchImpl: jsonFetch({ data: [{ id: 'ernie-5.0' }] }),
+    });
+    const models = await provider.listModels();
+    assert.equal(models.length, 6);
+    assert.ok(models.every((model) => model.free));
+    assert.ok(models.every((model) => model.provider === 'qianfan'));
+  });
+
+  it('returns the static Qianfan list when no API key is configured', async () => {
+    const provider = new QianfanProvider({
+      credentials: { apiKey: '' },
+      fetchImpl: (async () => {
+        throw new Error('must not be called without a key');
+      }) as typeof fetch,
+    });
+    const models = await provider.listModels();
+    assert.equal(models.length, 6);
+    assert.ok(models.every((model) => model.free));
+    assert.ok(models.every((model) => model.provider === 'qianfan'));
   });
 });

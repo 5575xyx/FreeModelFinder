@@ -12,6 +12,7 @@ export const ProviderIdSchema = z.enum([
   'cohere',
   'huggingface',
   'sensenova',
+  'qianfan',
   'kilo',
   'agnes',
   'agnes-intl',
