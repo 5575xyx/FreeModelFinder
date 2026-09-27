@@ -13,6 +13,21 @@ export { extractMaxTokensLimit, isMaxTokensTooLargeError } from './max-tokens.js
 export { looksVisionModelId, withVisionInput, isVisionCapable } from './vision.js';
 export { ProviderRegistry, resetAutoPoolCursor, type ListAllModelsResult } from './registry.js';
 export {
+  getCredentialRuntime,
+  createTestRuntime,
+  type CredentialRuntime,
+  type CredentialRuntimeOptions,
+  type TestCredentialRuntime,
+} from './credentials/runtime.js';
+export {
+  DeviceAuthManager,
+  type DeviceAuthFlow,
+  type DeviceAuthManagerOptions,
+  type DeviceAuthPollResult,
+  type DeviceAuthStartOptions,
+  type DeviceAuthStatus,
+} from './credentials/device-auth.js';
+export {
   AutoRouter,
   parseRateLimitError,
   parseModelUnavailableError,
