@@ -187,10 +187,12 @@ ClineProvider 不调用 base 的 `nextKey`/`requireKey`（无 apiKey 语义）�
 ```
 POST /api/cline/login/start        → { flowId, code, userUrl, expiresAt }
 POST /api/cline/login/poll         ← { flowId }
-       → { status:'pending' } | { status:'complete', account:{id,label} } | 'expired' | 'denied'
+       → { status:'pending' } | { status:'complete', account:{id,label,status} }
+         | { status:'expired' } | { status:'denied' }   // v4 回填：四态恒为对象
 GET  /api/cline/accounts           → { accounts:[{ id,label,status,addedAt,lastUsedAt,
                                        cooldowns:[{model,resetAt}],   // 由 cooling-map 提供
-                                       usage:{requests,tokens,lastError} }] }  // 由 usage-aggregator 提供
+                                       usage:{requests,promptTokens,completionTokens,lastError?} }] }
+                                       // v4 回填：usage 跟随 usage-aggregator 快照字段
 POST /api/cline/accounts/:id/cooldowns/clear  → { cleared:number }
 POST /api/cline/accounts/:id/logout           → { ok }   // 抹除 refreshToken 条目
 POST /api/providers  (cline)       → 沿用现有 provider 保存通道
