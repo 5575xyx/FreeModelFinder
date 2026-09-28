@@ -1,75 +1,167 @@
-# 通过 cline-free 接入 Cline 免费额度
+# 从 cline-free 迁移到内置 Cline Provider
 
-## cline-free 是什么
+FreeModelFinder 现在把 Cline 作为**一等内置 Provider**：不再需要在本机跑 `cline-free` 反代进程，
+也不需要手填 `sk-cline-*` 占位 Key——在 Dashboard 的 Cline 平台卡片里用**设备码登录**自己的 Cline
+账号，凭据加密保存在本机，网关直接用 Cline 的免费额度。
 
-cline-free 是一个把 Cline 的免费额度封装成本地 OpenAI 兼容反代的服务：在本机启动一个常驻进程后，它监听 `http://localhost:8787/v1`，并接受形如 `sk-cline-*` 的 API Key。任何 OpenAI 兼容客户端（包括 FreeModelFinder）都可以把 Base URL 指向这个本地地址，由 cline-free 转发到上游并复用 Cline 的免费额度。
+本文是旧的「cline-free sidecar + 自定义来源」接入方式的**迁移说明**，同时覆盖新方式的用法。
 
-它的特点是：
+## 一、内置的 4 个模型怎么用
 
-- **本地进程**：需要先自行启动 cline-free，FreeModelFinder 才能连通；
-- **OpenAI 兼容**：提供 `/v1/chat/completions` 等常规接口，无需专用适配；
-- **Key 是本地占位符**：`sk-cline-*` 只用于通过本地反代的校验，不是向上游平台注册的密钥；
-- **模型清单以运行时为准**：实际可用型号由 cline-free 决定，可能随上游变化。
+Cline 卡片启用且池内至少有一个可用账号后，模型目录会多出 4 个内置模型（`GET /v1/models` 可见）：
 
-在接入前可以先直接验证反代本身可用：
+| 对外模型 ID                            | 显示名                           |
+| -------------------------------------- | -------------------------------- |
+| `cline:cline-free/deepseek-v4.1-flash` | `cline-free/deepseek-v4.1-flash` |
+| `cline:deepseek/deepseek-v4-flash`     | `deepseek/deepseek-v4-flash`     |
+| `cline:z-ai/glm-5.3-flash`             | `z-ai/glm-5.3-flash`             |
+| `cline:poolside/laguna-s-2.1:free`     | `poolside/laguna-s-2.1:free`     |
 
-```bash
-curl http://localhost:8787/v1/chat/completions \
-  -H 'content-type: application/json' \
-  -H 'authorization: Bearer sk-cline-***' \
-  -d '{
-    "model": "<cline-free 暴露的模型 ID>",
-    "messages": [{"role": "user", "content": "hi"}],
-    "max_tokens": 1
-  }'
+- 对外规范 ID 恒为 `cline:<上游原生 ID>`，标记为 `free: true`、能力为文本。
+- **设为默认模型**：设置页「当前模型」区块选择，或 `fmf model use cline:cline-free/deepseek-v4.1-flash`。
+- **参与自动路由**：启用 `auto` 后，这 4 个模型会进入聚合池成为候选，池内限流/失败会先换号，
+  池尽再由自动路由切到其他候选。
+- **粘贴裸上游名也认**：`cline-free/...`、`cline/...`、`cline-pass/...` 形式的模型名会被启发式
+  路由到 Cline（模型 ID 原样发给上游）；若 Cline 未启用或无可用账号，则按既有启发式回退。
+- 无需 API Key：Cline 走账号凭据（refreshToken），不走 `credentials.apiKey`，网关不会要求补 Key。
+
+## 二、登录流程（设置 → 来源设置 → Cline 平台卡片）
+
+1. 打开 Dashboard **设置 → 来源设置**，找到 **Cline** 卡片（提示文案：免 API Key，凭据只保存在本机）。
+2. 点 **登录 Cline 账号**，面板显示：
+   - **验证码**（可一键复制）与 **打开授权页** 链接（上游固定授权域名）；
+   - **有效期倒计时**（有效期由上游授权会话给出）。
+3. 在授权页用 Cline 账号确认授权。面板每 **2.5 秒**轮询一次登录结果：
+   - `pending` → 继续等待；
+   - `complete` → 提示「登录成功：<账号>」，**自动勾选「启用 Cline」**（若自动启用失败，
+     会提示 `已登录，但自动启用失败，请手动勾选「启用 Cline」`），随后刷新配置，
+     卡片徽章变为 **已配置**；
+   - `expired` → 「授权已过期，请重试」；`denied` → 「授权被拒绝，请重试」；两者都可**重试**。
+4. **多账号**：点「登录其他账号」重复上述流程，账号会进同一个池子轮换。
+5. 中途可点 **取消登录**；关掉页面即停止轮询，服务端 flow 只存在网关内存、到期自动作废（无后台任务）。
+
+相关管理 API（与既有 `/api/*` 一样受本地 UI origin 门禁保护）：
+
+```text
+POST /api/cline/login/start                        → { flowId, code, userUrl, expiresAt }
+POST /api/cline/login/poll        ← { flowId }     → pending | complete | expired | denied
+GET  /api/cline/accounts                           → 账号列表（状态/冷却/用量，不含 refreshToken）
+POST /api/cline/accounts/:id/cooldowns/clear       → { cleared }
+POST /api/cline/accounts/:id/logout                → { ok }
 ```
 
-## 接入 FreeModelFinder
+## 三、账号池、冷却与换号语义
 
-FreeModelFinder **不把 cline-free 内置为一等 Provider**，而是通过"自定义来源"零代码接入：
+**账号池**
 
-1. 启动 cline-free，确认上一节的 `curl` 可以正常返回；
-2. 打开 Dashboard 的 **设置 → 自定义来源（Custom Sources）**，新增一个来源；
-3. 按下表填写：
+- 一个平台可挂多个账号；取号策略默认 `round_robin`，可在 `config.json` 的
+  `credentials.cline.strategy` 改为 `fill` / `random`；`cooldownFallbackMinutes` 可改冷却兜底分钟数。
+- 面板逐账号展示：状态徽章（`可用` / `需重新登录`）、冷却倒计时、添加时间、最近使用、
+  用量摘要（请求 / 输入 / 输出 tokens）与最近一次错误（已脱敏）。
 
-   | 字段       | 值                                                         |
-   | ---------- | ---------------------------------------------------------- |
-   | 来源名称   | 任意易识别的名称（会生成稳定的来源 ID）                    |
-   | Base URL   | `http://localhost:8787/v1`                                 |
-   | API Key    | `sk-cline-*`（按 cline-free 实际生成的值填写）             |
-   | 模型列表   | cline-free 实际暴露的模型 ID，手填，不要照抄其他来源的型号 |
-   | 显示名称   | 可选                                                       |
-   | 上下文窗口 | 可选，按实际模型能力填写                                   |
+**冷却（限流退避）**
 
-4. 保存后，该来源的模型会以 `custom:<来源 ID>:<模型 ID>` 的形式进入模型目录，可以被设为默认模型，也可以在启用自动路由后参与 `auto` 切换。
+- 粒度是 **账号 × 模型**：同一账号在 A 模型被限流，不影响它在 B 模型上的请求。
+- 429 的恢复时刻按 **Retry-After 头 > 明确字段 > 文本时长 > 兜底分钟**（默认 5 分钟）解析，
+  单条冷却上限 24 小时；上游返回 200 但内容为空时，该账号该模型冷却 **30 秒**再换号重试。
+- 冷却只存在内存里，**网关重启会丢**（属预期：重启后立刻再撞 429 很正常）。
+- 面板可对单个账号点 **解除冷却**（立即清掉该账号的冷却条目）。
 
-配置步骤与[使用指南](USAGE.md)第 9 节「自定义 OpenAI-compatible 来源」完全一致。
+**换号**
 
-## 风险与限制
+- 单个请求最多换 **3 个账号**（且不超过池大小），已尝试过的账号不会重复尝试。
+- 会触发换号：429（限流）、401/403（凭据失效，同时把该账号标成 `需重新登录`）、网络错误与 5xx。
+- 不换号：400（模型名等账号无关错误，直接报错，避免把配置错误放大成账号雪崩）、
+  流式响应中途断开（不可重放，错误原样透传）。
+- 刷新端点（refreshToken → accessToken）遇到网络错误/5xx **不判失效**，防止误杀账号；
+  access token 内存缓存、过期前刷新，且并发请求共享同一次刷新（防刷新风暴）。
 
-- **灰色接口**：cline-free 依赖逆向得到的上游协议，随时可能变更；一旦上游调整，反代可能直接失效。
-- **依赖本机常驻进程**：需要保持 cline-free 与 FreeModelFinder 同时运行；进程退出、端口被占用或启动顺序不对，都会导致该来源请求失败。
-- **额度与清单不稳定**：免费额度、可用模型和限速都可能随时变化，需在 cline-free 侧自行确认，FreeModelFinder 无法感知其配额。
-- **不经过免费目录审核**：自定义来源不参与项目的每日免费模型审计，价格、隐私、内容政策和协议兼容性都需要自行判断。
-- **失败表现**：显式指定该来源的模型时，只有限流会触发一次备用切换，其余错误直接报错；使用 `auto` 或 `default` 时，连接被拒绝、进程退出等上游错误同样会被自动路由绕开到其他候选。
-- **只应监听本机**：请确认 cline-free 仅绑定 `127.0.0.1`；如果它暴露到局域网或公网，任何可达主机都能直接用这个 Key 消耗你的免费额度。
+**池尽与自动路由**
 
-## 为什么不做成一等 Provider
+- 所有账号都在冷却 → 抛出 `cline failed 429 rate limit: all <N> accounts are cooling for <模型>, reset at <ISO>`。
+- 若开启自动路由，这个 429 会升级成**模型级冷却**并 failover 到其他候选（关闭自动路由时，
+  显式 `cline:` 请求只做池内换号、不做跨 provider 兜底；池内换号不受自动路由开关影响）。
+- 所有账号都失效 → `cline failed <状态码>: <N> 个账号凭据失效，请重新登录`。
 
-内置 Provider 需要稳定的官方接口、明确的免费规则和可审计的模型目录。cline-free 同时缺少这三点：协议是逆向的、免费额度不可承诺、模型清单无法静态审核，而且要求本机常驻一个额外进程。因此它走自定义来源接入，既不进入内置 Provider 列表，也不出现在每日发布的免费模型清单中。
+## 四、API 示例
 
-如果上游将来提供**稳定的官方 API**，会再评估将其升级为一等 Provider：纳入目录审计、免费规则、`auto` 路由评分与故障降级逻辑。
+```bash
+# 列出模型（含 cline:*）
+curl http://127.0.0.1:11435/v1/models \
+  -H "authorization: Bearer <网关 API Key（开启强制鉴权时）>"
 
-## 常见问题
+# 非流式
+curl http://127.0.0.1:11435/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer <网关 API Key（开启强制鉴权时）>" \
+  -d '{
+    "model": "cline:cline-free/deepseek-v4.1-flash",
+    "messages": [{"role": "user", "content": "hi"}]
+  }'
 
-### Dashboard 中该来源的请求全部失败
+# 流式
+curl -N http://127.0.0.1:11435/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer <网关 API Key（开启强制鉴权时）>" \
+  -d '{"model":"cline:deepseek/deepseek-v4-flash","stream":true,"messages":[{"role":"user","content":"hi"}]}'
+```
 
-先确认 cline-free 进程仍在运行、`http://localhost:8787/v1` 端口没有被其他程序占用，并用上文的 `curl` 直接验证反代本身可用。FreeModelFinder 侧只需确认 Base URL 和 Key 与本地配置一致。
+Anthropic `/v1/messages` 与 Gemini `/v1beta/...` 端点同样可用（协议转换由网关既有协议层完成），
+把 `model` 换成上表的 `cline:*` 即可。
 
-### 提示模型不存在或返回 4xx
+## 五、与旧的裸 token / cline-free 接入方式的区别
 
-模型 ID 必须与 cline-free 当时实际暴露的清单一致：上游下线或改名后，自定义来源里手填的旧 ID 仍然保留，需要手动更新模型列表。该项目不会自动同步 cline-free 的模型目录。
+| 维度         | 旧方式：cline-free sidecar + 自定义来源                                         | 新方式：内置 Cline Provider                                                                            |
+| ------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 运行前提     | 本机常驻 `cline-free` 进程（`http://localhost:8787/v1`），进程/端口出问题就全挂 | 网关本体能力，无额外进程                                                                               |
+| 凭据         | 手填 `sk-cline-*` 占位 Key（或把裸 token 配在来源里）                           | 无 API Key；页面内设备码登录，refreshToken 保存在本机                                                  |
+| 落盘         | 由 cline-free / 自定义来源自行保存                                              | `config.json` 的 `credentials.cline`，写盘前用本机 `master.key` 加密（`v3:` 密文），API 与日志均不回显 |
+| 模型 ID      | 手填模型列表，对外形如 `custom:<来源>:<模型>`                                   | 内置 4 个模型，对外 `cline:<上游原生 ID>`，无需手填                                                    |
+| 多账号与退避 | 单实例能力，限流行为由 sidecar 决定                                             | 账号池轮换 + 账号×模型冷却 + 单请求最多换 3 个号 + 池尽冒泡/自动路由                                   |
+| 可观测       | 看不到用量与冷却                                                                | 面板内可见每账号用量、冷却倒计时、最近错误（脱敏）                                                     |
 
-### `auto` 没有切换到该来源
+**迁移步骤**
 
-确认来源已保存成功、模型出现在目录中，且自动路由已启用。使用 `auto` 时，连接被拒绝、进程退出等上游错误也会被自动绕开到其他候选；只有显式指定该来源模型的请求才在限流之外直接报错。
+1. 在设置的**自定义来源**里删除指向 `http://localhost:8787/v1` 的那条来源（模型 ID 形如
+   `custom:<来源>:<模型>` 的引用会一并失效）；
+2. 停掉 cline-free 进程（`8787` 端口不再需要；继续跑也不影响，但会与内置 Provider 重复消耗额度）；
+3. 在 Cline 平台卡片点**登录 Cline 账号**完成设备码授权，确认卡片徽章变为**已配置**；
+4. 把默认模型/自动路由里的旧 `custom:...` 模型换成 `cline:...`。
+   迁移期间直接粘贴 `cline-free/...` 这类裸上游名也能命中 Cline。
+
+## 六、常见问题
+
+### 一直 429，换号也救不回来
+
+单个请求最多换 3 个账号，池子小或全被限流时会直接抛 429（报错里带整池最早的恢复时刻）。
+处理办法：等冷却结束、在面板点**解除冷却**、多登录几个账号扩大池子，或开启自动路由让请求切到
+其他来源。全部账号标成「需重新登录」时则不是限流问题，见下一条。
+
+### 提示「N 个账号凭据失效，请重新登录」/ 徽章是「需重新登录」
+
+refreshToken 被上游判定失效（授权撤销、过期、账号异常）时，该账号状态会持久化为 `invalid`，
+不会自动恢复——重新走一遍设备码登录即可；不需要的账号可直接**登出**（删除其凭据条目）。
+刷新端点的网络错误/5xx 不会判失效，不用担心网络抖动误杀账号。
+
+### 免费额度是多少？会不会突然收费/改规则
+
+免费额度、限速和可用模型完全由 Cline 上游决定，随时可能变化，网关只能感知到 429 与错误体，
+按上文的冷却/换号策略退避。协议层移植自 `cline-free`（MIT，源码注释有标注），上游接口或额度
+规则调整后可能需要更新网关版本。用量摘要只统计经过网关的请求，配额口径以上游为准。
+
+### 迁移后老模型找不到 / 默认模型失效
+
+旧的自定义来源删除后，`custom:<来源>:<模型>` 就不存在了，需要重新设置默认模型与自动路由候选，
+或改用 `cline:<上游原生 ID>`。粘贴 `cline-free/...`、`cline/...`、`cline-pass/...` 裸名会路由到
+Cline（前提是 Cline 已启用且池内有可用账号）。
+
+### 冷却/用量在重启后清零
+
+冷却态只在内存（避免 429 高频写盘），重启即丢；用量统计落在
+`~/.freemodelfinder/credentials-usage.json`（随 `FREEMODELFINDER_HOME` 覆盖），重启不清零。
+
+### 凭据安全吗
+
+refreshToken 仅在本机 `config.json` 内以 `v3:` 密文保存，只在内存中解密使用；`GET /api/cline/accounts`
+与 `/api/config` 都不会回显它，错误信息统一过脱敏层（掩掉 `Bearer *`、`refresh_token=*` 与长 base64）。
+管理端 `/api/cline/*` 与既有 `/api/*` 一样受本地 UI origin 门禁保护，网关监听默认仍是 `127.0.0.1`。

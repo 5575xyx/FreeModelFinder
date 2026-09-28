@@ -265,7 +265,7 @@ curl http://127.0.0.1:11435/healthz
 
 保存后模型会显示为 `custom:<来源 ID>:<模型 ID>`，并参与模型目录和自动路由。自定义来源不经过项目的免费目录审核：价格、限额、隐私、内容政策和协议兼容性都需要自行确认。只有来源的 API 兼容性符合常规 OpenAI 聊天格式时，文本请求才会成功。
 
-cline-free 等本地反代的接入示例见 [CLINE_FREE.md](CLINE_FREE.md)。
+把 Cline 等免费额度内置接入（无需 sidecar）或从 cline-free 本地反代迁移的说明见 [CLINE_FREE.md](CLINE_FREE.md)。
 
 ## 10. 配置、安全与隐私
 
