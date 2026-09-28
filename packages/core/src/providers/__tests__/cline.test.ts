@@ -25,6 +25,7 @@ interface SeedAccount {
   accessToken?: string;
   expiresAt?: string;
   refreshToken?: string;
+  originToken?: string;
   status?: 'active' | 'invalid';
 }
 
@@ -61,6 +62,7 @@ async function seed(runtime: TestRuntime, accounts: SeedAccount[]): Promise<void
     const payload: Record<string, string> = {
       refreshToken: account.refreshToken ?? `rt-${account.id}`,
     };
+    if (account.originToken) payload.originToken = account.originToken;
     if (account.accessToken) payload.accessToken = account.accessToken;
     if (account.expiresAt) payload.expiresAt = account.expiresAt;
     await runtime.upsertAccount('cline', {
@@ -393,6 +395,22 @@ describe('ClineProvider token lifecycle', () => {
     const pools = await loadPools();
     assert.equal(pools.cline?.accounts[0]?.payload.refreshToken, 'rt-rotated');
     assert.equal(pools.cline?.accounts[0]?.payload.accessToken, 'at-rotated');
+  });
+
+  it('keeps originToken untouched when a refresh rotates the refreshToken', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', refreshToken: 'rt-current', originToken: 'rt-original' }]);
+    const { fetchImpl } = harness((call) =>
+      call.url.includes('/auth/refresh') ? refreshOk('at-rotated', 'rt-rotated') : chatOk(),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    await provider.chat(req('z-ai/glm-5.3-flash'));
+    await runtime.waitForPersist();
+
+    const pools = await loadPools();
+    assert.equal(pools.cline?.accounts[0]?.payload.refreshToken, 'rt-rotated');
+    assert.equal(pools.cline?.accounts[0]?.payload.originToken, 'rt-original');
   });
 
   it('exposes hasCredentials from the active account pool', async () => {

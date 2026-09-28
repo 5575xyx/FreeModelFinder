@@ -21,7 +21,8 @@ const REGISTER_URL = 'https://api.cline.bot/api/v1/auth/register';
 const COLD_ACCOUNT_ID = 'acc-cold';
 const LIST_ACCOUNT_ID = 'acc-list';
 
-type Scenario = 'approve' | 'expired' | 'denied' | 'start-fails' | 'zero-ttl' | 'no-email';
+type Scenario =
+  'approve' | 'expired' | 'denied' | 'start-fails' | 'zero-ttl' | 'no-email' | 'legacy';
 
 let scenario: Scenario = 'approve';
 let authPolls = 0;
@@ -72,6 +73,7 @@ function installUpstreamStub(): void {
       return json({ access_token: 'workos-access', refresh_token: 'workos-refresh' });
     }
     if (url === REGISTER_URL) {
+      if (scenario === 'legacy') return json({ data: { refreshToken: 'rt-legacy-value' } });
       if (scenario === 'no-email') return json({ data: { refreshToken: 'rt-no-email-value' } });
       return json({
         data: { refreshToken: 'rt-secret-value', userInfo: { email: 'ada@example.com' } },
@@ -328,6 +330,84 @@ describe('cline device login API', () => {
       accounts.map((account: { id: string }) => account.id),
       existing.map((account: { id: string }) => account.id),
     );
+  });
+
+  it('reuses the account after a refresh rotation and a repeat login', async () => {
+    const runtime = getCredentialRuntime();
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    const seeded = listed
+      .json()
+      .accounts.find((entry: { label: string }) => entry.label === 'ada@example.com');
+    assert.ok(seeded, listed.body);
+
+    const pool = await runtime.getPool('cline');
+    const stored = pool.accounts.find((entry) => entry.id === seeded.id);
+    assert.ok(stored);
+    await runtime.upsertAccount('cline', {
+      ...stored,
+      payload: { ...stored.payload, refreshToken: 'rt-rotated-value' },
+    });
+
+    assert.ok(await completeLogin(app));
+
+    const after = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    const accounts = after.json().accounts;
+    assert.equal(
+      accounts.filter((entry: { label: string }) => entry.label === 'ada@example.com').length,
+      1,
+    );
+
+    const finalPool = await runtime.getPool('cline');
+    const kept = finalPool.accounts.find((entry) => entry.id === seeded.id);
+    assert.ok(kept);
+    assert.equal(kept.payload.refreshToken, 'rt-rotated-value');
+    assert.equal(kept.payload.originToken, 'rt-secret-value');
+  });
+
+  it('matches accounts stored without an originToken by their refreshToken', async () => {
+    const runtime = getCredentialRuntime();
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    const before = listed.json().accounts.length;
+    await runtime.upsertAccount('cline', {
+      id: 'acc-legacy',
+      label: 'legacy@example.com',
+      status: 'active',
+      addedAt: Date.now(),
+      payload: { refreshToken: 'rt-legacy-value' },
+    });
+
+    scenario = 'legacy';
+    assert.ok(await completeLogin(app));
+    scenario = 'approve';
+
+    const after = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    const accounts = after.json().accounts;
+    assert.equal(accounts.length, before + 1);
+    const reused = accounts.find((entry: { id: string }) => entry.id === 'acc-legacy');
+    assert.ok(reused, after.body);
+    assert.equal(reused.label, 'legacy@example.com');
+
+    const pool = await runtime.getPool('cline');
+    const stored = pool.accounts.find((entry) => entry.id === 'acc-legacy');
+    assert.ok(stored);
+    assert.equal(stored.payload.refreshToken, 'rt-legacy-value');
+    assert.equal(stored.payload.originToken, 'rt-legacy-value');
   });
 
   it('maps expired and denied upstream states', async () => {

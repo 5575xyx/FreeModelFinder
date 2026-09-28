@@ -9,6 +9,7 @@ import type {
 
 const SENSITIVE_PAYLOAD_FIELDS = new Set([
   'refreshtoken',
+  'origintoken',
   'accesstoken',
   'idtoken',
   'apikey',

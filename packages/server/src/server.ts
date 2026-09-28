@@ -263,7 +263,11 @@ async function persistClineLogin(result: unknown): Promise<ClineAccountSummary> 
   const email = payload && typeof payload.email === 'string' ? payload.email.trim() : '';
   const runtime = getCredentialRuntime();
   const pool = await runtime.getPool('cline');
-  const existing = pool.accounts.find((account) => account.payload.refreshToken === refreshToken);
+  const existing = pool.accounts.find(
+    (account) =>
+      (account.payload.originToken || account.payload.refreshToken) === refreshToken ||
+      account.payload.refreshToken === refreshToken,
+  );
   const id = existing?.id ?? randomUUID();
   const label = email || existing?.label || clineAccountLabel(id);
   const entry: CredentialAccountEntry = {
@@ -271,7 +275,12 @@ async function persistClineLogin(result: unknown): Promise<ClineAccountSummary> 
     label,
     status: 'active',
     addedAt: existing?.addedAt ?? Date.now(),
-    payload: { refreshToken, ...(email ? { email } : {}) },
+    payload: {
+      ...existing?.payload,
+      refreshToken: existing?.payload.refreshToken || refreshToken,
+      originToken: existing?.payload.originToken || refreshToken,
+      ...(email ? { email } : {}),
+    },
     ...(existing?.lastUsedAt !== undefined ? { lastUsedAt: existing.lastUsedAt } : {}),
   };
   await runtime.upsertAccount('cline', entry);

@@ -21,6 +21,7 @@ function account(overrides: Partial<CredentialAccountEntry> = {}): CredentialAcc
     addedAt: 1_700_000_000_000,
     payload: {
       refreshToken: 'plain-refresh-secret',
+      originToken: 'plain-origin-secret',
       email: 'user@example.com',
       baseUrl: 'https://example.test',
     },
@@ -64,6 +65,18 @@ describe('credential-store encryption boundary', () => {
     const persisted = (await readRawConfig()).credentials.cline.accounts[0];
     assert.equal(persisted.payload.email, 'user@example.com');
     assert.equal(persisted.payload.baseUrl, 'https://example.test');
+  });
+
+  it('encrypts originToken as v3 ciphertext and returns it on read', async () => {
+    await upsertAccount('cline', account());
+    const raw = await readFile(CONFIG_PATH, 'utf8');
+    assert.ok(!raw.includes('plain-origin-secret'), 'plaintext originToken leaked to disk');
+    const persisted = (await readRawConfig()).credentials.cline.accounts[0];
+    const stored = persisted.payload.originToken as string;
+    assert.ok(stored.startsWith('v3:'), `expected v3 ciphertext, got ${stored.slice(0, 8)}`);
+
+    const pool = await getPool('cline');
+    assert.equal(pool.accounts[0]?.payload.originToken, 'plain-origin-secret');
   });
 
   it('decrypts multi-layer legacy ciphertext through decryptSecret', async () => {
