@@ -234,6 +234,8 @@ describe('fmf CLI', () => {
       'fmf',
       '--mode',
       'server',
+      '--host',
+      '0.0.0.0',
       '--admin-port',
       '12001',
       '--gateway-port',
@@ -245,6 +247,7 @@ describe('fmf CLI', () => {
     ]);
     assert.deepEqual(calls[0], {
       mode: 'server',
+      host: '0.0.0.0',
       adminPort: 12001,
       gatewayPort: 12002,
       adminOrigin: 'https://admin.example.ts.net',

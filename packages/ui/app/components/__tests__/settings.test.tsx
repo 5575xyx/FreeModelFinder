@@ -31,25 +31,11 @@ describe('SettingsView', () => {
     expect(sourceCard).not.toBeNull();
     await user.click(within(sourceCard as HTMLElement).getByRole('button', { name: '保存' }));
     await waitFor(() => expect(writes.length).toBeGreaterThanOrEqual(2));
+    expect(writes[0]).toMatchObject({ provider: 'openrouter', apiKey: 'provider-secret' });
     expect(writes[1]).toMatchObject({
       provider: 'custom',
       appendSourceKeys: { sourceId: 'fixture-source', keys: ['custom-secret'] },
     });
-
-    const mainSave = await screen.findByRole(
-      'button',
-      { name: '保存自定义模型' },
-      {
-        timeout: 5000,
-      },
-    );
-    await user.click(mainSave);
-    await waitFor(() => expect(writes.length).toBeGreaterThanOrEqual(3));
-    expect(writes[0]).toMatchObject({ provider: 'openrouter', apiKey: 'provider-secret' });
-    expect(writes[2]).toMatchObject({ provider: 'custom' });
-    expect(JSON.stringify(writes[2])).not.toContain('custom-secret');
-    const mainSources = (writes[2]?.sources ?? []) as Array<Record<string, unknown>>;
-    expect(mainSources.every((s) => !('apiKey' in s))).toBe(true);
   });
 
   it('main save also flushes pending source key drafts', async () => {
@@ -74,6 +60,9 @@ describe('SettingsView', () => {
     await waitFor(() => expect(writes.length).toBeGreaterThanOrEqual(2));
     expect(writes[0]).toMatchObject({ provider: 'custom' });
     expect(JSON.stringify(writes[0])).not.toContain('flush-me-key');
+    const mainSources = (writes[0]?.sources ?? []) as Array<Record<string, unknown>>;
+    expect(mainSources.length).toBeGreaterThan(0);
+    expect(mainSources.every((s) => !('apiKey' in s))).toBe(true);
     expect(writes[1]).toMatchObject({
       provider: 'custom',
       appendSourceKeys: { sourceId: 'fixture-source', keys: ['flush-me-key'] },

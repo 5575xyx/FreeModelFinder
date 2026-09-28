@@ -415,7 +415,7 @@ describe('ClineAccountsPanel', () => {
       ),
       http.post(pollUrl, () => {
         polls += 1;
-        return HttpResponse.json({ status: 'pending' });
+        return new Promise<never>(() => undefined);
       }),
     );
     const user = userEvent.setup();
@@ -425,6 +425,7 @@ describe('ClineAccountsPanel', () => {
     expect(await screen.findByText('CODE-0007')).toBeTruthy();
     expect(await screen.findByText('授权已过期，请重试', {}, { timeout: 5000 })).toBeTruthy();
     expect(polls).toBe(1);
+    expect(screen.queryByText(/登录失败/)).toBeNull();
   }, 10_000);
 
   it('disarms the logout confirmation on its own', async () => {
@@ -504,6 +505,8 @@ describe('cline card state', () => {
 
     await user.click(await screen.findByRole('button', { name: '登录 Cline 账号' }));
     expect(await screen.findByText('CARD-0001')).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByText('已配置')).toHaveLength(1), { timeout: 6000 });
+    await waitFor(() => expect(configCalls).toBeGreaterThanOrEqual(2), { timeout: 6000 });
     await waitFor(
       () => {
         const toast = document.querySelector('.toast-in');
@@ -512,8 +515,6 @@ describe('cline card state', () => {
       },
       { timeout: 6000, interval: 50 },
     );
-    await waitFor(() => expect(screen.getAllByText('已配置')).toHaveLength(1), { timeout: 6000 });
-    await waitFor(() => expect(configCalls).toBeGreaterThanOrEqual(2), { timeout: 6000 });
     await waitFor(() => expect(writes).toContainEqual({ provider: 'cline', enabled: true }), {
       timeout: 6000,
     });
