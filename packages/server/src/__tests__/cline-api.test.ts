@@ -97,7 +97,11 @@ async function seedAccount(id: string): Promise<void> {
     label: 'ada@example.com',
     status: 'active',
     addedAt: Date.now() - 5_000,
-    payload: { refreshToken: 'rt-secret-value', email: 'ada@example.com' },
+    payload: {
+      refreshToken: 'rt-secret-value',
+      originToken: 'rt-secret-value',
+      email: 'ada@example.com',
+    },
   });
 }
 
@@ -333,6 +337,8 @@ describe('cline device login API', () => {
   });
 
   it('reuses the account after a refresh rotation and a repeat login', async () => {
+    await resetAccounts();
+    await seedAccount('acc-rotation');
     const runtime = getCredentialRuntime();
     const listed = await app.inject({
       method: 'GET',
@@ -373,6 +379,7 @@ describe('cline device login API', () => {
   });
 
   it('matches accounts stored without an originToken by their refreshToken', async () => {
+    await resetAccounts();
     const runtime = getCredentialRuntime();
     const listed = await app.inject({
       method: 'GET',
@@ -553,6 +560,7 @@ describe('cline accounts API', () => {
     });
     assert.equal(response.statusCode, 200);
     assert.ok(!response.body.includes('refreshToken'));
+    assert.ok(!response.body.includes('originToken'));
     assert.ok(!response.body.includes('rt-secret-value'));
 
     const account = response.json().accounts[0];

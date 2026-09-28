@@ -354,3 +354,4 @@ usage-aggregator（聚合展示留 S2）。
 | 加密边界实现偏差导致明文落盘                                                            | P0-2 已定机制；测试断言 `v3:` 密文为硬门禁                                                                 |
 | 池尽冒泡文案与 parseRateLimitError 失配                                                 | 文案契约写入测试断言（见错误处理节）                                                                       |
 | register 输出 token 的稳定性为源码推断（worker.js:3017 `originToken` 语义），未线上实测 | 若观察到 register 每次签发新 token，登录去重语义需重新核对（当前 `originToken`+`refreshToken` 双键会漏配） |
+| rotation 后首次登录可能多建一行（`originToken`/`refreshToken` 均不匹配）                | 自愈：新行以本次 token 为 `originToken`，后续登录稳定命中；如需可再加一次性合并策略                        |

@@ -97,6 +97,13 @@ export const SETTINGS_PROVIDERS = [
     guide: 'https://agnes-ai.com/doc/overview',
     hint: 'Agnes AI international endpoint, free text/image/video generation (apihub.agnes-ai.com)',
   },
+  {
+    id: 'cline',
+    label: 'Cline',
+    link: 'https://cline.bot',
+    guide: 'https://docs.cline.bot',
+    hint: '免 API Key：通过「登录 Cline 账号」接入其免费模型，凭据只保存在本机',
+  },
 ] as const;
 
 export function providerLabelKey(id: string): string | undefined {
@@ -106,6 +113,7 @@ export function providerLabelKey(id: string): string | undefined {
     qianfan: 'platforms.qianfan.label',
     modelscope: 'platforms.modelscope.label',
     zhipu: 'platforms.zhipu.label',
+    cline: 'platforms.cline.label',
   };
   return map[id];
 }

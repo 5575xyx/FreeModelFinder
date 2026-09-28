@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   ChevronDown,
@@ -25,6 +25,7 @@ import {
 import { Badge, Dot } from './Badge';
 import { StatCard } from './StatCard';
 import { ModelChangesBanner } from './ModelChangesBanner';
+import { ClineAccountsPanel } from './ClineAccountsPanel';
 import { ModelMultiSelect, type ModelOption } from './ModelMultiSelect';
 import { classNames, GATEWAY, withUiHeaders } from '../lib/utils';
 import { modelValue } from '../lib/models';
@@ -315,6 +316,15 @@ export function SettingsView({
       releaseAutoRouteLock();
     }
   }
+
+  const refreshConfig = useCallback(() => {
+    fetch(`${GATEWAY}/api/config`, withUiHeaders())
+      .then((r) => r.json())
+      .then((c: ConfigRes) => setCfg(c))
+      .catch(() => {
+        /* keep the last known config while the gateway is offline */
+      });
+  }, []);
 
   useEffect(() => {
     fetch(`${GATEWAY}/api/config`, withUiHeaders())
@@ -1810,6 +1820,7 @@ export function SettingsView({
               const labelKey = providerLabelKey(p.id);
               const displayLabel = labelKey ? t(labelKey) : p.label;
               const displayHint = t(providerHintKey(p.id));
+              const isCline = p.id === 'cline';
               const savedKeyCount = state?.keyMeta?.length ?? state?.keyCount ?? 0;
               const storedDrafts = keyDrafts[p.id];
               const draftRows: string[] =
@@ -1840,26 +1851,28 @@ export function SettingsView({
                           </Badge>
                         )}
                       </div>
-                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
-                        <a
-                          className="inline-flex items-center gap-1 font-medium text-blue-500 underline underline-offset-2 transition hover:text-blue-400"
-                          href={p.link}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {t('settings.sources.getKey')}
-                          <ExternalLink size={11} strokeWidth={2} />
-                        </a>
-                        <a
-                          className="inline-flex items-center gap-1 font-medium text-blue-500 underline underline-offset-2 transition hover:text-blue-400"
-                          href={p.guide}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {t('settings.sources.guide')}
-                          <ExternalLink size={11} strokeWidth={2} />
-                        </a>
-                      </div>
+                      {!isCline && (
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                          <a
+                            className="inline-flex items-center gap-1 font-medium text-blue-500 underline underline-offset-2 transition hover:text-blue-400"
+                            href={p.link}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {t('settings.sources.getKey')}
+                            <ExternalLink size={11} strokeWidth={2} />
+                          </a>
+                          <a
+                            className="inline-flex items-center gap-1 font-medium text-blue-500 underline underline-offset-2 transition hover:text-blue-400"
+                            href={p.guide}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {t('settings.sources.guide')}
+                            <ExternalLink size={11} strokeWidth={2} />
+                          </a>
+                        </div>
+                      )}
                       <p className="mt-1 text-xs text-muted-foreground">{displayHint}</p>
                       {state?.credentialError && (
                         <p className="mt-1 text-xs text-destructive">
@@ -1868,130 +1881,140 @@ export function SettingsView({
                       )}
                     </div>
                     <div className="flex flex-col gap-2">
-                      {(state?.keyMeta ?? []).map((row, idx) => (
-                        <div
-                          key={row.id}
-                          className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
-                        >
-                          <code className="flex-1 truncate font-mono text-xs text-foreground">
-                            {row.hint}
-                          </code>
-                          <span className="sr-only">
-                            {t('settings.sources.keyRow', { n: idx + 1, hint: row.hint })}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => void removeProviderKey(p.id, idx)}
-                            disabled={saveState === 'saving'}
-                            aria-label={t('settings.sources.removeKey', { n: idx + 1 })}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                          >
-                            <Trash2 size={13} strokeWidth={1.75} />
-                          </button>
-                        </div>
-                      ))}
-                      {draftRows.map((draft, di) => (
-                        <div key={`draft-${di}`} className="relative">
-                          <input
-                            type={isVisible ? 'text' : 'password'}
-                            className="w-full rounded-md border border-input bg-surface px-3 py-2 pr-16 font-mono text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
-                            placeholder={t('settings.sources.pastePlaceholder')}
-                            value={draft}
-                            onChange={(e) =>
-                              setKeyDrafts((d) => {
-                                const list = [...(d[p.id] ?? [])];
-                                list[di] = e.target.value;
-                                return { ...d, [p.id]: list };
-                              })
-                            }
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && draft.trim() && saveState !== 'saving') {
-                                e.preventDefault();
-                                void save(p.id);
-                              }
-                            }}
-                            aria-label={
-                              di > 0
-                                ? `${t('settings.providerApiKeyAria', {
-                                    provider: displayLabel,
-                                  })} ${di + 1}`
-                                : t('settings.providerApiKeyAria', { provider: displayLabel })
-                            }
-                            disabled={saveState === 'saving'}
-                            autoComplete="off"
-                            spellCheck={false}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setVisible((v) => ({ ...v, [p.id]: !v[p.id] }))}
-                            aria-label={isVisible ? t('settings.hideKey') : t('settings.showKey')}
-                            className="absolute right-8 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            {isVisible ? (
-                              <EyeOff size={13} strokeWidth={1.75} />
-                            ) : (
-                              <Eye size={13} strokeWidth={1.75} />
+                      {isCline && (
+                        <ClineAccountsPanel enabled={!!state?.enabled} onChanged={refreshConfig} />
+                      )}
+                      {!isCline && (
+                        <>
+                          {(state?.keyMeta ?? []).map((row, idx) => (
+                            <div
+                              key={row.id}
+                              className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
+                            >
+                              <code className="flex-1 truncate font-mono text-xs text-foreground">
+                                {row.hint}
+                              </code>
+                              <span className="sr-only">
+                                {t('settings.sources.keyRow', { n: idx + 1, hint: row.hint })}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => void removeProviderKey(p.id, idx)}
+                                disabled={saveState === 'saving'}
+                                aria-label={t('settings.sources.removeKey', { n: idx + 1 })}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                              >
+                                <Trash2 size={13} strokeWidth={1.75} />
+                              </button>
+                            </div>
+                          ))}
+                          {draftRows.map((draft, di) => (
+                            <div key={`draft-${di}`} className="relative">
+                              <input
+                                type={isVisible ? 'text' : 'password'}
+                                className="w-full rounded-md border border-input bg-surface px-3 py-2 pr-16 font-mono text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+                                placeholder={t('settings.sources.pastePlaceholder')}
+                                value={draft}
+                                onChange={(e) =>
+                                  setKeyDrafts((d) => {
+                                    const list = [...(d[p.id] ?? [])];
+                                    list[di] = e.target.value;
+                                    return { ...d, [p.id]: list };
+                                  })
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && draft.trim() && saveState !== 'saving') {
+                                    e.preventDefault();
+                                    void save(p.id);
+                                  }
+                                }}
+                                aria-label={
+                                  di > 0
+                                    ? `${t('settings.providerApiKeyAria', {
+                                        provider: displayLabel,
+                                      })} ${di + 1}`
+                                    : t('settings.providerApiKeyAria', { provider: displayLabel })
+                                }
+                                disabled={saveState === 'saving'}
+                                autoComplete="off"
+                                spellCheck={false}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setVisible((v) => ({ ...v, [p.id]: !v[p.id] }))}
+                                aria-label={
+                                  isVisible ? t('settings.hideKey') : t('settings.showKey')
+                                }
+                                className="absolute right-8 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                {isVisible ? (
+                                  <EyeOff size={13} strokeWidth={1.75} />
+                                ) : (
+                                  <Eye size={13} strokeWidth={1.75} />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setKeyDrafts((d) => ({
+                                    ...d,
+                                    [p.id]: (d[p.id] ?? []).filter((_, i) => i !== di),
+                                  }))
+                                }
+                                aria-label={t('settings.sources.removeKey', {
+                                  n: savedKeyCount + di + 1,
+                                })}
+                                className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                <X size={13} strokeWidth={1.75} />
+                              </button>
+                            </div>
+                          ))}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {savedKeyCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setKeyDrafts((d) => ({ ...d, [p.id]: [...(d[p.id] ?? []), ''] }))
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                <Plus size={12} strokeWidth={2} />
+                                {t('settings.sources.addKey')}
+                              </button>
                             )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setKeyDrafts((d) => ({
-                                ...d,
-                                [p.id]: (d[p.id] ?? []).filter((_, i) => i !== di),
-                              }))
-                            }
-                            aria-label={t('settings.sources.removeKey', {
-                              n: savedKeyCount + di + 1,
-                            })}
-                            className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            <X size={13} strokeWidth={1.75} />
-                          </button>
-                        </div>
-                      ))}
-                      <div className="flex flex-wrap items-center gap-2">
-                        {savedKeyCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setKeyDrafts((d) => ({ ...d, [p.id]: [...(d[p.id] ?? []), ''] }))
-                            }
-                            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            <Plus size={12} strokeWidth={2} />
-                            {t('settings.sources.addKey')}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className={classNames(
-                            'inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                            saveState === 'error'
-                              ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                              : saveState === 'saved'
-                                ? 'bg-success text-primary-foreground'
-                                : 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground',
-                          )}
-                          onClick={() => void save(p.id)}
-                          disabled={
-                            !(keyDrafts[p.id] ?? []).some((k) => k.trim()) || saveState === 'saving'
-                          }
-                        >
-                          {saveState === 'saving' && (
-                            <Loader2 size={13} strokeWidth={2} className="animate-spin" />
-                          )}
-                          {saveState === 'saved' && <Check size={13} strokeWidth={2} />}
-                          {saveState === 'error' && <X size={13} strokeWidth={2} />}
-                          {saveState === 'saving'
-                            ? t('settings.sources.saving')
-                            : saveState === 'saved'
-                              ? t('settings.sources.saved')
-                              : saveState === 'error'
-                                ? t('settings.sources.retry')
-                                : t('settings.sources.save')}
-                        </button>
-                      </div>
+                            <button
+                              type="button"
+                              className={classNames(
+                                'inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                saveState === 'error'
+                                  ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                                  : saveState === 'saved'
+                                    ? 'bg-success text-primary-foreground'
+                                    : 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground',
+                              )}
+                              onClick={() => void save(p.id)}
+                              disabled={
+                                !(keyDrafts[p.id] ?? []).some((k) => k.trim()) ||
+                                saveState === 'saving'
+                              }
+                            >
+                              {saveState === 'saving' && (
+                                <Loader2 size={13} strokeWidth={2} className="animate-spin" />
+                              )}
+                              {saveState === 'saved' && <Check size={13} strokeWidth={2} />}
+                              {saveState === 'error' && <X size={13} strokeWidth={2} />}
+                              {saveState === 'saving'
+                                ? t('settings.sources.saving')
+                                : saveState === 'saved'
+                                  ? t('settings.sources.saved')
+                                  : saveState === 'error'
+                                    ? t('settings.sources.retry')
+                                    : t('settings.sources.save')}
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

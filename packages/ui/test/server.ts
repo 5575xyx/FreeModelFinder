@@ -116,6 +116,7 @@ export const defaultHandlers = [
   http.get(`${gateway}/api/gateway`, () =>
     HttpResponse.json({ hasKey: false, apiKey: null, requireAuth: false, port: 11435 }),
   ),
+  http.get(`${gateway}/api/cline/accounts`, () => HttpResponse.json({ accounts: [] })),
   http.post(`${gateway}/api/providers`, () => HttpResponse.json({ ok: true })),
   http.post(`${gateway}/api/gateway`, () =>
     HttpResponse.json({
