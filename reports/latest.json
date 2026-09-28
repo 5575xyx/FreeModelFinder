@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-27",
-  "generatedAt": "2026-09-27T12:41:54.790Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-27.md",
+  "date": "2026-09-28",
+  "generatedAt": "2026-09-28T00:51:14.182Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-28.md",
   "totalModels": 103,
   "providers": [
     {
@@ -686,6 +686,7 @@
       "cohere",
       "huggingface",
       "sensenova",
+      "qianfan",
       "kilo",
       "agnes",
       "agnes-intl"
