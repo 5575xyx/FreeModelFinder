@@ -27,6 +27,7 @@ import { StatCard } from './StatCard';
 import { ModelChangesBanner } from './ModelChangesBanner';
 import { ModelMultiSelect, type ModelOption } from './ModelMultiSelect';
 import { classNames, GATEWAY, withUiHeaders } from '../lib/utils';
+import { modelValue } from '../lib/models';
 import { SETTINGS_PROVIDERS, providerHintKey, providerLabelKey } from '../lib/platforms';
 import { useI18n } from '../i18n';
 
@@ -1131,16 +1132,7 @@ export function SettingsView({
                 <option value="">{t('settings.section.currentModel.selectEmpty')}</option>
               )}
               {models.map((m) => (
-                <option
-                  key={`${m.provider}:${m.id}`}
-                  value={
-                    m.provider === 'custom'
-                      ? `${m.provider}:${m.id}`
-                      : m.id.startsWith(`${m.provider}:`)
-                        ? m.id
-                        : `${m.provider}:${m.id}`
-                  }
-                >
+                <option key={`${m.provider}:${m.id}`} value={modelValue(m)}>
                   [{m.provider}] {m.display_name ?? m.id}
                 </option>
               ))}

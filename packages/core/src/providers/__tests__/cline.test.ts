@@ -327,6 +327,58 @@ describe('ClineProvider token lifecycle', () => {
     assert.equal(pool.accounts[0]?.status, 'active');
   });
 
+  it('does not count refresh failures as requests but keeps lastError', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1' }]);
+    const { fetchImpl } = harness((call) =>
+      call.url.includes('/auth/refresh') ? json({ error: 'boom' }, 500) : chatOk(),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    await assert.rejects(provider.chat(req('z-ai/glm-5.3-flash')), /refresh failed 500/);
+    const usage = runtime.snapshotUsage('cline');
+    assert.equal(usage.length, 1);
+    assert.equal(usage[0]?.requests, 0);
+    assert.match(usage[0]?.lastError ?? '', /refresh failed 500/);
+  });
+
+  it('treats numeric expiresAt as epoch seconds like the auto-router', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [
+      {
+        id: 'a1',
+        accessToken: 'at-1',
+        expiresAt: String(Math.floor((Date.now() + 3_600_000) / 1000)),
+      },
+    ]);
+    const { calls, fetchImpl } = harness(() => chatOk());
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const response = await provider.chat(req('z-ai/glm-5.3-flash'));
+    assert.equal(response.content, 'hello world');
+    assert.equal(refreshCalls(calls).length, 0);
+    assert.equal(chatCalls(calls).length, 1);
+  });
+
+  it('redacts upstream bearer tokens from the bubbled 429 message and usage lastError', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { fetchImpl } = harness(() =>
+      rateLimited('60', 'rate limited for Authorization: Bearer sk-secret-123'),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    await assert.rejects(provider.chat(req('z-ai/glm-5.3-flash')), (error: unknown) => {
+      assert.ok(error instanceof ClineError);
+      assert.match(error.message, /Bearer \[REDACTED\]/);
+      assert.ok(!error.message.includes('sk-secret-123'));
+      return true;
+    });
+    const usage = runtime.snapshotUsage('cline');
+    assert.match(usage[0]?.lastError ?? '', /Bearer \[REDACTED\]/);
+    assert.ok(!(usage[0]?.lastError ?? '').includes('sk-secret-123'));
+  });
+
   it('persists a rotated refreshToken to disk', async () => {
     const runtime = newRuntime();
     await seed(runtime, [{ id: 'a1', refreshToken: 'rt-old' }]);

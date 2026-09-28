@@ -59,6 +59,7 @@ export class ClineError extends Error {
   readonly platform = 'cline' as const;
   readonly accountId?: string;
   readonly model?: string;
+  readonly phase?: 'refresh';
 
   constructor(
     message: string,
@@ -68,6 +69,7 @@ export class ClineError extends Error {
       resetAt?: number;
       accountId?: string;
       model?: string;
+      phase?: 'refresh';
     },
   ) {
     super(redact(message));
@@ -77,6 +79,7 @@ export class ClineError extends Error {
     this.resetAt = options.resetAt;
     this.accountId = options.accountId ? options.accountId.slice(0, 8) : undefined;
     this.model = options.model;
+    this.phase = options.phase;
   }
 }
 
@@ -131,7 +134,7 @@ function parseExpiryMs(raw: string | undefined, now = Date.now()): number {
     const trimmed = raw.trim();
     if (/^\d+$/.test(trimmed)) {
       const numeric = Number(trimmed);
-      if (Number.isFinite(numeric) && numeric > 0) return numeric;
+      if (Number.isFinite(numeric) && numeric > 0) return numeric > 1e12 ? numeric : numeric * 1000;
     }
     const parsed = Date.parse(trimmed);
     if (Number.isFinite(parsed)) return parsed;
@@ -282,8 +285,9 @@ export class ClineProvider extends BaseProvider {
       try {
         return await attempt(account, false);
       } catch (error) {
+        const refreshPhase = error instanceof ClineError && error.phase === 'refresh';
         runtime.recordUsage('cline', account.id, model, {
-          requests: 1,
+          requests: refreshPhase ? 0 : 1,
           error: redact(errorText(error)),
         });
         lastError = error;
@@ -388,6 +392,7 @@ export class ClineProvider extends BaseProvider {
         kind: 'network',
         accountId: account.id,
         model,
+        phase: 'refresh',
       });
     }
     if (!response.ok) {
@@ -399,6 +404,7 @@ export class ClineProvider extends BaseProvider {
           status: response.status,
           accountId: account.id,
           model,
+          phase: 'refresh',
         });
       }
       const detail = (await response.text().catch(() => '')).slice(0, 200);
@@ -407,6 +413,7 @@ export class ClineProvider extends BaseProvider {
         status: response.status,
         accountId: account.id,
         model,
+        phase: 'refresh',
       });
     }
     const parsed = await response.json().catch(() => null);
@@ -417,6 +424,7 @@ export class ClineProvider extends BaseProvider {
         kind: 'network',
         accountId: account.id,
         model,
+        phase: 'refresh',
       });
     }
     const accessToken = data.accessToken;
@@ -425,6 +433,7 @@ export class ClineProvider extends BaseProvider {
         kind: 'network',
         accountId: account.id,
         model,
+        phase: 'refresh',
       });
     }
     const payload: Record<string, string> = { ...account.payload, accessToken };
