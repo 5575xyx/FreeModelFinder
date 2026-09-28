@@ -7,7 +7,7 @@ import {
   type AppConfig,
 } from '@freemodelfinder/core';
 import type { FastifyInstance } from 'fastify';
-import { createServer, createServerRuntime } from '../server.js';
+import { CLINE_MAX_FLOWS, createServer, createServerRuntime } from '../server.js';
 
 const localUiHeaders = {
   origin: 'http://127.0.0.1:11435',
@@ -21,7 +21,7 @@ const REGISTER_URL = 'https://api.cline.bot/api/v1/auth/register';
 const COLD_ACCOUNT_ID = 'acc-cold';
 const LIST_ACCOUNT_ID = 'acc-list';
 
-type Scenario = 'approve' | 'expired' | 'denied' | 'start-fails' | 'zero-ttl';
+type Scenario = 'approve' | 'expired' | 'denied' | 'start-fails' | 'zero-ttl' | 'no-email';
 
 let scenario: Scenario = 'approve';
 let authPolls = 0;
@@ -72,6 +72,7 @@ function installUpstreamStub(): void {
       return json({ access_token: 'workos-access', refresh_token: 'workos-refresh' });
     }
     if (url === REGISTER_URL) {
+      if (scenario === 'no-email') return json({ data: { refreshToken: 'rt-no-email-value' } });
       return json({
         data: { refreshToken: 'rt-secret-value', userInfo: { email: 'ada@example.com' } },
       });
@@ -96,6 +97,14 @@ async function seedAccount(id: string): Promise<void> {
     addedAt: Date.now() - 5_000,
     payload: { refreshToken: 'rt-secret-value', email: 'ada@example.com' },
   });
+}
+
+async function completeLogin(app: FastifyInstance): Promise<string> {
+  const flowId = String((await startLogin(app)).flowId);
+  let state = await pollLogin(app, flowId);
+  if (state.status !== 'complete') state = await pollLogin(app, flowId);
+  assert.equal(state.status, 'complete');
+  return flowId;
 }
 
 async function startLogin(app: FastifyInstance): Promise<Record<string, string | number>> {
@@ -359,6 +368,66 @@ describe('cline device login API', () => {
     assert.equal(response.statusCode, 502);
     assert.ok(response.body.includes('[REDACTED]'), response.body);
     assert.ok(!response.body.includes('sk-leaked-token'));
+    scenario = 'approve';
+  });
+
+  it('bounds the live flow table when login start is spammed', async () => {
+    let firstId = '';
+    let lastId = '';
+    for (let index = 0; index <= CLINE_MAX_FLOWS; index += 1) {
+      const flowId = String((await startLogin(app)).flowId);
+      if (index === 0) firstId = flowId;
+      lastId = flowId;
+    }
+    assert.ok(firstId);
+    const evicted = await pollLogin(app, firstId);
+    assert.equal(evicted.status, 'expired');
+    const live = await pollLogin(app, lastId);
+    assert.equal(live.status, 'pending');
+  });
+
+  it('bounds finished logins so completed flows stop accumulating', async () => {
+    const tracked = await completeLogin(app);
+    let evicted = false;
+    for (let index = 0; index <= CLINE_MAX_FLOWS && !evicted; index += 1) {
+      await completeLogin(app);
+      const repeat = await pollLogin(app, tracked);
+      evicted = repeat.status !== 'complete';
+    }
+    assert.equal(evicted, true);
+  });
+
+  it('persists a completed login once when polls arrive together', async () => {
+    const flowId = String((await startLogin(app)).flowId);
+    const first = await pollLogin(app, flowId);
+    assert.equal(first.status, 'pending');
+
+    const [a, b] = await Promise.all([pollLogin(app, flowId), pollLogin(app, flowId)]);
+    assert.equal(a.status, 'complete');
+    assert.equal(b.status, 'complete');
+    assert.equal(a.account?.id, b.account?.id);
+
+    const repeat = await pollLogin(app, flowId);
+    assert.equal(repeat.status, 'complete');
+    assert.equal(repeat.account?.id, a.account?.id);
+  });
+
+  it('falls back to a generated label when the upstream sends no email', async () => {
+    scenario = 'no-email';
+    const flowId = await completeLogin(app);
+    assert.ok(flowId);
+    scenario = 'approve';
+
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    const account = listed
+      .json()
+      .accounts.find((entry: { label: string }) => entry.label.startsWith('Cline 账号 '));
+    assert.ok(account, listed.body);
+    assert.equal(account.label, `Cline 账号 ${account.id.slice(0, 8)}`);
   });
 });
 
@@ -454,6 +523,25 @@ describe('cline accounts API', () => {
       headers: localUiHeaders,
     });
     assert.equal(listed.json().accounts.length, 0);
+  });
+
+  it('labels accounts that were stored without one', async () => {
+    await getCredentialRuntime().upsertAccount('cline', {
+      id: 'acc-without-label',
+      status: 'active',
+      addedAt: Date.now(),
+      payload: { refreshToken: 'rt-no-label-value' },
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    assert.equal(response.statusCode, 200);
+    const account = response.json().accounts[0];
+    assert.ok(account);
+    assert.equal(account.label, `Cline 账号 ${account.id.slice(0, 8)}`);
+    await resetAccounts();
   });
 });
 

@@ -22,7 +22,8 @@ describe('DeviceAuthManager state machine', () => {
     assert.equal(done.status, 'complete');
 
     const again = await manager.poll(handle.flowId);
-    assert.equal(again.status, 'complete');
+    assert.equal(again.status, 'expired');
+    assert.equal(again.expiresAt, 0);
   });
 
   it('carries the upstream result through on completion', async () => {
@@ -91,6 +92,36 @@ describe('DeviceAuthManager state machine', () => {
     const missing = await manager.poll('no-such-flow');
     assert.equal(missing.status, 'expired');
     assert.equal(missing.flowId, 'no-such-flow');
+  });
+
+  it('drops expired flows when another one starts', async () => {
+    let clock = 1_700_000_000_000;
+    const manager = new DeviceAuthManager({ now: () => clock, maxFlows: 2 });
+    const check = async () => ({ status: 'pending' as const });
+    const longLived = manager.start({ check, expiresInMs: 10_000 });
+    manager.start({ check, expiresInMs: 1_000 });
+    clock += 2_000;
+
+    const next = manager.start({ check, expiresInMs: 10_000 });
+    const stillAlive = await manager.poll(longLived.flowId);
+    const newest = await manager.poll(next.flowId);
+    assert.equal(stillAlive.status, 'pending');
+    assert.equal(newest.status, 'pending');
+  });
+
+  it('evicts the oldest flow once the live count hits the cap', async () => {
+    let sequence = 0;
+    const manager = new DeviceAuthManager({ idFactory: () => `flow-${sequence++}`, maxFlows: 2 });
+    const check = async () => ({ status: 'pending' as const });
+    const first = manager.start({ check });
+    manager.start({ check });
+    const third = manager.start({ check });
+
+    const evicted = await manager.poll(first.flowId);
+    assert.equal(evicted.status, 'expired');
+    assert.equal(evicted.expiresAt, 0);
+    const newest = await manager.poll(third.flowId);
+    assert.equal(newest.status, 'pending');
   });
 
   it('generates unique flow ids by default', () => {

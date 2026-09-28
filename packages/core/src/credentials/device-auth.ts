@@ -27,9 +27,11 @@ export interface DeviceAuthManagerOptions {
   now?: () => number;
   ttlMs?: number;
   idFactory?: () => string;
+  maxFlows?: number;
 }
 
 const DEFAULT_TTL_MS = 600_000;
+const DEFAULT_MAX_FLOWS = 64;
 const MAX_ID_ATTEMPTS = 3;
 
 interface StoredFlow {
@@ -43,6 +45,8 @@ export class DeviceAuthManager {
   constructor(private readonly options: DeviceAuthManagerOptions = {}) {}
 
   start(options: DeviceAuthStartOptions): DeviceAuthFlow {
+    this.sweep();
+    this.enforceLimit();
     let flowId = this.generateId();
     for (let attempt = 1; attempt < MAX_ID_ATTEMPTS && this.flows.has(flowId); attempt += 1) {
       flowId = this.generateId();
@@ -65,9 +69,9 @@ export class DeviceAuthManager {
     const stored = this.flows.get(flowId);
     if (!stored) return { flowId, status: 'expired', expiresAt: 0 };
     const flow = stored.flow;
-    if (flow.status === 'complete' || flow.status === 'denied') return flow;
     if (this.now() >= flow.expiresAt) {
       flow.status = 'expired';
+      this.flows.delete(flowId);
       return flow;
     }
     let result: DeviceAuthPollResult;
@@ -79,11 +83,32 @@ export class DeviceAuthManager {
     if (result.status === 'complete') {
       flow.status = 'complete';
       flow.result = result.result;
+      this.flows.delete(flowId);
     } else if (result.status === 'denied') {
       flow.status = 'denied';
       if (result.reason !== undefined) flow.reason = result.reason;
+      this.flows.delete(flowId);
     }
     return flow;
+  }
+
+  private sweep(): void {
+    const now = this.now();
+    for (const [flowId, stored] of this.flows) {
+      if (now >= stored.flow.expiresAt) this.flows.delete(flowId);
+    }
+  }
+
+  private enforceLimit(): void {
+    while (this.flows.size >= this.maxFlows()) {
+      const oldest = this.flows.keys().next();
+      if (oldest.done) break;
+      this.flows.delete(oldest.value);
+    }
+  }
+
+  private maxFlows(): number {
+    return this.options.maxFlows ?? DEFAULT_MAX_FLOWS;
   }
 
   private now(): number {

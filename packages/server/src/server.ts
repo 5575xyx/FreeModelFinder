@@ -196,10 +196,60 @@ function redactMessage(error: unknown): string {
   return redact(error instanceof Error ? error.message : String(error));
 }
 
+export const CLINE_MAX_FLOWS = 64;
+export const CLINE_COMPLETED_FLOW_TTL_MS = 600_000;
+
 interface ClineAccountSummary {
   id: string;
   label: string;
   status: 'active' | 'invalid';
+}
+
+interface CompletedClineFlow {
+  summary: Promise<ClineAccountSummary>;
+  expiresAt: number;
+}
+
+function clineAccountLabel(id: string): string {
+  return `Cline 账号 ${id.slice(0, 8)}`;
+}
+
+function sweepCompletedClineFlows(flows: Map<string, CompletedClineFlow>): void {
+  const now = Date.now();
+  for (const [flowId, entry] of flows) {
+    if (entry.expiresAt <= now) flows.delete(flowId);
+  }
+  while (flows.size >= CLINE_MAX_FLOWS) {
+    const oldest = flows.keys().next();
+    if (oldest.done) break;
+    flows.delete(oldest.value);
+  }
+}
+
+function startCompletedClineFlow(
+  flows: Map<string, CompletedClineFlow>,
+  flowId: string,
+  result: unknown,
+): CompletedClineFlow {
+  const entry: CompletedClineFlow = {
+    summary: persistClineLogin(result),
+    expiresAt: Date.now() + CLINE_COMPLETED_FLOW_TTL_MS,
+  };
+  flows.set(flowId, entry);
+  return entry;
+}
+
+async function readCompletedClineFlow(
+  flows: Map<string, CompletedClineFlow>,
+  flowId: string,
+  entry: CompletedClineFlow,
+): Promise<ClineAccountSummary> {
+  try {
+    return await entry.summary;
+  } catch (error) {
+    flows.delete(flowId);
+    throw error;
+  }
 }
 
 async function persistClineLogin(result: unknown): Promise<ClineAccountSummary> {
@@ -214,9 +264,10 @@ async function persistClineLogin(result: unknown): Promise<ClineAccountSummary> 
   const runtime = getCredentialRuntime();
   const pool = await runtime.getPool('cline');
   const existing = pool.accounts.find((account) => account.payload.refreshToken === refreshToken);
-  const label = email || existing?.label || '';
+  const id = existing?.id ?? randomUUID();
+  const label = email || existing?.label || clineAccountLabel(id);
   const entry: CredentialAccountEntry = {
-    id: existing?.id ?? randomUUID(),
+    id,
     label,
     status: 'active',
     addedAt: existing?.addedAt ?? Date.now(),
@@ -224,7 +275,7 @@ async function persistClineLogin(result: unknown): Promise<ClineAccountSummary> 
     ...(existing?.lastUsedAt !== undefined ? { lastUsedAt: existing.lastUsedAt } : {}),
   };
   await runtime.upsertAccount('cline', entry);
-  return { id: entry.id, label, status: entry.status };
+  return { id, label, status: entry.status };
 }
 
 function activeGatewayKeys(
@@ -600,12 +651,13 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       };
     });
 
-    const deviceAuth = new DeviceAuthManager();
+    const deviceAuth = new DeviceAuthManager({ maxFlows: CLINE_MAX_FLOWS });
     const clineLogin = new ClineLoginAdapter();
-    const completedClineFlows = new Map<string, ClineAccountSummary>();
+    const completedClineFlows = new Map<string, CompletedClineFlow>();
 
     app.post('/api/cline/login/start', async (_req, reply) => {
       try {
+        sweepCompletedClineFlows(completedClineFlows);
         const authorization = await clineLogin.start();
         const flow = deviceAuth.start({
           check: clineLogin.createCheck(authorization),
@@ -625,16 +677,29 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
     app.post<{ Body: { flowId?: string } }>('/api/cline/login/poll', async (req, reply) => {
       const flowId = typeof req.body?.flowId === 'string' ? req.body.flowId.trim() : '';
       if (!flowId) return reply.code(400).send({ error: 'flowId required' });
+      const answer = async (entry: CompletedClineFlow) => ({
+        status: 'complete',
+        account: await readCompletedClineFlow(completedClineFlows, flowId, entry),
+      });
       try {
+        sweepCompletedClineFlows(completedClineFlows);
+        const completed = completedClineFlows.get(flowId);
+        if (completed) return await answer(completed);
+
         const flow = await deviceAuth.poll(flowId);
+        if (flow.status === 'complete') {
+          const entry =
+            completedClineFlows.get(flowId) ??
+            startCompletedClineFlow(completedClineFlows, flowId, flow.result);
+          return await answer(entry);
+        }
+        const late = completedClineFlows.get(flowId);
+        if (late) return await answer(late);
         if (flow.status === 'pending') return { status: 'pending' };
-        if (flow.status === 'expired') return { status: 'expired' };
         if (flow.status === 'denied') {
           return { status: flow.reason === 'expired_token' ? 'expired' : 'denied' };
         }
-        const summary = completedClineFlows.get(flowId) ?? (await persistClineLogin(flow.result));
-        completedClineFlows.set(flowId, summary);
-        return { status: 'complete', account: summary };
+        return { status: 'expired' };
       } catch (error) {
         return reply.code(502).send({ error: redactMessage(error) });
       }
@@ -651,7 +716,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           const stats = usage.get(account.id);
           return {
             id: account.id,
-            label: account.label ?? '',
+            label: account.label || clineAccountLabel(account.id),
             status: account.status,
             addedAt: account.addedAt,
             lastUsedAt: account.lastUsedAt ?? null,
