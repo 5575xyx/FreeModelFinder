@@ -1133,7 +1133,13 @@ export function SettingsView({
               {models.map((m) => (
                 <option
                   key={`${m.provider}:${m.id}`}
-                  value={m.id.startsWith(`${m.provider}:`) ? m.id : `${m.provider}:${m.id}`}
+                  value={
+                    m.provider === 'custom'
+                      ? `${m.provider}:${m.id}`
+                      : m.id.startsWith(`${m.provider}:`)
+                        ? m.id
+                        : `${m.provider}:${m.id}`
+                  }
                 >
                   [{m.provider}] {m.display_name ?? m.id}
                 </option>

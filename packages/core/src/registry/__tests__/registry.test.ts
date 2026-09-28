@@ -193,6 +193,48 @@ describe('ProviderRegistry model catalog', () => {
     assert.equal(resolved.modelId, 'cpa:Qwen3.8-27B');
   });
 
+  it('exempts custom source ids named "custom" from model-id compose/bare', () => {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        custom: {
+          enabled: true,
+          credentials: {
+            apiKey: '',
+            extra: {
+              sources: [
+                {
+                  id: 'custom',
+                  baseUrl: 'https://a.example/v1',
+                  models: [{ id: 'llama3' }],
+                },
+                {
+                  id: 'cpa',
+                  baseUrl: 'https://b.example/v1',
+                  models: [{ id: 'Qwen3.8-27B' }],
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+
+    assert.equal(composeModelId('custom', 'custom:llama3'), 'custom:custom:llama3');
+    assert.equal(bareModelId('custom', 'custom:llama3'), 'custom:llama3');
+    assert.equal(composeModelId('custom', 'cpa:Qwen3.8-27B'), 'custom:cpa:Qwen3.8-27B');
+    assert.equal(bareModelId('custom', 'cpa:Qwen3.8-27B'), 'cpa:Qwen3.8-27B');
+    assert.equal(composeModelId('cline', 'cline:z-ai/glm-5.3-flash'), 'cline:z-ai/glm-5.3-flash');
+    assert.equal(bareModelId('cline', 'cline:z-ai/glm-5.3-flash'), 'z-ai/glm-5.3-flash');
+
+    const resolved = registry.resolveModel('custom:custom:llama3');
+    assert.equal(resolved.provider.id, 'custom');
+    assert.equal(resolved.modelId, 'custom:llama3');
+
+    const other = registry.resolveModel('custom:cpa:Qwen3.8-27B');
+    assert.equal(other.provider.id, 'custom');
+    assert.equal(other.modelId, 'cpa:Qwen3.8-27B');
+  });
+
   it('routes bare ERNIE ids to the qianfan provider', () => {
     const registry = new ProviderRegistry(
       configWithProviders({

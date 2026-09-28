@@ -54,11 +54,10 @@ export type ModelsResponse = {
     failed_providers?: ProviderFailure[];
   };
 };
-
 export function modelValue(model: Pick<ModelItem, 'provider' | 'id'>): string {
+  if (model.provider === 'custom') return `${model.provider}:${model.id}`;
   return model.id.startsWith(`${model.provider}:`) ? model.id : `${model.provider}:${model.id}`;
 }
-
 export function splitModelValue(value: string): { provider: string; id: string } {
   const separator = value.indexOf(':');
   if (separator < 0) return { provider: '', id: value };
