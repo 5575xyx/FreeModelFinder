@@ -1,0 +1,512 @@
+import assert from 'node:assert/strict';
+import { after, before, beforeEach, describe, it } from 'node:test';
+import {
+  ProviderRegistry,
+  createTestRuntime,
+  getCredentialRuntime,
+  type AppConfig,
+} from '@freemodelfinder/core';
+import type { FastifyInstance } from 'fastify';
+import { createServer, createServerRuntime } from '../server.js';
+
+const localUiHeaders = {
+  origin: 'http://127.0.0.1:11435',
+  'x-fmf-client': 'ui',
+};
+
+const DEVICE_URL = 'https://api.workos.com/user_management/authorize/device';
+const AUTH_URL = 'https://api.workos.com/user_management/authenticate';
+const REGISTER_URL = 'https://api.cline.bot/api/v1/auth/register';
+
+const COLD_ACCOUNT_ID = 'acc-cold';
+const LIST_ACCOUNT_ID = 'acc-list';
+
+type Scenario = 'approve' | 'expired' | 'denied' | 'start-fails' | 'zero-ttl';
+
+let scenario: Scenario = 'approve';
+let authPolls = 0;
+let realFetch: typeof fetch;
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function testConfig(): AppConfig {
+  return {
+    version: 2,
+    port: 11435,
+    providers: {
+      cline: { enabled: true },
+      openrouter: { enabled: false, credentials: { apiKey: 'openrouter-key' } },
+      gemini: { enabled: false },
+    },
+    gateway: { requireAuth: false },
+    autoRoute: { enabled: false, strategy: 'capability' },
+  };
+}
+
+function installUpstreamStub(): void {
+  realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    if (url === DEVICE_URL) {
+      if (scenario === 'start-fails') {
+        return new Response('Bearer sk-leaked-token', { status: 500 });
+      }
+      return json({
+        device_code: 'device-code-1',
+        user_code: 'ABCD-EFGH',
+        verification_uri_complete: 'https://webos.example/activate?user_code=ABCD-EFGH',
+        interval: 0,
+        expires_in: scenario === 'zero-ttl' ? 0 : 300,
+      });
+    }
+    if (url === AUTH_URL) {
+      authPolls += 1;
+      if (scenario === 'expired') return json({ error: 'expired_token' }, 400);
+      if (scenario === 'denied') return json({ error: 'access_denied' }, 400);
+      if (authPolls === 1) return json({ error: 'authorization_pending' }, 400);
+      return json({ access_token: 'workos-access', refresh_token: 'workos-refresh' });
+    }
+    if (url === REGISTER_URL) {
+      return json({
+        data: { refreshToken: 'rt-secret-value', userInfo: { email: 'ada@example.com' } },
+      });
+    }
+    return realFetch(input, init);
+  }) as typeof fetch;
+}
+
+async function resetAccounts(): Promise<void> {
+  const runtime = getCredentialRuntime();
+  const pool = await runtime.getPool('cline');
+  for (const account of pool.accounts) {
+    await runtime.removeAccount('cline', account.id);
+  }
+}
+
+async function seedAccount(id: string): Promise<void> {
+  await getCredentialRuntime().upsertAccount('cline', {
+    id,
+    label: 'ada@example.com',
+    status: 'active',
+    addedAt: Date.now() - 5_000,
+    payload: { refreshToken: 'rt-secret-value', email: 'ada@example.com' },
+  });
+}
+
+async function startLogin(app: FastifyInstance): Promise<Record<string, string | number>> {
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/cline/login/start',
+    headers: localUiHeaders,
+  });
+  assert.equal(response.statusCode, 200);
+  return response.json() as Record<string, string | number>;
+}
+
+async function pollLogin(
+  app: FastifyInstance,
+  flowId: string,
+): Promise<{ status: string; account?: { id: string; label: string; status: string } }> {
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/cline/login/poll',
+    headers: localUiHeaders,
+    payload: { flowId },
+  });
+  assert.equal(response.statusCode, 200);
+  return response.json();
+}
+
+before(() => {
+  installUpstreamStub();
+});
+
+after(() => {
+  globalThis.fetch = realFetch;
+});
+
+describe('cline startup warm-up', () => {
+  let app: FastifyInstance;
+  let originalWarm: typeof ProviderRegistry.prototype.warmCredentials;
+  let warmCalls = 0;
+  let warmResolvedAtReturn = false;
+
+  before(async () => {
+    const seedRuntime = createTestRuntime({ throttleMs: 60_000 });
+    await seedRuntime.upsertAccount('cline', {
+      id: COLD_ACCOUNT_ID,
+      label: 'cold@example.com',
+      status: 'active',
+      addedAt: Date.now() - 5_000,
+      payload: { refreshToken: 'rt-cold-value' },
+    });
+    await seedRuntime.waitForPersist();
+
+    warmCalls = 0;
+    let resolved = false;
+    originalWarm = ProviderRegistry.prototype.warmCredentials;
+    ProviderRegistry.prototype.warmCredentials = async function (
+      this: ProviderRegistry,
+    ): Promise<void> {
+      warmCalls += 1;
+      const result = await originalWarm.call(this);
+      resolved = true;
+      return result;
+    };
+    const server = await createServer({
+      registry: new ProviderRegistry(testConfig()),
+      watchIntervalMs: 60 * 60 * 1000,
+    });
+    warmResolvedAtReturn = resolved;
+    app = server.app;
+  });
+
+  after(async () => {
+    ProviderRegistry.prototype.warmCredentials = originalWarm;
+    await app.close();
+    await resetAccounts();
+  });
+
+  it('awaits credential warm-up before the server comes up', () => {
+    assert.ok(warmCalls >= 1, `expected warmCredentials to run, got ${warmCalls}`);
+    assert.equal(warmResolvedAtReturn, true);
+  });
+
+  it('answers hasKey from the warmed pool on a cold start', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().providers.cline.hasKey, true);
+  });
+
+  it('warms again when the provider registry is rebuilt', async () => {
+    const before = warmCalls;
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: { provider: 'cline', enabled: true },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.ok(warmCalls > before, 'expected warmCredentials after a registry rebuild');
+  });
+
+  it('awaits credential warm-up on the split admin/gateway runtime', async () => {
+    let resolved = false;
+    ProviderRegistry.prototype.warmCredentials = async function (
+      this: ProviderRegistry,
+    ): Promise<void> {
+      const result = await originalWarm.call(this);
+      resolved = true;
+      return result;
+    };
+    const runtime = await createServerRuntime({
+      mode: 'server',
+      adminOrigin: 'https://admin.example',
+      publicUrl: 'https://gateway.example',
+      registry: new ProviderRegistry(testConfig()),
+      watchIntervalMs: 60 * 60 * 1000,
+    });
+    try {
+      assert.equal(resolved, true);
+    } finally {
+      ProviderRegistry.prototype.warmCredentials = originalWarm;
+      await runtime.close();
+    }
+  });
+});
+
+describe('cline device login API', () => {
+  let app: FastifyInstance;
+
+  before(async () => {
+    await resetAccounts();
+    ({ app } = await createServer({
+      registry: new ProviderRegistry(testConfig()),
+      watchIntervalMs: 60 * 60 * 1000,
+    }));
+  });
+
+  after(async () => {
+    await app.close();
+    await resetAccounts();
+  });
+
+  beforeEach(() => {
+    scenario = 'approve';
+    authPolls = 0;
+  });
+
+  it('keeps the login routes behind the local UI gate', async () => {
+    const anonymous = await app.inject({
+      method: 'POST',
+      url: '/api/cline/accounts/acc-1/logout',
+    });
+    assert.equal(anonymous.statusCode, 403);
+
+    const remote = await app.inject({
+      method: 'POST',
+      url: '/api/cline/accounts/acc-1/logout',
+      headers: localUiHeaders,
+      remoteAddress: '192.0.2.10',
+    });
+    assert.equal(remote.statusCode, 403);
+  });
+
+  it('walks the device login flow into a stored account', async () => {
+    const started = await startLogin(app);
+    assert.equal(typeof started.flowId, 'string');
+    assert.equal(started.code, 'ABCD-EFGH');
+    assert.equal(started.userUrl, 'https://webos.example/activate?user_code=ABCD-EFGH');
+    assert.ok(Number(started.expiresAt) > Date.now());
+
+    const flowId = String(started.flowId);
+    const pending = await pollLogin(app, flowId);
+    assert.equal(pending.status, 'pending');
+    assert.equal(authPolls, 1);
+
+    const complete = await pollLogin(app, flowId);
+    assert.equal(complete.status, 'complete');
+    assert.equal(complete.account?.label, 'ada@example.com');
+    assert.equal(complete.account?.status, 'active');
+    assert.equal(typeof complete.account?.id, 'string');
+
+    const repeat = await pollLogin(app, flowId);
+    assert.equal(repeat.status, 'complete');
+    assert.equal(repeat.account?.id, complete.account?.id);
+
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    assert.equal(listed.statusCode, 200);
+    assert.equal(listed.json().accounts.length, 1);
+    assert.ok(!listed.body.includes('refreshToken'));
+    assert.ok(!listed.body.includes('rt-secret-value'));
+    assert.ok(!listed.body.includes('workos-refresh'));
+  });
+
+  it('reuses the stored account when the same login runs twice', async () => {
+    const before = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    const existing = before.json().accounts;
+
+    const flowId = String((await startLogin(app)).flowId);
+    let completed = await pollLogin(app, flowId);
+    if (completed.status !== 'complete') completed = await pollLogin(app, flowId);
+    assert.equal(completed.status, 'complete');
+
+    const after = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    const accounts = after.json().accounts;
+    assert.equal(accounts.length, existing.length);
+    assert.deepEqual(
+      accounts.map((account: { id: string }) => account.id),
+      existing.map((account: { id: string }) => account.id),
+    );
+  });
+
+  it('maps expired and denied upstream states', async () => {
+    scenario = 'expired';
+    const expired = await pollLogin(app, String((await startLogin(app)).flowId));
+    assert.equal(expired.status, 'expired');
+
+    scenario = 'denied';
+    const denied = await pollLogin(app, String((await startLogin(app)).flowId));
+    assert.equal(denied.status, 'denied');
+
+    scenario = 'zero-ttl';
+    const timedOut = await pollLogin(app, String((await startLogin(app)).flowId));
+    assert.equal(timedOut.status, 'expired');
+
+    scenario = 'approve';
+    const unknown = await pollLogin(app, 'no-such-flow');
+    assert.equal(unknown.status, 'expired');
+  });
+
+  it('requires a flow id when polling', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/cline/login/poll',
+      headers: localUiHeaders,
+      payload: {},
+    });
+    assert.equal(response.statusCode, 400);
+  });
+
+  it('redacts upstream secrets from login errors', async () => {
+    scenario = 'start-fails';
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/cline/login/start',
+      headers: localUiHeaders,
+    });
+    assert.equal(response.statusCode, 502);
+    assert.ok(response.body.includes('[REDACTED]'), response.body);
+    assert.ok(!response.body.includes('sk-leaked-token'));
+  });
+});
+
+describe('cline accounts API', () => {
+  let app: FastifyInstance;
+
+  before(async () => {
+    await resetAccounts();
+    await seedAccount(LIST_ACCOUNT_ID);
+    const runtime = getCredentialRuntime();
+    runtime.reportSuccess('cline', LIST_ACCOUNT_ID);
+    runtime.reportRateLimit(
+      'cline',
+      LIST_ACCOUNT_ID,
+      'deepseek/deepseek-v4-flash',
+      Date.now() + 60_000,
+    );
+    runtime.recordUsage('cline', LIST_ACCOUNT_ID, 'deepseek/deepseek-v4-flash', {
+      requests: 2,
+      promptTokens: 10,
+      completionTokens: 5,
+    });
+    runtime.recordUsage('cline', LIST_ACCOUNT_ID, 'deepseek/deepseek-v4-flash', {
+      requests: 1,
+      error: 'upstream refused Bearer leak-token',
+    });
+    ({ app } = await createServer({
+      registry: new ProviderRegistry(testConfig()),
+      watchIntervalMs: 60 * 60 * 1000,
+    }));
+  });
+
+  after(async () => {
+    await app.close();
+    await resetAccounts();
+  });
+
+  it('aggregates cooldowns and usage without echoing credentials', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    assert.equal(response.statusCode, 200);
+    assert.ok(!response.body.includes('refreshToken'));
+    assert.ok(!response.body.includes('rt-secret-value'));
+
+    const account = response.json().accounts[0];
+    assert.equal(account.id, LIST_ACCOUNT_ID);
+    assert.equal(account.label, 'ada@example.com');
+    assert.equal(account.status, 'active');
+    assert.equal(typeof account.addedAt, 'number');
+    assert.equal(typeof account.lastUsedAt, 'number');
+    assert.equal(account.cooldowns.length, 1);
+    assert.equal(account.cooldowns[0].model, 'deepseek/deepseek-v4-flash');
+    assert.ok(account.cooldowns[0].resetAt > Date.now());
+    assert.equal(account.usage.requests, 3);
+    assert.equal(account.usage.promptTokens, 10);
+    assert.equal(account.usage.completionTokens, 5);
+    assert.ok(account.usage.lastError.includes('[REDACTED]'));
+    assert.ok(!account.usage.lastError.includes('leak-token'));
+  });
+
+  it('clears the cooldowns of a single account', async () => {
+    const cleared = await app.inject({
+      method: 'POST',
+      url: `/api/cline/accounts/${LIST_ACCOUNT_ID}/cooldowns/clear`,
+      headers: localUiHeaders,
+    });
+    assert.equal(cleared.statusCode, 200);
+    assert.equal(cleared.json().cleared, 1);
+
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    assert.equal(listed.json().accounts[0].cooldowns.length, 0);
+  });
+
+  it('logs out an account', async () => {
+    const loggedOut = await app.inject({
+      method: 'POST',
+      url: `/api/cline/accounts/${LIST_ACCOUNT_ID}/logout`,
+      headers: localUiHeaders,
+    });
+    assert.equal(loggedOut.statusCode, 200);
+    assert.equal(loggedOut.json().ok, true);
+
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/api/cline/accounts',
+      headers: localUiHeaders,
+    });
+    assert.equal(listed.json().accounts.length, 0);
+  });
+});
+
+describe('cline hasKey seam', () => {
+  let app: FastifyInstance;
+  let registry: ProviderRegistry;
+
+  before(async () => {
+    await resetAccounts();
+    registry = new ProviderRegistry(testConfig());
+    ({ app } = await createServer({ registry, watchIntervalMs: 60 * 60 * 1000 }));
+  });
+
+  after(async () => {
+    await app.close();
+    await resetAccounts();
+  });
+
+  async function hasKey(provider: string): Promise<boolean> {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    assert.equal(response.statusCode, 200);
+    return response.json().providers[provider].hasKey as boolean;
+  }
+
+  it('reports cline as unkeyed while the pool has no active account', async () => {
+    assert.equal(await hasKey('cline'), false);
+  });
+
+  it('reports cline as keyed once an active account exists', async () => {
+    await seedAccount('acc-haskey');
+    assert.equal(await hasKey('cline'), true);
+  });
+
+  it('reports cline as unkeyed when the provider is disabled', async () => {
+    const current = registry.getConfig();
+    registry.updateConfig({
+      ...current,
+      providers: { ...current.providers, cline: { enabled: false } },
+    });
+    assert.equal(await hasKey('cline'), false);
+    registry.updateConfig({
+      ...current,
+      providers: { ...current.providers, cline: { enabled: true } },
+    });
+    assert.equal(await hasKey('cline'), true);
+  });
+
+  it('keeps the apiKey based hasKey behaviour of other providers', async () => {
+    assert.equal(await hasKey('openrouter'), true);
+    assert.equal(await hasKey('gemini'), false);
+  });
+});

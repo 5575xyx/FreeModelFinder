@@ -30,6 +30,12 @@ export {
   type DeviceAuthStatus,
 } from './credentials/device-auth.js';
 export {
+  ClineLoginAdapter,
+  type ClineDeviceAuthorization,
+  type ClineLoginAdapterOptions,
+  type ClineLoginResult,
+} from './credentials/adapters/cline.js';
+export {
   AutoRouter,
   parseRateLimitError,
   parseModelUnavailableError,

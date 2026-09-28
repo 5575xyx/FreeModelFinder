@@ -1,18 +1,23 @@
 import './proxy.js';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { resolve } from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import {
   CallLogger,
+  ClineLoginAdapter,
+  DeviceAuthManager,
   ProviderIdSchema,
   ProviderRegistry,
   asModelList,
   composeModelId,
+  getCredentialRuntime,
   isVisionCapable,
   loadConfig,
+  redact,
   updateConfig,
+  type CredentialAccountEntry,
   type GatewayKeyEntry,
 } from '@freemodelfinder/core';
 import { registerOpenAIRoutes } from './routes/openai.js';
@@ -185,6 +190,41 @@ function generateApiKey(): string {
 
 function generateKeyId(): string {
   return `key-${randomBytes(6).toString('hex')}`;
+}
+
+function redactMessage(error: unknown): string {
+  return redact(error instanceof Error ? error.message : String(error));
+}
+
+interface ClineAccountSummary {
+  id: string;
+  label: string;
+  status: 'active' | 'invalid';
+}
+
+async function persistClineLogin(result: unknown): Promise<ClineAccountSummary> {
+  const payload =
+    typeof result === 'object' && result !== null && !Array.isArray(result)
+      ? (result as Record<string, unknown>)
+      : null;
+  const refreshToken =
+    payload && typeof payload.refreshToken === 'string' ? payload.refreshToken.trim() : '';
+  if (!refreshToken) throw new Error('cline login completed without a refresh token');
+  const email = payload && typeof payload.email === 'string' ? payload.email.trim() : '';
+  const runtime = getCredentialRuntime();
+  const pool = await runtime.getPool('cline');
+  const existing = pool.accounts.find((account) => account.payload.refreshToken === refreshToken);
+  const label = email || existing?.label || '';
+  const entry: CredentialAccountEntry = {
+    id: existing?.id ?? randomUUID(),
+    label,
+    status: 'active',
+    addedAt: existing?.addedAt ?? Date.now(),
+    payload: { refreshToken, ...(email ? { email } : {}) },
+    ...(existing?.lastUsedAt !== undefined ? { lastUsedAt: existing.lastUsedAt } : {}),
+  };
+  await runtime.upsertAccount('cline', entry);
+  return { id: entry.id, label, status: entry.status };
 }
 
 function activeGatewayKeys(
@@ -538,7 +578,10 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             id,
             {
               enabled: s?.enabled ?? false,
-              hasKey: !!s?.credentials?.apiKey,
+              hasKey:
+                id === 'cline'
+                  ? !!s?.enabled && getCredentialRuntime().hasActiveAccounts('cline')
+                  : !!s?.credentials?.apiKey,
               keyCount:
                 (s?.credentials?.apiKeys?.filter((k) => !!k?.trim()) ?? []).length ||
                 (s?.credentials?.apiKey ? 1 : 0),
@@ -555,6 +598,89 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           sources,
         },
       };
+    });
+
+    const deviceAuth = new DeviceAuthManager();
+    const clineLogin = new ClineLoginAdapter();
+    const completedClineFlows = new Map<string, ClineAccountSummary>();
+
+    app.post('/api/cline/login/start', async (_req, reply) => {
+      try {
+        const authorization = await clineLogin.start();
+        const flow = deviceAuth.start({
+          check: clineLogin.createCheck(authorization),
+          expiresInMs: authorization.expiresIn * 1_000,
+        });
+        return {
+          flowId: flow.flowId,
+          code: authorization.userCode,
+          userUrl: authorization.verificationUri,
+          expiresAt: flow.expiresAt,
+        };
+      } catch (error) {
+        return reply.code(502).send({ error: redactMessage(error) });
+      }
+    });
+
+    app.post<{ Body: { flowId?: string } }>('/api/cline/login/poll', async (req, reply) => {
+      const flowId = typeof req.body?.flowId === 'string' ? req.body.flowId.trim() : '';
+      if (!flowId) return reply.code(400).send({ error: 'flowId required' });
+      try {
+        const flow = await deviceAuth.poll(flowId);
+        if (flow.status === 'pending') return { status: 'pending' };
+        if (flow.status === 'expired') return { status: 'expired' };
+        if (flow.status === 'denied') {
+          return { status: flow.reason === 'expired_token' ? 'expired' : 'denied' };
+        }
+        const summary = completedClineFlows.get(flowId) ?? (await persistClineLogin(flow.result));
+        completedClineFlows.set(flowId, summary);
+        return { status: 'complete', account: summary };
+      } catch (error) {
+        return reply.code(502).send({ error: redactMessage(error) });
+      }
+    });
+
+    app.get('/api/cline/accounts', async () => {
+      const runtime = getCredentialRuntime();
+      const pool = await runtime.getPool('cline');
+      const usage = new Map(
+        runtime.snapshotUsage('cline').map((entry) => [entry.accountId, entry]),
+      );
+      return {
+        accounts: pool.accounts.map((account) => {
+          const stats = usage.get(account.id);
+          return {
+            id: account.id,
+            label: account.label ?? '',
+            status: account.status,
+            addedAt: account.addedAt,
+            lastUsedAt: account.lastUsedAt ?? null,
+            cooldowns: runtime.listAccountCooldowns('cline', account.id),
+            usage: {
+              requests: stats?.requests ?? 0,
+              promptTokens: stats?.promptTokens ?? 0,
+              completionTokens: stats?.completionTokens ?? 0,
+              ...(stats?.lastError !== undefined ? { lastError: stats.lastError } : {}),
+            },
+          };
+        }),
+      };
+    });
+
+    app.post<{ Params: { id: string } }>(
+      '/api/cline/accounts/:id/cooldowns/clear',
+      async (req) => ({
+        cleared: getCredentialRuntime().clearAccountCooldowns('cline', req.params.id),
+      }),
+    );
+
+    app.post<{ Params: { id: string } }>('/api/cline/accounts/:id/logout', async (req, reply) => {
+      try {
+        await getCredentialRuntime().removeAccount('cline', req.params.id);
+        return { ok: true };
+      } catch (error) {
+        return reply.code(500).send({ error: redactMessage(error) });
+      }
     });
 
     registerOnboardingRoutes(app, {
@@ -909,6 +1035,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           return cfg;
         });
         opts.state.registry = new ProviderRegistry(next);
+        await opts.state.registry.warmCredentials().catch(() => undefined);
         opts.state.catalogRevision += 1;
         opts.state.revision += 1;
         void opts.state.watcher?.tick(true);
@@ -1410,6 +1537,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<{
     revision: 1,
     catalogRevision: 1,
   };
+  await state.registry.warmCredentials().catch(() => undefined);
   const defaultPort = opts.port ?? state.registry.getConfig().port ?? 11435;
   const listenHost = opts.host ?? '127.0.0.1';
   const app = await createApp({
@@ -1464,6 +1592,7 @@ export async function createServerRuntime(opts: ServerRuntimeOptions = {}): Prom
   const publicUrl = normalizeHttpsOrigin(opts.publicUrl, 'public URL');
   const registry = opts.registry ?? new ProviderRegistry(await loadConfig());
   await enforceServerGatewayAuth(registry, !opts.registry);
+  await registry.warmCredentials().catch(() => undefined);
   const state: SharedRuntimeState = {
     registry,
     runtime: createRuntimeIdentity(SERVER_VERSION),
