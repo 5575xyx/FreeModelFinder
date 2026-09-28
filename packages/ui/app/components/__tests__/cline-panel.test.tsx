@@ -306,6 +306,142 @@ describe('ClineAccountsPanel', () => {
     await new Promise((resolve) => setTimeout(resolve, 3000));
     expect(polls).toBe(pollsAtUnmount);
   }, 15_000);
+
+  it('ignores a poll that lands after the sign-in was cancelled', async () => {
+    let polls = 0;
+    server.use(
+      http.get(accountsUrl, () => HttpResponse.json({ accounts: [] })),
+      http.post(startUrl, () =>
+        HttpResponse.json({
+          flowId: 'flow-cancel',
+          code: 'CODE-0004',
+          userUrl: 'https://example.com/activate',
+          expiresAt: Date.now() + 300_000,
+        }),
+      ),
+      http.post(pollUrl, async () => {
+        polls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return HttpResponse.json({
+          status: 'complete',
+          account: { id: 'acc-active', label: 'ada@example.com', status: 'active' },
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<ClineAccountsPanel />);
+
+    await user.click(await screen.findByRole('button', { name: '登录 Cline 账号' }));
+    expect(await screen.findByText('CODE-0004')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: '取消登录' }));
+    expect(await screen.findByRole('button', { name: '登录 Cline 账号' })).toBeTruthy();
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(polls).toBe(1);
+    expect(screen.queryByText('登录成功：ada@example.com')).toBeNull();
+    expect(screen.queryByText('CODE-0004')).toBeNull();
+  }, 10_000);
+
+  it('reports a failed auto-enable after a successful sign-in', async () => {
+    server.use(
+      http.get(accountsUrl, () => HttpResponse.json({ accounts: [activeAccount] })),
+      http.post(startUrl, () =>
+        HttpResponse.json({
+          flowId: 'flow-enable',
+          code: 'CODE-0005',
+          userUrl: 'https://example.com/activate',
+          expiresAt: Date.now() + 300_000,
+        }),
+      ),
+      http.post(pollUrl, () =>
+        HttpResponse.json({
+          status: 'complete',
+          account: { id: 'acc-active', label: 'ada@example.com', status: 'active' },
+        }),
+      ),
+      http.post(providersUrl, () => HttpResponse.json({ error: 'boom' }, { status: 500 })),
+    );
+    const user = userEvent.setup();
+    render(<ClineAccountsPanel />);
+
+    await user.click(await screen.findByRole('button', { name: '登录 Cline 账号' }));
+    expect(await screen.findByText('登录成功：ada@example.com')).toBeTruthy();
+    expect(await screen.findByText(/已登录，但自动启用失败/)).toBeTruthy();
+    expect((screen.getByRole('checkbox', { name: '启用 Cline' }) as HTMLInputElement).checked).toBe(
+      false,
+    );
+  }, 10_000);
+
+  it('ends the wizard with an error when the poll endpoint fails', async () => {
+    let polls = 0;
+    server.use(
+      http.get(accountsUrl, () => HttpResponse.json({ accounts: [] })),
+      http.post(startUrl, () =>
+        HttpResponse.json({
+          flowId: 'flow-poll-fail',
+          code: 'CODE-0006',
+          userUrl: 'https://example.com/activate',
+          expiresAt: Date.now() + 300_000,
+        }),
+      ),
+      http.post(pollUrl, () => {
+        polls += 1;
+        return HttpResponse.json({ error: 'upstream broke' }, { status: 502 });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<ClineAccountsPanel />);
+
+    await user.click(await screen.findByRole('button', { name: '登录 Cline 账号' }));
+    expect(await screen.findByText('登录失败：upstream broke')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+    expect(screen.queryByText('CODE-0006')).toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    expect(polls).toBe(1);
+  }, 10_000);
+
+  it('expires the flow from the clock when polling never returns a terminal state', async () => {
+    let polls = 0;
+    server.use(
+      http.get(accountsUrl, () => HttpResponse.json({ accounts: [] })),
+      http.post(startUrl, () =>
+        HttpResponse.json({
+          flowId: 'flow-watchdog',
+          code: 'CODE-0007',
+          userUrl: 'https://example.com/activate',
+          expiresAt: Date.now() + 1500,
+        }),
+      ),
+      http.post(pollUrl, () => {
+        polls += 1;
+        return HttpResponse.json({ status: 'pending' });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<ClineAccountsPanel />);
+
+    await user.click(await screen.findByRole('button', { name: '登录 Cline 账号' }));
+    expect(await screen.findByText('CODE-0007')).toBeTruthy();
+    expect(await screen.findByText('授权已过期，请重试', {}, { timeout: 5000 })).toBeTruthy();
+    expect(polls).toBe(1);
+  }, 10_000);
+
+  it('disarms the logout confirmation on its own', async () => {
+    server.use(http.get(accountsUrl, () => HttpResponse.json({ accounts: [activeAccount] })));
+    const user = userEvent.setup();
+    render(<ClineAccountsPanel enabled />);
+
+    const row = (await screen.findByText('ada@example.com')).closest('li') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: '登出' }));
+    expect(within(row).getByRole('button', { name: '确认登出' })).toBeTruthy();
+
+    await waitFor(
+      () => expect(within(row).queryByRole('button', { name: '确认登出' })).toBeNull(),
+      { timeout: 6000, interval: 200 },
+    );
+    expect(within(row).getByRole('button', { name: '登出' })).toBeTruthy();
+  }, 10_000);
 });
 
 describe('cline card state', () => {
@@ -368,6 +504,14 @@ describe('cline card state', () => {
 
     await user.click(await screen.findByRole('button', { name: '登录 Cline 账号' }));
     expect(await screen.findByText('CARD-0001')).toBeTruthy();
+    await waitFor(
+      () => {
+        const toast = document.querySelector('.toast-in');
+        expect(toast).not.toBeNull();
+        expect(toast?.textContent).toContain('登录成功：ada@example.com');
+      },
+      { timeout: 6000, interval: 50 },
+    );
     await waitFor(() => expect(screen.getAllByText('已配置')).toHaveLength(1), { timeout: 6000 });
     await waitFor(() => expect(configCalls).toBeGreaterThanOrEqual(2), { timeout: 6000 });
     await waitFor(() => expect(writes).toContainEqual({ provider: 'cline', enabled: true }), {
@@ -382,6 +526,7 @@ describe('cline i18n keys', () => {
     'platforms.cline.hint',
     'platforms.cline.label',
     'settings.cline.enable',
+    'settings.cline.enableFailed',
     'settings.cline.accounts.title',
     'settings.cline.accounts.count',
     'settings.cline.accounts.empty',

@@ -7,6 +7,8 @@ import { GATEWAY, classNames, formatNumber, withUiHeaders } from '../lib/utils';
 import { useI18n } from '../i18n';
 
 export const CLINE_POLL_INTERVAL_MS = 2_500;
+export const CLINE_POLL_TIMEOUT_MS = 15_000;
+export const CLINE_LOGOUT_ARM_MS = 4_000;
 
 export type ClineCooldown = { model: string; resetAt: number | string };
 
@@ -71,9 +73,11 @@ const accountsUrl = `${GATEWAY}/api/cline/accounts`;
 export function ClineAccountsPanel({
   enabled = false,
   onChanged,
+  onLoginSuccess,
 }: {
   enabled?: boolean;
   onChanged?: () => void;
+  onLoginSuccess?: (label: string) => void;
 }) {
   const { t } = useI18n();
   const [accounts, setAccounts] = useState<ClineAccount[]>([]);
@@ -92,6 +96,7 @@ export function ClineAccountsPanel({
 
   const aliveRef = useRef(true);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flowRef = useRef<Flow | null>(null);
 
   const refreshAccounts = useCallback(async () => {
@@ -117,6 +122,8 @@ export function ClineAccountsPanel({
       aliveRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = null;
+      if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+      logoutTimerRef.current = null;
     };
   }, [refreshAccounts]);
 
@@ -125,7 +132,15 @@ export function ClineAccountsPanel({
 
   useEffect(() => {
     if (!needsClock) return;
-    const id = setInterval(() => setNow(Date.now()), 1_000);
+    const id = setInterval(() => {
+      const stamp = Date.now();
+      setNow(stamp);
+      const active = flowRef.current;
+      if (active && stamp >= active.expiresAt) {
+        endFlow();
+        setPhase('expired');
+      }
+    }, 1_000);
     return () => clearInterval(id);
   }, [needsClock]);
 
@@ -158,13 +173,17 @@ export function ClineAccountsPanel({
 
   async function finishLogin(account: { id?: string; label?: string } | undefined): Promise<void> {
     endFlow();
+    const label = account?.label ?? '';
     setPhase('complete');
-    setLastLabel(account?.label ?? '');
+    setLastLabel(label);
+    onLoginSuccess?.(label);
     if (!enabled) {
       try {
         await postEnabled(true);
       } catch {
-        /* keep the account list authoritative even when the toggle fails */
+        if (aliveRef.current) {
+          setActionError(t('settings.cline.enableFailed'));
+        }
       }
     }
     if (!aliveRef.current) return;
@@ -187,10 +206,11 @@ export function ClineAccountsPanel({
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ flowId: active.flowId }),
+          signal: AbortSignal.timeout(CLINE_POLL_TIMEOUT_MS),
         }),
       );
       const data = (await res.json().catch(() => null)) as PollResponse | null;
-      if (!aliveRef.current) return;
+      if (!aliveRef.current || flowRef.current !== active) return;
       if (!res.ok || !data) throw new Error(data?.error ?? `HTTP ${res.status}`);
       if (data.status === 'pending') {
         schedulePoll(CLINE_POLL_INTERVAL_MS);
@@ -211,7 +231,7 @@ export function ClineAccountsPanel({
         setPhase('error');
       }
     } catch (error) {
-      if (!aliveRef.current) return;
+      if (!aliveRef.current || flowRef.current !== active) return;
       endFlow();
       setWizardError(messageOf(error));
       setPhase('error');
@@ -294,7 +314,16 @@ export function ClineAccountsPanel({
     if (busyId) return;
     if (confirmLogoutId !== accountId) {
       setConfirmLogoutId(accountId);
+      if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+      logoutTimerRef.current = setTimeout(() => {
+        logoutTimerRef.current = null;
+        if (aliveRef.current) setConfirmLogoutId(null);
+      }, CLINE_LOGOUT_ARM_MS);
       return;
+    }
+    if (logoutTimerRef.current) {
+      clearTimeout(logoutTimerRef.current);
+      logoutTimerRef.current = null;
     }
     setBusyId(accountId);
     setActionError('');

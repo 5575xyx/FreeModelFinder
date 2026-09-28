@@ -319,11 +319,12 @@ export function SettingsView({
 
   const refreshConfig = useCallback(() => {
     fetch(`${GATEWAY}/api/config`, withUiHeaders())
-      .then((r) => r.json())
-      .then((c: ConfigRes) => setCfg(c))
-      .catch(() => {
-        /* keep the last known config while the gateway is offline */
-      });
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json() as Promise<ConfigRes>;
+      })
+      .then((config) => setCfg(config))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1882,7 +1883,16 @@ export function SettingsView({
                     </div>
                     <div className="flex flex-col gap-2">
                       {isCline && (
-                        <ClineAccountsPanel enabled={!!state?.enabled} onChanged={refreshConfig} />
+                        <ClineAccountsPanel
+                          enabled={!!state?.enabled}
+                          onChanged={refreshConfig}
+                          onLoginSuccess={(label) =>
+                            setToast({
+                              kind: 'success',
+                              text: t('settings.cline.login.success', { label }),
+                            })
+                          }
+                        />
                       )}
                       {!isCline && (
                         <>

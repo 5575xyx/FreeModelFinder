@@ -451,6 +451,7 @@ export const zh: Dict = {
   'platforms.cline.label': 'Cline',
 
   'settings.cline.enable': '启用 Cline',
+  'settings.cline.enableFailed': '已登录，但自动启用失败，请手动勾选「启用 Cline」',
   'settings.cline.accounts.title': 'Cline 账号',
   'settings.cline.accounts.count': '{n} 个',
   'settings.cline.accounts.empty': '暂无账号，登录后即可使用 Cline 的免费模型',
@@ -984,6 +985,8 @@ export const en: Dict = {
   'platforms.cline.label': 'Cline',
 
   'settings.cline.enable': 'Enable Cline',
+  'settings.cline.enableFailed':
+    'Signed in, but auto-enable failed. Turn on "Enable Cline" manually.',
   'settings.cline.accounts.title': 'Cline accounts',
   'settings.cline.accounts.count': '{n}',
   'settings.cline.accounts.empty': 'No accounts yet. Sign in to use the free Cline models.',
