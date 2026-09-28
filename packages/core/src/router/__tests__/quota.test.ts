@@ -183,4 +183,34 @@ describe('QuotaTracker', () => {
     assert.equal(minuteTokens?.scope, 'provider');
     assert.equal(minuteTokens?.limit, 30_000);
   });
+
+  it('hits one cline state from a composed query after a bare record and echoes composed', () => {
+    const tracker = new QuotaTracker();
+    tracker.recordResponse({
+      provider: 'cline',
+      model: 'z-ai/glm-5.3-flash',
+      status: 200,
+      headers: new Headers(),
+    });
+
+    const queried = tracker.snapshot('cline', 'cline:z-ai/glm-5.3-flash');
+    assert.equal(queried.session.requests, 1);
+    assert.equal(queried.availability, 'available');
+    assert.equal(queried.model, 'cline:z-ai/glm-5.3-flash');
+  });
+
+  it('normalizes a composed cline record key onto the bare query and echoes composed', () => {
+    const tracker = new QuotaTracker();
+    tracker.recordResponse({
+      provider: 'cline',
+      model: 'cline:z-ai/glm-5.3-flash',
+      status: 429,
+      headers: new Headers(),
+    });
+
+    const queried = tracker.snapshot('cline', 'z-ai/glm-5.3-flash');
+    assert.equal(queried.session.requests, 1);
+    assert.equal(queried.availability, 'limited');
+    assert.equal(queried.model, 'cline:z-ai/glm-5.3-flash');
+  });
 });

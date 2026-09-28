@@ -260,9 +260,7 @@ export default function Home() {
   }, [refreshModels]);
 
   const applyQuotas = useCallback((quotas: ModelQuotaSnapshot[]) => {
-    const byModel = new Map(
-      quotas.map((quota) => [`${quota.provider}:${quota.model}`.toLowerCase(), quota]),
-    );
+    const byModel = new Map(quotas.map((quota) => [quota.model.toLowerCase(), quota]));
     setModels((current) =>
       current.map((item) => ({
         ...item,

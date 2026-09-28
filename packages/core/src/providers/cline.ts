@@ -361,7 +361,7 @@ export class ClineProvider extends BaseProvider {
       if (Date.now() < expiry - REFRESH_SKEW_MS) return cached;
     }
     const inFlight = this.refreshChains.get(account.id);
-    if (inFlight && !forceRefresh) return inFlight;
+    if (inFlight) return inFlight;
     const chain = this.refreshChain(account, model);
     this.refreshChains.set(account.id, chain);
     try {

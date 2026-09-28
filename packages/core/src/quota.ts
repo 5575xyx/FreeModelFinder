@@ -6,6 +6,7 @@ import type {
   QuotaScope,
   QuotaWindow,
 } from './types.js';
+import { bareModelId, composeModelId } from './model-id.js';
 
 type ResponseEvent = {
   provider: ProviderId;
@@ -259,10 +260,11 @@ export class QuotaTracker {
 
   recordResponse(event: ResponseEvent): void {
     const now = Date.now();
-    const state = this.state(event.provider, event.model);
+    const model = bareModelId(event.provider, event.model);
+    const state = this.state(event.provider, model);
     state.requests += 1;
     state.lastRequestAt = now;
-    this.requestEvents.push({ provider: event.provider, model: event.model, at: now });
+    this.requestEvents.push({ provider: event.provider, model, at: now });
     const parsed = parseQuotaHeaders(event.headers, now).map((window) => ({
       ...window,
       scope: responseWindowScope(event.provider, window),
@@ -280,14 +282,15 @@ export class QuotaTracker {
   recordUsage(event: UsageEvent): void {
     const usage = event.usage;
     if (!usage) return;
-    const state = this.state(event.provider, event.model);
+    const model = bareModelId(event.provider, event.model);
+    const state = this.state(event.provider, model);
     state.promptTokens += usage.prompt_tokens ?? 0;
     state.completionTokens += usage.completion_tokens ?? 0;
     const total = usage.total_tokens ?? (usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0);
     state.totalTokens += total;
     this.tokenEvents.push({
       provider: event.provider,
-      model: event.model,
+      model,
       at: Date.now(),
       tokens: total,
     });
@@ -306,7 +309,7 @@ export class QuotaTracker {
     model: string,
     result: { ok: boolean; latencyMs: number; error?: string; limited?: boolean },
   ): void {
-    const state = this.state(provider, model);
+    const state = this.state(provider, bareModelId(provider, model));
     state.lastTestAt = Date.now();
     state.latencyMs = result.latencyMs;
     state.error = result.error;
@@ -314,16 +317,17 @@ export class QuotaTracker {
   }
 
   snapshot(provider: ProviderId, model: string, now = Date.now()): ModelQuotaSnapshot {
-    const state = this.state(provider, model);
+    const bare = bareModelId(provider, model);
+    const state = this.state(provider, bare);
     const policies = (PROVIDER_POLICIES[provider] ?? []).filter(
-      (policy) => !policy.model || policy.model.test(model),
+      (policy) => !policy.model || policy.model.test(bare),
     );
     const localWindows: QuotaWindow[] = policies.map((policy) => {
       const since = now - policy.windowSeconds * 1000;
       const matchesScope = (event: { provider: ProviderId; model: string; at: number }) =>
         event.at > since &&
         event.provider === provider &&
-        (policy.scope === 'provider' || event.model.toLowerCase() === model.toLowerCase());
+        (policy.scope === 'provider' || event.model.toLowerCase() === bare.toLowerCase());
       const used =
         policy.resource === 'requests'
           ? this.requestEvents.filter(matchesScope).length
@@ -388,7 +392,7 @@ export class QuotaTracker {
       .filter((value): value is number => typeof value === 'number' && value > now)
       .sort((a, b) => a - b)[0];
     return {
-      model,
+      model: composeModelId(provider, bare),
       provider,
       session: {
         startedAt: this.startedAt,

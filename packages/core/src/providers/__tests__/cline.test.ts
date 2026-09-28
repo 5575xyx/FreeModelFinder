@@ -298,6 +298,35 @@ describe('ClineProvider token lifecycle', () => {
     assert.equal(chatCalls(calls).length, 2);
   });
 
+  it('coalesces concurrent chat 401 force-refreshes into one refresh', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'stale-token', expiresAt: VALID_EXPIRY() }]);
+    let refreshCount = 0;
+    const { calls, fetchImpl } = harness((call) => {
+      if (call.url.includes('/auth/refresh')) {
+        refreshCount += 1;
+        if (refreshCount > 1) return json({ error: 'invalid_grant' }, 401);
+        return refreshOk('at-new');
+      }
+      if (headerOf(call.init, 'authorization') === 'Bearer workos:stale-token') {
+        return json({ error: { message: 'token expired' } }, 401);
+      }
+      return chatOk('after refresh');
+    });
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const [first, second] = await Promise.all([
+      provider.chat(req('z-ai/glm-5.3-flash')),
+      provider.chat(req('z-ai/glm-5.3-flash')),
+    ]);
+    assert.equal(first.content, 'after refresh');
+    assert.equal(second.content, 'after refresh');
+    assert.equal(refreshCalls(calls).length, 1);
+
+    const pool = await runtime.getPool('cline');
+    assert.equal(pool.accounts[0]?.status, 'active');
+  });
+
   it('persists a rotated refreshToken to disk', async () => {
     const runtime = newRuntime();
     await seed(runtime, [{ id: 'a1', refreshToken: 'rt-old' }]);
