@@ -78,7 +78,7 @@ function blocksToToolCalls(blocks: AnthropicBlock[]): ToolCall[] | undefined {
       type: 'function',
       function: {
         name: b.name ?? '',
-        arguments: b.input === undefined ? '{}' : JSON.stringify(b.input),
+        arguments: b.input === undefined || b.input === null ? '{}' : JSON.stringify(b.input),
       },
     });
   }
@@ -131,6 +131,14 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
           content: blockText(r),
           tool_call_id: r.tool_use_id ?? '',
         });
+      }
+      const rest = m.content.filter((b) => b.type !== 'tool_result');
+      if (rest.length > 0) {
+        const restText = contentToString(rest);
+        const restParts = anthropicContentToParts(rest);
+        if (restText || restParts) {
+          messages.push({ role: 'user', content: restText, contentParts: restParts });
+        }
       }
       continue;
     }

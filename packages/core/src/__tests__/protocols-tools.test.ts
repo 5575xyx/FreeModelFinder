@@ -219,4 +219,38 @@ describe('anthropic inbound tools', () => {
     assert.deepEqual(out.raw, body);
     assert.equal(out.rawProtocol, 'anthropic');
   });
+
+  it('keeps sibling text when a tool_result turn also carries text', () => {
+    const out = anthropicToChatRequest({
+      model: 'm',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'toolu_1', content: 'sunny' },
+            { type: 'text', text: 'now summarize' },
+          ],
+        },
+      ],
+      max_tokens: 16,
+    } as unknown as AnthropicMessagesRequest);
+    const toolMsg = out.messages.find((m) => m.role === 'tool');
+    assert.equal(toolMsg?.content, 'sunny');
+    const summary = out.messages.find((m) => m.role === 'user' && m.content === 'now summarize');
+    assert.ok(summary, 'sibling text must not be dropped');
+  });
+
+  it('normalizes null tool_use input to {}', () => {
+    const out = anthropicToChatRequest({
+      model: 'm',
+      messages: [
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 't1', name: 'f', input: null }],
+        },
+      ],
+      max_tokens: 16,
+    } as unknown as AnthropicMessagesRequest);
+    assert.equal(out.messages[0]?.tool_calls?.[0]?.function.arguments, '{}');
+  });
 });
