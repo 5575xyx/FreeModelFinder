@@ -432,4 +432,34 @@ describe('zen prepareRequest', () => {
     assert.equal('seed' in body, false);
     assert.deepEqual(body.messages, [{ role: 'user', content: 'hi' }]);
   });
+
+  it('short-circuits to the raw body when the client protocol is anthropic', () => {
+    const raw = {
+      model: 'orig',
+      max_tokens: 64,
+      thinking: { type: 'enabled', budget_tokens: 1024 },
+      messages: [{ role: 'user', content: 'hi' }],
+    };
+    const body = prepareRequest(
+      {
+        model: 'new-model',
+        messages: [{ role: 'user', content: 'hi' }],
+        raw,
+        rawProtocol: 'anthropic',
+      },
+      'anthropic',
+    );
+    assert.equal(body.model, 'new-model');
+    assert.deepEqual(body.thinking, { type: 'enabled', budget_tokens: 1024 });
+  });
+
+  it('deep-clones the raw body so callers keep their original object', () => {
+    const raw = { model: 'orig', messages: [{ role: 'user', content: 'hi' }] };
+    const body = prepareRequest(
+      { model: 'm', messages: [], raw, rawProtocol: 'openai' },
+      'chat',
+    );
+    body['model'] = 'changed';
+    assert.equal(raw.model, 'orig', 'caller raw must not be mutated');
+  });
 });

@@ -10,7 +10,9 @@ const CLIENT_TO_PROTOCOL: Partial<Record<ZenClientProtocol, ZenProtocol>> = {
 
 function cloneRaw(raw: unknown, model: string): Record<string, unknown> | undefined {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
-  return { ...(raw as Record<string, unknown>), model };
+  const cloned = structuredClone(raw) as Record<string, unknown>;
+  cloned['model'] = model;
+  return cloned;
 }
 
 export function prepareRequest(request: ZenRequest, target: ZenProtocol): Record<string, unknown> {
