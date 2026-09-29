@@ -106,6 +106,105 @@ export function parseChatResponse(body: unknown): ZenChatResponse {
   };
 }
 
+function parseAnthropicUsage(value: unknown): ZenUsage | undefined {
+  const usage = asRecord(value);
+  if (!usage) return undefined;
+  const cached = num(usage['cache_read_input_tokens']);
+  const cacheCreation = num(usage['cache_creation_input_tokens']);
+  const input = (num(usage['input_tokens']) ?? 0) + (cached ?? 0) + (cacheCreation ?? 0);
+  const output = num(usage['output_tokens']) ?? 0;
+  const out: ZenUsage = {
+    prompt_tokens: input,
+    completion_tokens: output,
+    total_tokens: input + output,
+  };
+  if (cached !== undefined) out.prompt_tokens_details = { cached_tokens: cached };
+  return out;
+}
+
+function anthropicFinishReason(value: unknown): ZenChatResponse['finish_reason'] {
+  switch (str(value)) {
+    case 'tool_use':
+      return 'tool_calls';
+    case 'max_tokens':
+      return 'length';
+    default:
+      return 'stop';
+  }
+}
+
+const ANTHROPIC_REDACTED_THINKING_PLACEHOLDER = '[redacted thinking]';
+
+export function parseAnthropicResponse(body: unknown): ZenChatResponse {
+  const payload = asRecord(body) ?? {};
+  const error = asRecord(payload['error']);
+  const errorMessage =
+    str(error?.['message']) ??
+    (str(payload['type']) === 'error' ? 'upstream Anthropic request failed' : undefined);
+  if (errorMessage) throw new Error(errorMessage);
+
+  const stop = str(payload['stop_reason']);
+  if (stop === 'error' || stop === 'network_error' || stop === 'server_error') {
+    throw new Error('upstream response failed');
+  }
+
+  const content = payload['content'];
+  const blocks: unknown[] = Array.isArray(content)
+    ? content
+    : typeof content === 'string'
+      ? [{ type: 'text', text: content }]
+      : [];
+
+  const textParts: string[] = [];
+  const reasoningParts: string[] = [];
+  const tool_calls: ZenToolCall[] = [];
+  for (const raw of blocks) {
+    const block = asRecord(raw);
+    if (!block) throw new Error('Anthropic content block must be an object');
+    switch (str(block['type'])) {
+      case 'text':
+        textParts.push(str(block['text']) ?? '');
+        break;
+      case 'thinking':
+        reasoningParts.push(str(block['thinking']) ?? '');
+        break;
+      case 'redacted_thinking':
+        reasoningParts.push(ANTHROPIC_REDACTED_THINKING_PLACEHOLDER);
+        break;
+      case 'tool_use': {
+        const input = asRecord(block['input']);
+        tool_calls.push({
+          ...(str(block['id']) ? { id: str(block['id']) } : {}),
+          type: 'function',
+          function: {
+            name: str(block['name']) ?? '',
+            arguments: input ? JSON.stringify(input) : '{}',
+          },
+        });
+        break;
+      }
+      default:
+        throw new Error(
+          `Anthropic response contains unsupported ${str(block['type'])} content block`,
+        );
+    }
+  }
+
+  const usage = parseAnthropicUsage(payload['usage']);
+  const reasoning = reasoningParts.join('');
+  return {
+    id: str(payload['id']) ?? `zen-${Date.now()}`,
+    model: str(payload['model']) ?? '',
+    created:
+      num(payload['created']) ?? num(payload['created_at']) ?? Math.floor(Date.now() / 1000),
+    content: textParts.join(''),
+    finish_reason: anthropicFinishReason(stop),
+    ...(tool_calls.length > 0 ? { tool_calls } : {}),
+    ...(reasoning ? { reasoning } : {}),
+    ...(usage ? { usage } : {}),
+  };
+}
+
 const CLIENT_TO_PROTOCOL: Partial<Record<ZenClientProtocol, ZenProtocol>> = {
   openai: 'chat',
   anthropic: 'anthropic',
@@ -116,10 +215,17 @@ export function convertResponse(
   upstream: ZenProtocol,
   client: ZenClientProtocol,
 ): ZenChatResponse {
-  if (upstream !== 'chat') {
-    throw new Error(`unsupported upstream protocol: ${upstream}`);
+  let parsed: ZenChatResponse;
+  switch (upstream) {
+    case 'anthropic':
+      parsed = parseAnthropicResponse(body);
+      break;
+    case 'chat':
+      parsed = parseChatResponse(body);
+      break;
+    default:
+      throw new Error(`unsupported upstream protocol: ${upstream}`);
   }
-  const parsed = parseChatResponse(body);
   if (CLIENT_TO_PROTOCOL[client] === upstream) {
     return { ...parsed, raw: body, rawProtocol: client };
   }

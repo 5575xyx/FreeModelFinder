@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { convertResponse, parseChatResponse } from '../protocol/response.js';
+import { convertResponse, parseAnthropicResponse, parseChatResponse } from '../protocol/response.js';
 
 describe('zen chat response parsing', () => {
   it('parses content, tool_calls, reasoning and usage', () => {
@@ -80,6 +80,60 @@ describe('zen chat response parsing', () => {
   });
 });
 
+describe('zen anthropic response parsing', () => {
+  it('joins text blocks and maps tool_use to tool_calls', () => {
+    const res = parseAnthropicResponse({
+      id: 'msg_1',
+      model: 'm',
+      content: [
+        { type: 'text', text: 'hi' },
+        { type: 'tool_use', id: 'toolu_1', name: 'f', input: { q: 1 } },
+      ],
+      stop_reason: 'tool_use',
+      usage: { input_tokens: 3, output_tokens: 4 },
+    });
+    assert.equal(res.content, 'hi');
+    assert.equal(res.finish_reason, 'tool_calls');
+    assert.equal(res.tool_calls?.[0]?.id, 'toolu_1');
+    assert.equal(res.tool_calls?.[0]?.function.arguments, '{"q":1}');
+    assert.equal(res.usage?.prompt_tokens, 3);
+    assert.equal(res.usage?.completion_tokens, 4);
+  });
+
+  it('surfaces a thinking block as reasoning', () => {
+    const res = parseAnthropicResponse({
+      id: 'msg_1',
+      model: 'm',
+      content: [
+        { type: 'thinking', thinking: 'step' },
+        { type: 'text', text: 'answer' },
+      ],
+      stop_reason: 'end_turn',
+    });
+    assert.equal(res.reasoning, 'step');
+    assert.equal(res.content, 'answer');
+  });
+
+  it('maps stop_reason end_turn to stop and max_tokens to length', () => {
+    assert.equal(
+      parseAnthropicResponse({
+        id: 'x',
+        content: [{ type: 'text', text: 'a' }],
+        stop_reason: 'end_turn',
+      }).finish_reason,
+      'stop',
+    );
+    assert.equal(
+      parseAnthropicResponse({
+        id: 'x',
+        content: [{ type: 'text', text: 'a' }],
+        stop_reason: 'max_tokens',
+      }).finish_reason,
+      'length',
+    );
+  });
+});
+
 describe('zen convertResponse raw passthrough', () => {
   it('attaches raw when client protocol matches the chat upstream', () => {
     const body = {
@@ -105,7 +159,19 @@ describe('zen convertResponse raw passthrough', () => {
     assert.equal(res.raw, undefined);
   });
 
+  it('attaches raw for an anthropic client on an anthropic upstream', () => {
+    const body = {
+      id: 'msg_1',
+      content: [{ type: 'text', text: 'hi' }],
+      stop_reason: 'end_turn',
+      vendor: 1,
+    };
+    const res = convertResponse(body, 'anthropic', 'anthropic');
+    assert.equal(res.raw, body);
+    assert.equal(res.rawProtocol, 'anthropic');
+  });
+
   it('throws for an upstream protocol not yet implemented', () => {
-    assert.throws(() => convertResponse({}, 'anthropic', 'openai'));
+    assert.throws(() => convertResponse({}, 'responses', 'openai'));
   });
 });
