@@ -12,12 +12,12 @@ export async function readJsonCache<T>(path: string): Promise<T | undefined> {
 
 export async function writeJsonCache(path: string, payload: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  const temp = `${path}.tmp`;
-  await writeFile(temp, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  const temp = `${path}.${process.pid}.${Date.now()}.tmp`;
   try {
+    await writeFile(temp, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
     await rename(temp, path);
-  } catch {
-    await rm(path, { force: true });
-    await rename(temp, path);
+  } catch (error) {
+    await rm(temp, { force: true });
+    throw error;
   }
 }

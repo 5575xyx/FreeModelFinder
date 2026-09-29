@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -41,6 +41,29 @@ describe('zen json cache', () => {
       await writeJsonCache(path, { v: 1 });
       await writeJsonCache(path, { v: 2 });
       assert.deepEqual(await readJsonCache(path), { v: 2 });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('creates missing parent directories', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'zen-cache-'));
+    try {
+      const path = join(dir, 'nested', 'deeper', 'c.json');
+      await writeJsonCache(path, { ok: 1 });
+      assert.deepEqual(await readJsonCache(path), { ok: 1 });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves no temp files behind', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'zen-cache-'));
+    try {
+      const path = join(dir, 'clean.json');
+      await writeJsonCache(path, { v: 1 });
+      const entries = await readdir(dir);
+      assert.deepEqual(entries.filter((name) => name.endsWith('.tmp')), []);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
