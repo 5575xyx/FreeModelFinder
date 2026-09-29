@@ -141,19 +141,37 @@ export function geminiToChatRequest(
 export function chatResponseToGemini(res: {
   content: string;
   finish_reason: string | null;
+  tool_calls?: ToolCall[];
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }) {
+  const parts: Array<Record<string, unknown>> = [];
+  if (res.tool_calls && res.tool_calls.length > 0) {
+    for (const call of res.tool_calls) {
+      let args: unknown = {};
+      if (call.function.arguments) {
+        try {
+          args = JSON.parse(call.function.arguments);
+        } catch {
+          args = {};
+        }
+      }
+      parts.push({ functionCall: { name: call.function.name, args } });
+    }
+  } else {
+    parts.push({ text: res.content });
+  }
+
   return {
     candidates: [
       {
         content: {
           role: 'model',
-          parts: [{ text: res.content }],
+          parts,
         },
         finishReason:
           res.finish_reason === 'length'
             ? 'MAX_TOKENS'
-            : res.finish_reason === 'stop'
+            : res.finish_reason === 'stop' || res.finish_reason === 'tool_calls'
               ? 'STOP'
               : res.finish_reason?.toUpperCase(),
         index: 0,

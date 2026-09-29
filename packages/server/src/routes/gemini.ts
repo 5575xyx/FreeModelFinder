@@ -125,13 +125,29 @@ async function handleStream(
 
   try {
     for await (const chunk of provider.stream(dispatchReq)) {
+      const parts: Array<Record<string, unknown>> = [];
+      if (chunk.tool_calls && chunk.tool_calls.length > 0) {
+        for (const call of chunk.tool_calls) {
+          let args: unknown = {};
+          if (call.function?.arguments) {
+            try {
+              args = JSON.parse(call.function.arguments);
+            } catch {
+              args = {};
+            }
+          }
+          parts.push({ functionCall: { name: call.function?.name ?? '', args } });
+        }
+      } else if (chunk.delta) {
+        parts.push({ text: chunk.delta });
+      }
       const payload = {
         candidates: [
           {
-            content: { role: 'model', parts: [{ text: chunk.delta }] },
+            content: { role: 'model', parts },
             index: 0,
             finishReason:
-              chunk.finish_reason === 'stop'
+              chunk.finish_reason === 'stop' || chunk.finish_reason === 'tool_calls'
                 ? 'STOP'
                 : chunk.finish_reason === 'length'
                   ? 'MAX_TOKENS'

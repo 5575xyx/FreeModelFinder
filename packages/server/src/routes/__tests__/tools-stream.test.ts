@@ -140,3 +140,62 @@ describe('anthropic sse tool blocks', () => {
     assert.deepEqual(kinds, ['text', 'tool_use', 'text']);
   });
 });
+
+async function collectGeminiStream(chunks: StreamChunk[]): Promise<string> {
+  const { registerGeminiRoutes } = await import('../../routes/gemini.js');
+  const written: string[] = [];
+  const provider: FakeProvider = {
+    id: 'fake',
+    chat: async () => {
+      throw new Error('unused');
+    },
+    stream: async function* () {
+      for (const c of chunks) yield c;
+    },
+  };
+  const handlers = new Map<string, (req: unknown, reply: unknown) => Promise<void>>();
+  const app = {
+    post: (path: string, handler: (req: unknown, reply: unknown) => Promise<void>) => {
+      handlers.set(path, handler);
+    },
+  };
+  registerGeminiRoutes(app as never, () => makeRegistry(provider) as never);
+  const handler = handlers.get('/v1beta/models/:modelAction')!;
+
+  const reply = {
+    raw: {
+      writeHead: () => undefined,
+      write: (s: string) => {
+        written.push(s);
+      },
+      end: () => undefined,
+    },
+  };
+
+  await handler(
+    {
+      params: { modelAction: 'm:streamGenerateContent' },
+      body: { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
+      query: { alt: 'sse' },
+    },
+    reply,
+  );
+  return written.join('');
+}
+
+describe('gemini sse functionCall', () => {
+  it('emits a functionCall part on the stream', async () => {
+    const out = await collectGeminiStream([
+      {
+        id: 'x',
+        model: 'm',
+        created: 1,
+        delta: '',
+        finish_reason: 'tool_calls',
+        tool_calls: [{ index: 0, id: 'c1', function: { name: 'f', arguments: '{"q":1}' } }],
+      },
+    ]);
+    assert.ok(out.includes('"functionCall"'));
+    assert.ok(out.includes('"name":"f"'));
+  });
+});

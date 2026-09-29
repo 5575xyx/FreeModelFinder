@@ -11,7 +11,11 @@ import {
   streamChunkToOpenAI,
   type OpenAIChatCompletionRequest,
 } from '../protocols/openai.js';
-import { geminiToChatRequest, type GeminiHttpRequest } from '../protocols/gemini.js';
+import {
+  chatResponseToGemini,
+  geminiToChatRequest,
+  type GeminiHttpRequest,
+} from '../protocols/gemini.js';
 import { ChatRequestSchema, type ChatResponse, type StreamChunk } from '../types.js';
 
 describe('tools typing', () => {
@@ -376,5 +380,32 @@ describe('gemini inbound tools', () => {
     assert.equal(out.tools, undefined);
     assert.deepEqual(out.raw, body);
     assert.equal(out.rawProtocol, 'gemini');
+  });
+});
+
+describe('gemini outbound functionCall', () => {
+  it('emits a functionCall part and maps finish reason to STOP', () => {
+    const payload = chatResponseToGemini({
+      content: '',
+      finish_reason: 'tool_calls',
+      tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '{"q":1}' } }],
+    }) as {
+      candidates: Array<{
+        content: { parts: Array<Record<string, unknown>> };
+        finishReason: string;
+      }>;
+    };
+    assert.equal(payload.candidates[0]?.finishReason, 'STOP');
+    const part = payload.candidates[0]?.content.parts[0] as Record<string, unknown>;
+    assert.equal((part.functionCall as { name: string }).name, 'f');
+    assert.deepEqual((part.functionCall as { args: unknown }).args, { q: 1 });
+  });
+
+  it('keeps text part when there are no tool calls', () => {
+    const payload = chatResponseToGemini({
+      content: 'hello',
+      finish_reason: 'stop',
+    }) as { candidates: Array<{ content: { parts: Array<Record<string, unknown>> } }> };
+    assert.deepEqual(payload.candidates[0]?.content.parts, [{ text: 'hello' }]);
   });
 });
