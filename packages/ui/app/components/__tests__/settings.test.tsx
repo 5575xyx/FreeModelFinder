@@ -367,6 +367,84 @@ describe('SettingsView', () => {
     expect(screen.queryByText(/Invalid Date/)).toBeNull();
     expect(screen.getAllByText(/^重置：/).length).toBe(2);
   });
+
+  it('marks the opencode card configured when anonymous is on without keys', async () => {
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            opencode: { enabled: true, hasKey: false, anonymous: true, keyCount: 0, keyMeta: [] },
+          },
+        }),
+      ),
+    );
+    render(<SettingsView />);
+    await screen.findByText('…a1b2');
+    const card = screen.getByTestId('provider-card-opencode');
+    await waitFor(() => expect(within(card).getByText('已配置')).toBeTruthy());
+    expect(within(card).queryByText('未配置')).toBeNull();
+  });
+
+  it('anonymous toggle enables opencode without keys', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            opencode: { enabled: false, hasKey: false, anonymous: false, keyCount: 0, keyMeta: [] },
+          },
+        }),
+      ),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    await screen.findByText('…a1b2');
+    const card = screen.getByTestId('provider-card-opencode');
+    await user.click(within(card).getByRole('checkbox', { name: '匿名通道' }));
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    expect(writes[0]).toMatchObject({
+      provider: 'opencode',
+      enabled: true,
+      extra: { anonymous: true },
+    });
+  });
+
+  it('saving opencode with anonymous and no keys is not blocked', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            opencode: { enabled: true, hasKey: false, anonymous: true, keyCount: 0, keyMeta: [] },
+          },
+        }),
+      ),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    await screen.findByText('…a1b2');
+    const card = screen.getByTestId('provider-card-opencode');
+    const save = within(card).getByRole('button', { name: '保存' });
+    await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+    await user.click(save);
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    expect(writes[0]).toMatchObject({ provider: 'opencode', enabled: true });
+    expect(writes[0]).not.toHaveProperty('apiKey');
+  });
 });
 
 describe('matchesCapability', () => {

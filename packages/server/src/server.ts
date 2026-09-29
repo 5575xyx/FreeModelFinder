@@ -635,31 +635,48 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         defaultModel: cfg.defaultModel,
         onboarding: cfg.onboarding,
         providers: Object.fromEntries(
-          Object.entries(cfg.providers).map(([id, s]) => [
-            id,
-            {
-              enabled: s?.enabled ?? false,
-              dynamicModels: s?.dynamicModels ?? true,
-              hasKey:
-                id === 'opencode'
-                  ? !!s?.enabled &&
-                    (s?.credentials?.extra?.['anonymous'] === true ||
-                      (s?.credentials?.apiKeys?.some((key) => !!key?.trim()) ?? false) ||
-                      !!s?.credentials?.apiKey?.trim() ||
-                      (Array.isArray(s?.credentials?.extra?.['goKeys']) &&
-                        (s?.credentials?.extra?.['goKeys'] as unknown[]).some(
-                          (key) => typeof key === 'string' && !!key.trim(),
-                        )))
-                  : id === 'cline'
-                    ? !!s?.enabled && getCredentialRuntime().hasActiveAccounts('cline')
-                    : !!s?.credentials?.apiKey,
-              keyCount:
-                (s?.credentials?.apiKeys?.filter((k) => !!k?.trim()) ?? []).length ||
-                (s?.credentials?.apiKey ? 1 : 0),
-              keyMeta: buildKeyMeta(providerKeyPool(s?.credentials)),
-              credentialError: s?.credentialError,
-            },
-          ]),
+          Object.entries(cfg.providers).map(([id, s]) => {
+            const extra = (s?.credentials?.extra ?? {}) as Record<string, unknown>;
+            return [
+              id,
+              {
+                enabled: s?.enabled ?? false,
+                dynamicModels: s?.dynamicModels ?? true,
+                hasKey:
+                  id === 'opencode'
+                    ? !!s?.enabled &&
+                      (extra['anonymous'] === true ||
+                        (s?.credentials?.apiKeys?.some((key) => !!key?.trim()) ?? false) ||
+                        !!s?.credentials?.apiKey?.trim() ||
+                        (Array.isArray(extra['goKeys']) &&
+                          (extra['goKeys'] as unknown[]).some(
+                            (key) => typeof key === 'string' && !!key.trim(),
+                          )))
+                    : id === 'cline'
+                      ? !!s?.enabled && getCredentialRuntime().hasActiveAccounts('cline')
+                      : !!s?.credentials?.apiKey,
+                keyCount:
+                  (s?.credentials?.apiKeys?.filter((k) => !!k?.trim()) ?? []).length ||
+                  (s?.credentials?.apiKey ? 1 : 0),
+                keyMeta: buildKeyMeta(providerKeyPool(s?.credentials)),
+                credentialError: s?.credentialError,
+                ...(id === 'opencode'
+                  ? {
+                      anonymous: extra['anonymous'] === true,
+                      prefer: typeof extra['prefer'] === 'string' ? extra['prefer'] : undefined,
+                      goKeyCount: Array.isArray(extra['goKeys'])
+                        ? (extra['goKeys'] as unknown[]).filter(
+                            (key) => typeof key === 'string' && !!key.trim(),
+                          ).length
+                        : 0,
+                      proxyCount: Array.isArray(extra['proxies'])
+                        ? (extra['proxies'] as unknown[]).length
+                        : 0,
+                    }
+                  : {}),
+              },
+            ];
+          }),
         ),
         custom: {
           enabled: !!custom?.enabled,
@@ -785,6 +802,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         clearCredentials?: boolean;
         appendKeys?: string[];
         removeKeyIndex?: number;
+        extra?: Record<string, unknown>;
         models?: Array<{ id: string; displayName?: string; contextWindow?: number }>;
         sources?: Array<{
           id: string;
@@ -809,6 +827,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         sources,
         appendKeys,
         removeKeyIndex,
+        extra,
         appendSourceKeys,
         removeSourceKey,
       } = req.body ?? {};
@@ -910,6 +929,25 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       const cleanAppendKeys = Array.isArray(appendKeys)
         ? appendKeys.map((k) => (typeof k === 'string' ? k.trim() : '')).filter((k) => !!k)
         : undefined;
+      const cleanExtra =
+        providerId === 'opencode' && extra && typeof extra === 'object' && !Array.isArray(extra)
+          ? Object.fromEntries(
+              Object.entries(extra).filter(([key]) =>
+                [
+                  'anonymous',
+                  'goKeys',
+                  'prefer',
+                  'proxies',
+                  'upstream',
+                  'proxyfile',
+                  'retry',
+                  'performance',
+                  'models',
+                  'reasoning',
+                ].includes(key),
+              ),
+            )
+          : undefined;
       if (appendKeys !== undefined && (!cleanAppendKeys || cleanAppendKeys.length === 0)) {
         return reply.code(400).send({ error: 'appendKeys must be non-empty' });
       }
@@ -1072,6 +1110,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
 
           const nextExtra = {
             ...prevExtra,
+            ...(cleanExtra ?? {}),
             ...(cleanModels !== undefined ? { models: cleanModels } : {}),
           };
           let nextApiKeys =
@@ -1115,11 +1154,11 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
                       baseUrl: cleanBaseUrl ?? cur.credentials?.baseUrl,
                       extra: nextExtra,
                     }
-                  : cur.credentials
+                  : cur.credentials || cleanExtra !== undefined
                     ? {
-                        ...cur.credentials,
+                        ...(cur.credentials ?? { apiKey: '' }),
                         baseUrl:
-                          cleanBaseUrl !== undefined ? cleanBaseUrl : cur.credentials.baseUrl,
+                          cleanBaseUrl !== undefined ? cleanBaseUrl : cur.credentials?.baseUrl,
                         extra: nextExtra,
                       }
                     : undefined,

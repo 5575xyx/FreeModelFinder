@@ -104,6 +104,13 @@ export const SETTINGS_PROVIDERS = [
     guide: 'https://docs.cline.bot',
     hint: '免 API Key：通过「登录 Cline 账号」接入其免费模型，凭据只保存在本机',
   },
+  {
+    id: 'opencode',
+    label: 'OpenCode Zen',
+    link: 'https://opencode.ai/zen',
+    guide: 'https://opencode.ai/docs',
+    hint: '免 API Key：开启匿名通道即可使用免费模型，也可配置 Zen / Go Key 提升额度',
+  },
 ] as const;
 
 export function providerLabelKey(id: string): string | undefined {
@@ -114,6 +121,7 @@ export function providerLabelKey(id: string): string | undefined {
     modelscope: 'platforms.modelscope.label',
     zhipu: 'platforms.zhipu.label',
     cline: 'platforms.cline.label',
+    opencode: 'platforms.opencode.label',
   };
   return map[id];
 }

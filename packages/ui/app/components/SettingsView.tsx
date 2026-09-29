@@ -58,6 +58,10 @@ type ConfigRes = {
     {
       enabled: boolean;
       hasKey: boolean;
+      anonymous?: boolean;
+      prefer?: string;
+      goKeyCount?: number;
+      proxyCount?: number;
       dynamicModels?: boolean;
       keyCount?: number;
       keyMeta?: Array<{ id: string; hint: string }>;
@@ -121,6 +125,292 @@ type GatewayInfo = {
   publicBaseUrl?: string | null;
   authLocked?: boolean;
 };
+
+function parseKeyLines(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function OpenCodeZenExtras({
+  extra,
+  onChanged,
+  onToast,
+}: {
+  extra: { anonymous: boolean; prefer?: string; goKeyCount?: number; proxyCount?: number };
+  onChanged: () => void;
+  onToast: (toast: Toast) => void;
+}) {
+  const { t } = useI18n();
+  const [anonymous, setAnonymous] = useState(extra.anonymous);
+  const [prefer, setPrefer] = useState(extra.prefer ?? 'go');
+  const [goKeys, setGoKeys] = useState('');
+  const [proxies, setProxies] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [retry, setRetry] = useState('');
+  const [models, setModels] = useState('');
+  const [reasoning, setReasoning] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => setAnonymous(extra.anonymous), [extra.anonymous]);
+  useEffect(() => setPrefer(extra.prefer ?? 'go'), [extra.prefer]);
+
+  async function postExtra(patch: Record<string, unknown>, enabled?: boolean): Promise<void> {
+    const res = await fetch(
+      `${GATEWAY}/api/providers`,
+      withUiHeaders({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'opencode',
+          ...(enabled !== undefined ? { enabled } : {}),
+          extra: patch,
+        }),
+      }),
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  }
+
+  async function run(key: string, task: () => Promise<void>): Promise<void> {
+    if (busy) return;
+    setBusy(key);
+    try {
+      await task();
+      onToast({ kind: 'success', text: t('settings.opencode.saved') });
+      onChanged();
+    } catch (err) {
+      onToast({
+        kind: 'error',
+        text: t('settings.opencode.saveFailed', {
+          detail: err instanceof Error ? err.message : String(err),
+        }),
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function parseJsonField(label: string, raw: string): { value?: unknown; error?: boolean } {
+    if (!raw.trim()) return {};
+    try {
+      return { value: JSON.parse(raw) };
+    } catch {
+      onToast({ kind: 'error', text: t('settings.opencode.invalidJson', { field: label }) });
+      return { error: true };
+    }
+  }
+
+  async function saveAdvanced(): Promise<void> {
+    const patch: Record<string, unknown> = {};
+    const retryParsed = parseJsonField(t('settings.opencode.retry'), retry);
+    if (retryParsed.error) return;
+    if (retryParsed.value !== undefined) patch.retry = retryParsed.value;
+    const modelsParsed = parseJsonField(t('settings.opencode.models'), models);
+    if (modelsParsed.error) return;
+    if (modelsParsed.value !== undefined) patch.models = modelsParsed.value;
+    const reasoningParsed = parseJsonField(t('settings.opencode.reasoning'), reasoning);
+    if (reasoningParsed.error) return;
+    if (reasoningParsed.value !== undefined) patch.reasoning = reasoningParsed.value;
+    if (Object.keys(patch).length === 0) return;
+    await run('advanced', async () => {
+      await postExtra(patch);
+      setRetry('');
+      setModels('');
+      setReasoning('');
+    });
+  }
+
+  const advancedFields = [
+    {
+      key: 'retry',
+      label: t('settings.opencode.retry'),
+      value: retry,
+      onChange: setRetry,
+      placeholder: '{"maxAttempts":3,"timeoutSeconds":300}',
+    },
+    {
+      key: 'models',
+      label: t('settings.opencode.models'),
+      value: models,
+      onChange: setModels,
+      placeholder: '{"refreshSeconds":300}',
+    },
+    {
+      key: 'reasoning',
+      label: t('settings.opencode.reasoning'),
+      value: reasoning,
+      onChange: setReasoning,
+      placeholder: '{"effort":"medium"}',
+    },
+  ];
+
+  return (
+    <div className="space-y-3" data-testid="opencode-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="inline-flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-3.5 w-3.5 rounded border-input"
+            checked={anonymous}
+            disabled={busy !== null}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setAnonymous(next);
+              void run('anonymous', () => postExtra({ anonymous: next }, next ? true : undefined));
+            }}
+            aria-label={t('settings.opencode.anonymous')}
+          />
+          <span className="space-y-0.5">
+            <span className="block font-medium text-foreground">
+              {t('settings.opencode.anonymous')}
+            </span>
+            <span className="block text-[11px]">{t('settings.opencode.anonymous.hint')}</span>
+          </span>
+        </label>
+        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          {t('settings.opencode.prefer')}
+          <select
+            className="rounded-md border border-input bg-surface px-2 py-1 text-xs text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+            value={prefer}
+            disabled={busy !== null}
+            aria-label={t('settings.opencode.prefer')}
+            onChange={(e) => {
+              const next = e.target.value;
+              setPrefer(next);
+              void run('prefer', () => postExtra({ prefer: next }));
+            }}
+          >
+            <option value="go">{t('settings.opencode.prefer.go')}</option>
+            <option value="zen">{t('settings.opencode.prefer.zen')}</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-medium text-foreground">{t('settings.opencode.goKeys')}</span>
+          <span className="text-muted-foreground">
+            {t('settings.opencode.goKeys.count', { n: extra.goKeyCount ?? 0 })}
+          </span>
+        </div>
+        <p className="text-[11px] text-muted-foreground">{t('settings.opencode.goKeys.hint')}</p>
+        <textarea
+          className="w-full rounded-md border border-input bg-surface px-3 py-2 font-mono text-xs text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+          rows={3}
+          value={goKeys}
+          disabled={busy !== null}
+          onChange={(e) => setGoKeys(e.target.value)}
+          placeholder={t('settings.opencode.keysPlaceholder')}
+          aria-label={t('settings.opencode.goKeys')}
+          spellCheck={false}
+        />
+        <button
+          type="button"
+          disabled={busy !== null || parseKeyLines(goKeys).length === 0}
+          onClick={() =>
+            void run('goKeys', async () => {
+              await postExtra({ goKeys: parseKeyLines(goKeys) });
+              setGoKeys('');
+            })
+          }
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+        >
+          {busy === 'goKeys' && <Loader2 size={12} strokeWidth={2} className="animate-spin" />}
+          {t('settings.opencode.saveGoKeys')}
+        </button>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-medium text-foreground">{t('settings.opencode.proxies')}</span>
+          <span className="text-muted-foreground">
+            {t('settings.opencode.proxies.count', { n: extra.proxyCount ?? 0 })}
+          </span>
+        </div>
+        <p className="text-[11px] text-muted-foreground">{t('settings.opencode.proxies.hint')}</p>
+        <textarea
+          className="w-full rounded-md border border-input bg-surface px-3 py-2 font-mono text-xs text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+          rows={2}
+          value={proxies}
+          disabled={busy !== null}
+          onChange={(e) => setProxies(e.target.value)}
+          placeholder="http://user:pass@host:port"
+          aria-label={t('settings.opencode.proxies')}
+          spellCheck={false}
+        />
+        <button
+          type="button"
+          disabled={busy !== null || parseKeyLines(proxies).length === 0}
+          onClick={() =>
+            void run('proxies', async () => {
+              await postExtra({ proxies: parseKeyLines(proxies) });
+              setProxies('');
+            })
+          }
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+        >
+          {busy === 'proxies' && <Loader2 size={12} strokeWidth={2} className="animate-spin" />}
+          {t('settings.opencode.saveProxies')}
+        </button>
+      </div>
+
+      <div className="space-y-2 rounded-md border border-border/60 bg-surface-muted/30 p-2.5">
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((v) => !v)}
+          aria-expanded={advancedOpen}
+          className="flex w-full items-center justify-between text-xs font-medium text-foreground"
+        >
+          {t('settings.opencode.advanced')}
+          <ChevronDown
+            size={13}
+            strokeWidth={1.75}
+            className={classNames(
+              'text-muted-foreground transition-transform',
+              advancedOpen ? 'rotate-0' : '-rotate-90',
+            )}
+          />
+        </button>
+        {advancedOpen && (
+          <div className="space-y-2">
+            <p className="text-[11px] text-muted-foreground">
+              {t('settings.opencode.advanced.hint')}
+            </p>
+            {advancedFields.map((field) => (
+              <div key={field.key} className="space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground">
+                  {field.label}
+                </label>
+                <textarea
+                  className="w-full rounded-md border border-input bg-surface px-3 py-2 font-mono text-xs text-foreground shadow-sm outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+                  rows={2}
+                  value={field.value}
+                  disabled={busy !== null}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  placeholder={field.placeholder}
+                  aria-label={field.label}
+                  spellCheck={false}
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void saveAdvanced()}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+            >
+              {busy === 'advanced' && (
+                <Loader2 size={12} strokeWidth={2} className="animate-spin" />
+              )}
+              {t('settings.opencode.saveAdvanced')}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function SettingsView({
   compact = false,
@@ -436,27 +726,29 @@ export function SettingsView({
     if (saveStates[providerId] === 'saving') return;
     if (!cfg) return;
     const appendKeys = (keyDrafts[providerId] ?? []).map((k) => k.trim()).filter(Boolean);
-    if (!appendKeys.length) return;
+    const state = cfg?.providers[providerId];
+    const anonymousOpencode = providerId === 'opencode' && state?.anonymous === true;
+    if (!appendKeys.length && !anonymousOpencode) return;
     setSaveStates((s) => ({ ...s, [providerId]: 'saving' }));
     try {
-      const state = cfg?.providers[providerId];
       const hasSavedKeys =
         !!state?.hasKey || (state?.keyMeta?.length ?? 0) > 0 || (state?.keyCount ?? 0) > 0;
+      const body: Record<string, unknown> = !appendKeys.length
+        ? { provider: providerId, enabled: true }
+        : hasSavedKeys
+          ? { provider: providerId, appendKeys, enabled: true }
+          : {
+              provider: providerId,
+              apiKey: appendKeys[0],
+              apiKeys: appendKeys,
+              enabled: true,
+            };
       const res = await fetch(
         `${GATEWAY}/api/providers`,
         withUiHeaders({
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(
-            hasSavedKeys
-              ? { provider: providerId, appendKeys, enabled: true }
-              : {
-                  provider: providerId,
-                  apiKey: appendKeys[0],
-                  apiKeys: appendKeys,
-                  enabled: true,
-                },
-          ),
+          body: JSON.stringify(body),
         }),
       );
       if (res.ok) {
@@ -1034,7 +1326,7 @@ export function SettingsView({
   );
 
   const enabledCount = cfg
-    ? Object.values(cfg.providers).filter((p) => p.enabled && p.hasKey).length
+    ? Object.values(cfg.providers).filter((p) => p.enabled && (p.hasKey || p.anonymous)).length
     : 0;
 
   return (
@@ -1807,22 +2099,23 @@ export function SettingsView({
           (() => {
             const addedProviders = SETTINGS_PROVIDERS.filter((p) => {
               const s = cfg?.providers[p.id];
-              return !!(s?.enabled && s.hasKey);
+              return !!(s?.enabled && (s.hasKey || s.anonymous));
             });
             const unaddedProviders = SETTINGS_PROVIDERS.filter((p) => {
               const s = cfg?.providers[p.id];
-              return !(s?.enabled && s.hasKey);
+              return !(s?.enabled && (s.hasKey || s.anonymous));
             });
 
             const renderCard = (p: (typeof SETTINGS_PROVIDERS)[number]) => {
               const state = cfg?.providers[p.id];
-              const enabled = !!(state?.enabled && state.hasKey);
+              const enabled = !!(state?.enabled && (state.hasKey || state.anonymous));
               const isVisible = visible[p.id];
               const saveState = saveStates[p.id] ?? 'idle';
               const labelKey = providerLabelKey(p.id);
               const displayLabel = labelKey ? t(labelKey) : p.label;
               const displayHint = t(providerHintKey(p.id));
               const isCline = p.id === 'cline';
+              const isOpencode = p.id === 'opencode';
               const savedKeyCount = state?.keyMeta?.length ?? state?.keyCount ?? 0;
               const storedDrafts = keyDrafts[p.id];
               const draftRows: string[] =
@@ -1830,6 +2123,7 @@ export function SettingsView({
               return (
                 <div
                   key={p.id}
+                  data-testid={`provider-card-${p.id}`}
                   className="rounded-lg border border-border bg-surface p-4 shadow-sm transition hover:border-border-strong"
                 >
                   <div className="grid gap-4 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)] md:items-center">
@@ -2007,7 +2301,8 @@ export function SettingsView({
                               )}
                               onClick={() => void save(p.id)}
                               disabled={
-                                !(keyDrafts[p.id] ?? []).some((k) => k.trim()) ||
+                                (!(keyDrafts[p.id] ?? []).some((k) => k.trim()) &&
+                                  !(isOpencode && !!state?.anonymous)) ||
                                 saveState === 'saving'
                               }
                             >
@@ -2026,6 +2321,18 @@ export function SettingsView({
                             </button>
                           </div>
                         </>
+                      )}
+                      {isOpencode && (
+                        <OpenCodeZenExtras
+                          extra={{
+                            anonymous: !!state?.anonymous,
+                            prefer: state?.prefer,
+                            goKeyCount: state?.goKeyCount,
+                            proxyCount: state?.proxyCount,
+                          }}
+                          onChanged={refreshConfig}
+                          onToast={setToast}
+                        />
                       )}
                     </div>
                   </div>

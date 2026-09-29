@@ -83,4 +83,67 @@ describe('opencode hasKey seam', () => {
     });
     assert.equal(await hasKey(), true);
   });
+
+  it('exposes anonymous/prefer/goKeyCount and persists extra via POST', async () => {
+    const current = registry.getConfig();
+    registry.updateConfig({
+      ...current,
+      providers: {
+        ...current.providers,
+        opencode: { enabled: false, credentials: { apiKey: '' } },
+      },
+    });
+
+    const post = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: {
+        provider: 'opencode',
+        enabled: true,
+        extra: { anonymous: true, prefer: 'zen', goKeys: ['go-key'], proxies: ['http://h:1'] },
+      },
+    });
+    assert.equal(post.statusCode, 200);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    const provider = response.json().providers.opencode;
+    assert.equal(provider.enabled, true);
+    assert.equal(provider.anonymous, true);
+    assert.equal(provider.prefer, 'zen');
+    assert.equal(provider.goKeyCount, 1);
+    assert.equal(provider.proxyCount, 1);
+    assert.equal(provider.hasKey, true);
+  });
+
+  it('ignores non-opencode keys in the extra payload', async () => {
+    const current = registry.getConfig();
+    registry.updateConfig({
+      ...current,
+      providers: {
+        ...current.providers,
+        opencode: { enabled: false, credentials: { apiKey: '' } },
+      },
+    });
+
+    const post = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', enabled: true, extra: { anonymous: true, rogue: 'x' } },
+    });
+    assert.equal(post.statusCode, 200);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    const provider = response.json().providers.opencode;
+    assert.equal(provider.anonymous, true);
+  });
 });
