@@ -26,6 +26,7 @@ export const ONBOARDING_ENVIRONMENT_KEYS: Readonly<
   zhipu: ['ZHIPUAI_API_KEY'],
   nvidia: ['NVIDIA_API_KEY'],
   github: ['GH_TOKEN', 'GITHUB_TOKEN'],
+  opencode: ['OPENCODE_API_KEY', 'OPENCODE_ZEN_API_KEY'],
 };
 
 interface ConnectBody {

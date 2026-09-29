@@ -103,6 +103,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   huggingface: 'Hugging Face',
   sensenova: 'SenseNova',
   qianfan: 'Baidu Qianfan',
+  opencode: 'OpenCode Zen',
   custom: 'Custom',
 };
 
@@ -640,9 +641,13 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
               enabled: s?.enabled ?? false,
               dynamicModels: s?.dynamicModels ?? true,
               hasKey:
-                id === 'cline'
-                  ? !!s?.enabled && getCredentialRuntime().hasActiveAccounts('cline')
-                  : !!s?.credentials?.apiKey,
+                id === 'opencode'
+                  ? !!s?.enabled &&
+                    (s?.credentials?.extra?.anonymous === true ||
+                      (s?.credentials?.apiKeys?.some((key) => !!key?.trim()) ?? false))
+                  : id === 'cline'
+                    ? !!s?.enabled && getCredentialRuntime().hasActiveAccounts('cline')
+                    : !!s?.credentials?.apiKey,
               keyCount:
                 (s?.credentials?.apiKeys?.filter((k) => !!k?.trim()) ?? []).length ||
                 (s?.credentials?.apiKey ? 1 : 0),

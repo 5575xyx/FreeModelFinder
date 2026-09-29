@@ -158,6 +158,7 @@ function heuristicRpmScore(m: ModelInfo, profile?: ModelRoutingProfile): number 
     qianfan: 45,
     nvidia: 55,
     gemini: 45,
+    opencode: 65,
     ollama: 100,
   };
   return providerBaseline[m.provider] ?? 50;
