@@ -14,6 +14,9 @@ function anonymousTool(protocol: ZenProtocol, name: string): Record<string, unkn
   if (protocol === 'anthropic') {
     return { name, description, input_schema: parameters };
   }
+  if (protocol === 'responses') {
+    return { type: 'function', name, description, parameters };
+  }
   return { type: 'function', function: { name, description, parameters } };
 }
 
