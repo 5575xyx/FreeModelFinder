@@ -1,15 +1,13 @@
 import type { ZenChatMessage, ZenRequest, ZenToolDefinition } from './types.js';
 
 function encodeTools(tools: ZenToolDefinition[]): Array<Record<string, unknown>> {
-  return tools.map((tool) => {
-    const out: Record<string, unknown> = {
-      type: 'function',
-      name: tool.function.name,
-      parameters: tool.function.parameters ?? { type: 'object', properties: {} },
-    };
-    if (tool.function.description !== undefined) out['description'] = tool.function.description;
-    return out;
-  });
+  return tools.map((tool) => ({
+    type: 'function',
+    name: tool.function.name,
+    description: tool.function.description ?? '',
+    parameters: tool.function.parameters ?? { type: 'object', properties: {} },
+    strict: false,
+  }));
 }
 
 function encodeMessage(message: ZenChatMessage): Array<Record<string, unknown>> {

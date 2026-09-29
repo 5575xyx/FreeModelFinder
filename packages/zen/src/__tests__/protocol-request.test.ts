@@ -315,7 +315,15 @@ describe('zen responses body encoding', () => {
     assert.equal(body.instructions, 'sys');
     const input = body.input as Array<Record<string, unknown>>;
     assert.equal(input[0]?.role, 'user');
-    assert.deepEqual(body.tools, [{ type: 'function', name: 'f', parameters: { type: 'object' } }]);
+    assert.deepEqual(body.tools, [
+      {
+        type: 'function',
+        name: 'f',
+        description: '',
+        parameters: { type: 'object' },
+        strict: false,
+      },
+    ]);
   });
 
   it('maps a tool result to a function_call_output item', () => {
@@ -326,5 +334,55 @@ describe('zen responses body encoding', () => {
     const input = body.input as Array<Record<string, unknown>>;
     assert.equal(input[0]?.type, 'function_call_output');
     assert.equal(input[0]?.call_id, 'call_1');
+  });
+
+  it('encodes assistant tool calls as function_call items', () => {
+    const body = toResponsesBody({
+      model: 'm',
+      messages: [
+        {
+          role: 'assistant',
+          content: 'hi',
+          tool_calls: [
+            { id: 'call_1', type: 'function', function: { name: 'f', arguments: '{"q":1}' } },
+          ],
+        },
+      ],
+    });
+    const input = body.input as Array<Record<string, unknown>>;
+    const message = input.find((item) => item.type === 'message');
+    assert.deepEqual((message?.content as Array<Record<string, unknown>>)[0], {
+      type: 'output_text',
+      text: 'hi',
+    });
+    const call = input.find((item) => item.type === 'function_call');
+    assert.deepEqual(call, {
+      type: 'function_call',
+      call_id: 'call_1',
+      name: 'f',
+      arguments: '{"q":1}',
+    });
+  });
+
+  it('maps images to input_image and max_tokens to max_output_tokens', () => {
+    const body = toResponsesBody({
+      model: 'm',
+      max_tokens: 32,
+      messages: [
+        {
+          role: 'user',
+          content: 'see',
+          contentParts: [
+            { type: 'text', text: 'see' },
+            { type: 'image_url', image_url: { url: 'https://example.com/a.png' } },
+          ],
+        },
+      ],
+    });
+    assert.equal(body.max_output_tokens, 32);
+    const input = body.input as Array<Record<string, unknown>>;
+    const content = input[0]?.content as Array<Record<string, unknown>>;
+    assert.deepEqual(content[1], { type: 'input_image', image_url: 'https://example.com/a.png' });
+    assert.deepEqual(content[0], { type: 'input_text', text: 'see' });
   });
 });
