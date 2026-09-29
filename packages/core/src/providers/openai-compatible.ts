@@ -81,6 +81,7 @@ export abstract class OpenAICompatibleProvider extends BaseProvider {
       created: data.created,
       content,
       finish_reason: (choice?.finish_reason ?? 'stop') as ChatResponse['finish_reason'],
+      ...(reasoning && !primary ? { reasoning } : {}),
       usage: data.usage,
     };
   }
@@ -126,13 +127,13 @@ export abstract class OpenAICompatibleProvider extends BaseProvider {
           const primaryDelta = choice?.delta?.content ?? '';
           const reasoningDelta =
             (choice?.delta?.reasoning_content ?? '') || (choice?.delta?.reasoning ?? '');
-          const delta = primaryDelta || reasoningDelta;
           yield {
             id: json.id,
             model: json.model,
             created: json.created,
-            delta,
+            delta: primaryDelta || reasoningDelta,
             finish_reason: (choice?.finish_reason ?? null) as StreamChunk['finish_reason'],
+            ...(reasoningDelta && !primaryDelta ? { reasoning: reasoningDelta } : {}),
           };
         } catch {
           // ignore malformed line

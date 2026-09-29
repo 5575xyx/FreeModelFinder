@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { ChatRequest, StreamChunk } from '../../types.js';
+import type { ChatRequest, ModelInfo, ProviderId, StreamChunk } from '../../types.js';
 import type { BaseProvider, ProviderContext } from '../base.js';
 import { CohereProvider } from '../cohere.js';
 import { CustomProvider } from '../custom.js';
@@ -9,6 +9,7 @@ import { GitHubModelsProvider } from '../github.js';
 import { HuggingFaceProvider } from '../huggingface.js';
 import { ModelScopeProvider } from '../modelscope.js';
 import { NvidiaProvider } from '../nvidia.js';
+import { OpenAICompatibleProvider } from '../openai-compatible.js';
 import { OpenRouterProvider } from '../openrouter.js';
 import { QianfanProvider } from '../qianfan.js';
 import { SenseNovaProvider } from '../sensenova.js';
@@ -302,5 +303,45 @@ describe('provider empty-catalog contracts', () => {
       const models = await provider.listModels();
       assert.equal(models.length > 0 ? 'fallback' : 'empty', expected, id);
     }
+  });
+});
+
+class ReasoningProbeProvider extends OpenAICompatibleProvider {
+  readonly id: ProviderId = 'custom';
+  readonly displayName = 'Probe';
+  protected baseUrl(): string {
+    return 'https://upstream.example/v1';
+  }
+  async listModels(): Promise<ModelInfo[]> {
+    return [];
+  }
+}
+
+const REASONING_SSE = [
+  'data: {"id":"c1","model":"m","created":1,"choices":[{"index":0,"delta":{"role":"assistant","content":"","reasoning":"step one"},"finish_reason":null}]}',
+  '',
+  'data: {"id":"c1","model":"m","created":1,"choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}]}',
+  '',
+  'data: [DONE]',
+  '',
+].join('\n');
+
+describe('openai-compatible reasoning field', () => {
+  it('surfaces reasoning on the chunk without dropping it', async () => {
+    const provider = new ReasoningProbeProvider({
+      credentials: { apiKey: 'k' },
+      fetchImpl: (async () =>
+        new Response(REASONING_SSE, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        })) as typeof fetch,
+    });
+    const seen: Array<{ delta: string; reasoning?: string }> = [];
+    for await (const chunk of provider.stream({ model: 'm', messages: [], stream: true })) {
+      seen.push({ delta: chunk.delta, ...(chunk.reasoning ? { reasoning: chunk.reasoning } : {}) });
+    }
+    assert.equal(seen[0]?.reasoning, 'step one');
+    assert.equal(seen[0]?.delta, 'step one');
+    assert.equal(seen[1]?.delta, 'answer');
   });
 });
