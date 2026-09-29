@@ -21,10 +21,20 @@ describe('zen forced effort', () => {
     assert.deepEqual(body.reasoning, { effort: 'medium' });
   });
 
-  it('none removes the effort', () => {
+  it('does not override an explicit client effort with none', () => {
     const body: Record<string, unknown> = { model: 'm', messages: [], reasoning_effort: 'high' };
     applyForcedEffort(body, 'chat', 'none');
-    assert.equal('reasoning_effort' in body, false);
+    assert.equal(body.reasoning_effort, 'high');
+  });
+
+  it('none removes a derived thinking config when the client set no explicit effort', () => {
+    const body: Record<string, unknown> = {
+      model: 'm',
+      messages: [],
+      thinking: { type: 'enabled', budget_tokens: 8192 },
+    };
+    applyForcedEffort(body, 'anthropic', 'none');
+    assert.equal('thinking' in body, false);
   });
 
   it('resolveEffort prefers the per-model override', () => {

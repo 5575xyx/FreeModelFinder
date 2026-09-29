@@ -44,7 +44,6 @@ function validForcedEffort(effort: string): boolean {
   return VALID_EFFORTS.includes(effort);
 }
 
-// Mirror of Go budgetForEffort (bridge.go:403-419).
 function budgetForEffort(effort: string): number {
   switch (normalizeEffort(effort)) {
     case 'minimal':
@@ -63,7 +62,6 @@ function budgetForEffort(effort: string): number {
   }
 }
 
-// Mirror of Go clientEffortExplicit (request.go:85-102).
 export function clientEffortExplicit(
   protocol: ZenProtocol,
   body: Record<string, unknown>,
@@ -87,7 +85,6 @@ export function clientEffortExplicit(
   }
 }
 
-// Mirror of Go applyAnthropicForcedEffort (request.go:111-134).
 function applyAnthropicForcedEffort(
   body: Record<string, unknown>,
   effort: string,
@@ -118,11 +115,6 @@ function applyAnthropicForcedEffort(
   }
 }
 
-// Mirror of Go ForcedEffort (request.go:36-75), with one deliberate divergence:
-// "none" is treated as an unconditional escape hatch that removes the reasoning
-// configuration even when the client stated a level explicitly. Go returns early
-// on clientEffortExplicit for every level including "none" (request.go:47/56/61),
-// but the operator escape hatch is expected to always win here.
 export function applyForcedEffort(
   body: Record<string, unknown>,
   protocol: ZenProtocol,
@@ -134,29 +126,25 @@ export function applyForcedEffort(
   const disable = normalized === 'none';
   switch (protocol) {
     case 'chat': {
+      if (clientEffortExplicit(protocol, body)) return;
       if (disable) {
         delete body['reasoning_effort'];
         return;
       }
-      if (clientEffortExplicit(protocol, body)) return;
       body['reasoning_effort'] = normalized;
       return;
     }
     case 'anthropic': {
-      if (disable) {
-        applyAnthropicForcedEffort(body, normalized, true);
-        return;
-      }
       if (clientEffortExplicit(protocol, body)) return;
-      applyAnthropicForcedEffort(body, normalized, false);
+      applyAnthropicForcedEffort(body, normalized, disable);
       return;
     }
     case 'responses': {
+      if (clientEffortExplicit(protocol, body)) return;
       if (disable) {
         delete body['reasoning'];
         return;
       }
-      if (clientEffortExplicit(protocol, body)) return;
       let reasoning = asRecord(body['reasoning']);
       if (!reasoning) {
         reasoning = {};
