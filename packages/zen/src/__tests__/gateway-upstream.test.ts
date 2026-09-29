@@ -121,6 +121,16 @@ describe('zen upstream execution', () => {
     assert.equal(client.requests[0]!.headers!['authorization'], 'Bearer public');
   });
 
+  it('applies the forced reasoning effort to the anonymous body', async () => {
+    const client = new FakeClient(() => response(200, '{}'));
+    const options = makeOptions(client, { reasoning: { effort: 'high' } });
+    const result = await doUpstream(options, anonymousRoute(), request, ids);
+    assert.equal(result.response?.status, 200);
+    const body = JSON.parse(client.requests[0]!.body!) as Record<string, unknown>;
+    assert.equal(body['reasoning_effort'], 'high');
+    assert.equal(body['stream'], true);
+  });
+
   it('moves to the next anonymous proxy after a 403', async () => {
     const client = new FakeClient((_req, index) =>
       index === 0 ? response(403, '{"error":{"message":"FreeTierError"}}') : response(200, '{}'),

@@ -375,6 +375,7 @@ export async function doAnonymousUpstream(
   const cursor = pool.cursorFor(ids.session);
   const protocol = protocolForTier(route, 'zen');
   const base = bodyOverride ?? prepareUpstreamBody(request, protocol);
+  applyEffort(options, base, protocol, route.id);
   const body = prepareAnonymousBody(base, protocol);
   const baseUrl = baseUrlFor(options, 'zen');
 
