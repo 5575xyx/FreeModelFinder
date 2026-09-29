@@ -20,26 +20,35 @@
 4. **既有行为不可变**：所有新字段 optional。Task 11 的全量回归是硬闸门。
 5. **仓库风格**：TypeScript strict + `noUncheckedIndexedAccess: true`；ESLint `no-explicit-any` 已关闭，但仍优先用具体类型；**不要写行尾注释**。
 
+## 执行期修订（controller 决策，已落地）
+
+本计划在执行中发现两处问题，执行时按下述修订落地，代码与测试以修订为准：
+
+1. **`raw` 无条件挂载**：Task 2/5/8 的入站转换一律 `raw: req`（不再按「是否有 tools」条件挂载）。理由：`raw` 的用途是「同协议零损透传任意供应商特有字段」（如 `seed`、`thinking`），条件挂载会让普通请求丢字段，违背 spec 中间表示策略。
+2. **新增 `rawProtocol` 标记**：`ChatRequestSchema` 增加 `rawProtocol: z.enum(['openai','anthropic','gemini']).optional()`（Task 1），三条入站转换分别写入 `'openai'`（Task 2）、`'anthropic'`（Task 5）、`'gemini'`（Task 8）。理由：P1 的 Zen provider 只拿到 `ChatRequest`，必须知道入站协议才能判断「同协议」分支；没有该标记 `raw` 不可用。
+3. **Task 10 的 `reasoning` 语义**：保持既有 `delta = primary || reasoning` / `content = primary || reasoning` 不变（spec 硬性要求「现有 provider 行为不变」），`reasoning` 仅作附加字段，且仅当「只有 reasoning、无正文」时填充。已知取舍：reasoning-only 时 `content`/`delta` 与该字段承载同一文本，读取非标准 `reasoning` 字段的外部客户端可能重复渲染；FMF 自身 UI 不渲染该字段，无影响。
+
 ## 文件结构
 
-| 文件 | 职责 | 动作 |
-| --- | --- | --- |
-| `packages/core/src/types.ts` | 全部消息类型与 zod schema | 修改（Task 1） |
-| `packages/core/src/protocols/openai.ts` | OpenAI 入站转换 + 出站序列化 | 修改（Task 2、3） |
-| `packages/core/src/providers/openai-messages.ts` | `ChatMessage[]` → provider 出站 OpenAI messages | 修改（Task 4） |
-| `packages/core/src/protocols/anthropic.ts` | Anthropic 入站转换 + 出站序列化 | 修改（Task 5、6） |
-| `packages/server/src/routes/anthropic.ts` | Anthropic SSE 出站 | 修改（Task 7） |
-| `packages/core/src/protocols/gemini.ts` | Gemini 入站转换 + 出站序列化 | 修改（Task 8、9） |
-| `packages/server/src/routes/gemini.ts` | Gemini SSE 出站 | 修改（Task 9） |
-| `packages/core/src/providers/openai-compatible.ts` | 填充 `reasoning` 字段 | 修改（Task 10） |
-| `packages/core/src/__tests__/protocols-tools.test.ts` | 协议层工具调用测试 | 新建（Task 2 起复用） |
-| `packages/server/src/routes/__tests__/tools-stream.test.ts` | SSE 出站测试 | 新建（Task 7、9） |
+| 文件                                                        | 职责                                            | 动作                  |
+| ----------------------------------------------------------- | ----------------------------------------------- | --------------------- |
+| `packages/core/src/types.ts`                                | 全部消息类型与 zod schema                       | 修改（Task 1）        |
+| `packages/core/src/protocols/openai.ts`                     | OpenAI 入站转换 + 出站序列化                    | 修改（Task 2、3）     |
+| `packages/core/src/providers/openai-messages.ts`            | `ChatMessage[]` → provider 出站 OpenAI messages | 修改（Task 4）        |
+| `packages/core/src/protocols/anthropic.ts`                  | Anthropic 入站转换 + 出站序列化                 | 修改（Task 5、6）     |
+| `packages/server/src/routes/anthropic.ts`                   | Anthropic SSE 出站                              | 修改（Task 7）        |
+| `packages/core/src/protocols/gemini.ts`                     | Gemini 入站转换 + 出站序列化                    | 修改（Task 8、9）     |
+| `packages/server/src/routes/gemini.ts`                      | Gemini SSE 出站                                 | 修改（Task 9）        |
+| `packages/core/src/providers/openai-compatible.ts`          | 填充 `reasoning` 字段                           | 修改（Task 10）       |
+| `packages/core/src/__tests__/protocols-tools.test.ts`       | 协议层工具调用测试                              | 新建（Task 2 起复用） |
+| `packages/server/src/routes/__tests__/tools-stream.test.ts` | SSE 出站测试                                    | 新建（Task 7、9）     |
 
 ---
 
 ### Task 1: 类型定义扩展
 
 **Files:**
+
 - Modify: `packages/core/src/types.ts`（`ChatMessageSchema` 约 47 行、`ChatRequestSchema` 约 60 行、`ChatResponse` 约 68 行、`StreamChunk` 约 84 行）
 - Test: `packages/core/src/__tests__/protocols-tools.test.ts`（新建）
 
@@ -116,10 +125,12 @@ export const ToolCallDeltaSchema = z.object({
   index: z.number().int().nonnegative(),
   id: z.string().optional(),
   type: z.literal('function').optional(),
-  function: z.object({
-    name: z.string().optional(),
-    arguments: z.string().optional(),
-  }).optional(),
+  function: z
+    .object({
+      name: z.string().optional(),
+      arguments: z.string().optional(),
+    })
+    .optional(),
 });
 export type ToolCallDelta = z.infer<typeof ToolCallDeltaSchema>;
 ```
@@ -205,6 +216,7 @@ git commit -m "feat(core): 消息模型扩展 tools/tool_calls/reasoning 与 raw
 ### Task 2: OpenAI 入站保留 tools 与 raw
 
 **Files:**
+
 - Modify: `packages/core/src/protocols/openai.ts`（`OpenAIChatCompletionRequest` 约 9-22 行、`openAIToChatRequest` 约 53-73 行）
 - Test: `packages/core/src/__tests__/protocols-tools.test.ts`（追加）
 
@@ -225,9 +237,7 @@ describe('openai inbound tools', () => {
     const body = {
       model: 'm',
       messages: [{ role: 'user', content: 'hi' }],
-      tools: [
-        { type: 'function', function: { name: 'search', parameters: { type: 'object' } } },
-      ],
+      tools: [{ type: 'function', function: { name: 'search', parameters: { type: 'object' } } }],
       seed: 7,
     } as unknown as OpenAIChatCompletionRequest;
     const out = openAIToChatRequest(body);
@@ -381,9 +391,7 @@ function normalizeOpenAIToolCall(t: OpenAIToolCall): ToolCall {
 `normalizeContent` 的入参类型需要接受 `null`：
 
 ```ts
-function normalizeContent(
-  c: OpenAIChatCompletionRequest['messages'][number]['content'],
-): string {
+function normalizeContent(c: OpenAIChatCompletionRequest['messages'][number]['content']): string {
   if (c === null || c === undefined) return '';
   if (typeof c === 'string') return c;
   return c
@@ -424,6 +432,7 @@ git commit -m "feat(core): OpenAI 入站保留 tools/tool_calls 并捕获 raw bo
 ### Task 3: OpenAI 出站序列化 tool_calls 与 reasoning
 
 **Files:**
+
 - Modify: `packages/core/src/protocols/openai.ts`（`chatResponseToOpenAI` 约 75 行、`streamChunkToOpenAI` 约 92 行）
 - Test: `packages/core/src/__tests__/protocols-tools.test.ts`（追加）
 
@@ -547,6 +556,7 @@ git commit -m "feat(core): OpenAI 出站序列化 tool_calls 与 reasoning"
 ### Task 4: provider 出站 message 保留 tool 字段
 
 **Files:**
+
 - Modify: `packages/core/src/providers/openai-messages.ts`（全文件 20 行）
 - Test: `packages/core/src/__tests__/protocols-tools.test.ts`（追加）
 
@@ -557,17 +567,17 @@ describe('toOpenAIMessages tool fields', () => {
   it('keeps tool_call_id, name and assistant tool_calls', async () => {
     const { toOpenAIMessages } = await import('../providers/openai-messages.js');
     const out = toOpenAIMessages([
-      { role: 'assistant', content: '', tool_calls: [
-        { id: 'call_1', type: 'function', function: { name: 'f', arguments: '{}' } },
-      ] },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'f', arguments: '{}' } }],
+      },
       { role: 'tool', content: 'result', tool_call_id: 'call_1', name: 'f' },
     ]);
     assert.deepEqual(out[0], {
       role: 'assistant',
       content: '',
-      tool_calls: [
-        { id: 'call_1', type: 'function', function: { name: 'f', arguments: '{}' } },
-      ],
+      tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'f', arguments: '{}' } }],
     });
     assert.equal((out[1] as { tool_call_id?: string }).tool_call_id, 'call_1');
     assert.equal((out[1] as { name?: string }).name, 'f');
@@ -641,6 +651,7 @@ git commit -m "feat(core): provider 出站 message 保留 tool_call_id/name/tool
 ### Task 5: Anthropic 入站保留 tools、tool 内容块与 raw
 
 **Files:**
+
 - Modify: `packages/core/src/protocols/anthropic.ts`（`AnthropicMessagesRequest` 约 9-21 行、`anthropicToChatRequest` 约 60-83 行）
 - Test: `packages/core/src/__tests__/protocols-tools.test.ts`（追加）
 
@@ -706,12 +717,7 @@ Expected: FAIL —— `out.tools` / `out.raw` 为 `undefined`，且 `tool_use` �
 修改 `packages/core/src/protocols/anthropic.ts` 顶部 import：
 
 ```ts
-import type {
-  ChatMessage,
-  ChatRequest,
-  ToolCall,
-  ToolDefinition,
-} from '../types.js';
+import type { ChatMessage, ChatRequest, ToolCall, ToolDefinition } from '../types.js';
 ```
 
 扩展接口与新增类型：
@@ -841,9 +847,7 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
     max_tokens: req.max_tokens,
     stream: req.stream ?? false,
     stop: req.stop_sequences,
-    ...(req.tools && req.tools.length > 0
-      ? { tools: anthropicToolsToDefinitions(req.tools) }
-      : {}),
+    ...(req.tools && req.tools.length > 0 ? { tools: anthropicToolsToDefinitions(req.tools) } : {}),
     raw: req,
   };
 }
@@ -866,6 +870,7 @@ git commit -m "feat(core): Anthropic 入站保留 tools/tool_use/tool_result 与
 ### Task 6: Anthropic 出站序列化 tool_use 块
 
 **Files:**
+
 - Modify: `packages/core/src/protocols/anthropic.ts`（`chatResponseToAnthropic` 约 85-109 行）
 - Test: `packages/core/src/__tests__/protocols-tools.test.ts`（追加）
 
@@ -997,6 +1002,7 @@ git commit -m "feat(core): Anthropic 出站序列化 tool_use 块与 stop_reason
 ### Task 7: Anthropic SSE 路由支持多 content_block
 
 **Files:**
+
 - Modify: `packages/server/src/routes/anthropic.ts`（流式分支约 140-164 行）
 - Test: `packages/server/src/routes/__tests__/tools-stream.test.ts`（新建）
 
@@ -1183,13 +1189,13 @@ Expected: FAIL —— 输出中没有 `"type":"tool_use"` 与 `"type":"input_jso
 同时需要在循环外记录最后一个 `finish_reason`。在 `let toolBlockOpen = false;` 上方声明：
 
 ```ts
-      let chunkFinishReason: string | null = null;
+let chunkFinishReason: string | null = null;
 ```
 
 并在循环体内每轮赋值：
 
 ```ts
-          if (chunk.finish_reason) chunkFinishReason = chunk.finish_reason;
+if (chunk.finish_reason) chunkFinishReason = chunk.finish_reason;
 ```
 
 > 上面两个分支都写 `content_block_stop` 属于刻意简化：文本块与工具块的收尾逻辑一致，保留单点写出避免漏写。若实现时更倾向合并为循环后的统一一次写出，可自行收敛，但**测试断言的三个事件必须都在**。
@@ -1211,6 +1217,7 @@ git commit -m "feat(server): Anthropic SSE 输出 tool_use 内容块"
 ### Task 8: Gemini 入站保留 tools、functionCall 与 raw
 
 **Files:**
+
 - Modify: `packages/core/src/protocols/gemini.ts`（`GeminiHttpRequest` 约 9-21 行、`geminiToChatRequest` 约 23-74 行）
 - Test: `packages/core/src/__tests__/protocols-tools.test.ts`（追加）
 
@@ -1348,88 +1355,88 @@ function geminiFunctionCalls(parts: GeminiContentPart[]): ToolCall[] | undefined
 改写 `geminiToChatRequest` 的 contents 循环体（`for (const c of req.contents)` 内）：
 
 ```ts
-  for (const c of req.contents) {
-    const responses = c.parts.filter((p) => p.functionResponse?.name);
-    if (responses.length > 0) {
-      for (const r of responses) {
-        const fn = r.functionResponse!;
-        messages.push({
-          role: 'tool',
-          name: fn.name ?? '',
-          content: JSON.stringify(fn.response ?? {}),
-        });
-      }
-      continue;
+for (const c of req.contents) {
+  const responses = c.parts.filter((p) => p.functionResponse?.name);
+  if (responses.length > 0) {
+    for (const r of responses) {
+      const fn = r.functionResponse!;
+      messages.push({
+        role: 'tool',
+        name: fn.name ?? '',
+        content: JSON.stringify(fn.response ?? {}),
+      });
     }
-
-    const text = c.parts
-      .filter((p) => typeof p.text === 'string')
-      .map((p) => p.text!)
-      .join('');
-    const parts: Array<
-      { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
-    > = [];
-    let sawImage = false;
-    for (const p of c.parts) {
-      if (p.inlineData?.data) {
-        const mime = p.inlineData.mimeType ?? 'image/png';
-        parts.push({
-          type: 'image_url',
-          image_url: { url: `data:${mime};base64,${p.inlineData.data}` },
-        });
-        sawImage = true;
-      } else if (p.fileData?.fileUri) {
-        parts.push({ type: 'image_url', image_url: { url: p.fileData.fileUri } });
-        sawImage = true;
-      } else if (typeof p.text === 'string') {
-        parts.push({ type: 'text', text: p.text });
-      }
-    }
-    const entry: ChatMessage = {
-      role: c.role === 'model' ? 'assistant' : 'user',
-      content: text,
-      contentParts: sawImage ? parts : undefined,
-    };
-    const calls = geminiFunctionCalls(c.parts);
-    if (calls) entry.tool_calls = calls;
-    messages.push(entry);
+    continue;
   }
+
+  const text = c.parts
+    .filter((p) => typeof p.text === 'string')
+    .map((p) => p.text!)
+    .join('');
+  const parts: Array<
+    { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+  > = [];
+  let sawImage = false;
+  for (const p of c.parts) {
+    if (p.inlineData?.data) {
+      const mime = p.inlineData.mimeType ?? 'image/png';
+      parts.push({
+        type: 'image_url',
+        image_url: { url: `data:${mime};base64,${p.inlineData.data}` },
+      });
+      sawImage = true;
+    } else if (p.fileData?.fileUri) {
+      parts.push({ type: 'image_url', image_url: { url: p.fileData.fileUri } });
+      sawImage = true;
+    } else if (typeof p.text === 'string') {
+      parts.push({ type: 'text', text: p.text });
+    }
+  }
+  const entry: ChatMessage = {
+    role: c.role === 'model' ? 'assistant' : 'user',
+    content: text,
+    contentParts: sawImage ? parts : undefined,
+  };
+  const calls = geminiFunctionCalls(c.parts);
+  if (calls) entry.tool_calls = calls;
+  messages.push(entry);
+}
 ```
 
 并在 return 中加入 `tools` 与 `raw`：
 
 ```ts
-  const tools = req.tools ? geminiToolsToDefinitions(req.tools) : [];
-  return {
-    model,
-    messages,
-    temperature: req.generationConfig?.temperature,
-    top_p: req.generationConfig?.topP,
-    max_tokens: req.generationConfig?.maxOutputTokens,
-    stop: req.generationConfig?.stopSequences,
-    stream,
-    ...(tools.length > 0 ? { tools } : {}),
-    raw: req,
-  };
+const tools = req.tools ? geminiToolsToDefinitions(req.tools) : [];
+return {
+  model,
+  messages,
+  temperature: req.generationConfig?.temperature,
+  top_p: req.generationConfig?.topP,
+  max_tokens: req.generationConfig?.maxOutputTokens,
+  stop: req.generationConfig?.stopSequences,
+  stream,
+  ...(tools.length > 0 ? { tools } : {}),
+  raw: req,
+};
 ```
 
 > ⚠️ 这里 `raw: req` 是**无条件**的，与 openai/anthropic 的条件写法不同。为保持三协议一致，请改成：仅当 `req.tools` 存在或 `req.contents` 含 functionCall/functionResponse 时才写入 `raw`。实现方式：
 
 ```ts
-  const rawRelevant =
-    (req.tools?.length ?? 0) > 0 ||
-    req.contents.some((c) => c.parts.some((p) => p.functionCall || p.functionResponse));
-  return {
-    model,
-    messages,
-    temperature: req.generationConfig?.temperature,
-    top_p: req.generationConfig?.topP,
-    max_tokens: req.generationConfig?.maxOutputTokens,
-    stop: req.generationConfig?.stopSequences,
-    stream,
-    ...(tools.length > 0 ? { tools } : {}),
-    ...(rawRelevant ? { raw: req } : {}),
-  };
+const rawRelevant =
+  (req.tools?.length ?? 0) > 0 ||
+  req.contents.some((c) => c.parts.some((p) => p.functionCall || p.functionResponse));
+return {
+  model,
+  messages,
+  temperature: req.generationConfig?.temperature,
+  top_p: req.generationConfig?.topP,
+  max_tokens: req.generationConfig?.maxOutputTokens,
+  stop: req.generationConfig?.stopSequences,
+  stream,
+  ...(tools.length > 0 ? { tools } : {}),
+  ...(rawRelevant ? { raw: req } : {}),
+};
 ```
 
 - [ ] **Step 4: 运行确认通过**
@@ -1449,6 +1456,7 @@ git commit -m "feat(core): Gemini 入站保留 functionDeclarations/functionCall
 ### Task 9: Gemini 出站序列化 functionCall
 
 **Files:**
+
 - Modify: `packages/core/src/protocols/gemini.ts`（`chatResponseToGemini` 约 76-105 行）
 - Modify: `packages/server/src/routes/gemini.ts`（流式 parts 构造，约 130-150 行）
 - Test: `packages/core/src/__tests__/protocols-tools.test.ts`（追加）+ `packages/server/src/routes/__tests__/tools-stream.test.ts`（追加）
@@ -1465,7 +1473,10 @@ describe('gemini outbound functionCall', () => {
       finish_reason: 'tool_calls',
       tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '{"q":1}' } }],
     }) as {
-      candidates: Array<{ content: { parts: Array<Record<string, unknown>> }; finishReason: string }>;
+      candidates: Array<{
+        content: { parts: Array<Record<string, unknown>> };
+        finishReason: string;
+      }>;
     };
     assert.equal(payload.candidates[0]?.finishReason, 'STOP');
     const part = payload.candidates[0]?.content.parts[0] as Record<string, unknown>;
@@ -1570,7 +1581,9 @@ async function collectGeminiStream(chunks: StreamChunk[]): Promise<string> {
   };
   registerGeminiRoutes(app as never, () => makeRegistry(provider) as never);
 
-  const handler = [...app.handlers.entries()].find(([p]) => p.includes('streamGenerateContent'))![1];
+  const handler = [...app.handlers.entries()].find(([p]) =>
+    p.includes('streamGenerateContent'),
+  )![1];
   const reply = {
     raw: {
       writeHead: () => undefined,
@@ -1621,39 +1634,39 @@ Expected: FAIL —— 流式输出不含 `"functionCall"`。
 替换 `packages/server/src/routes/gemini.ts` 流式循环内的 payload 构造：
 
 ```ts
-    for await (const chunk of provider.stream(dispatchReq)) {
-      const parts: Array<Record<string, unknown>> = [];
-      if (chunk.tool_calls && chunk.tool_calls.length > 0) {
-        for (const call of chunk.tool_calls) {
-          let args: unknown = {};
-          if (call.function.arguments) {
-            try {
-              args = JSON.parse(call.function.arguments);
-            } catch {
-              args = {};
-            }
-          }
-          parts.push({ functionCall: { name: call.function.name, args } });
+for await (const chunk of provider.stream(dispatchReq)) {
+  const parts: Array<Record<string, unknown>> = [];
+  if (chunk.tool_calls && chunk.tool_calls.length > 0) {
+    for (const call of chunk.tool_calls) {
+      let args: unknown = {};
+      if (call.function.arguments) {
+        try {
+          args = JSON.parse(call.function.arguments);
+        } catch {
+          args = {};
         }
-      } else if (chunk.delta) {
-        parts.push({ text: chunk.delta });
       }
-      const payload = {
-        candidates: [
-          {
-            content: { role: 'model', parts },
-            index: 0,
-            finishReason:
-              chunk.finish_reason === 'stop' || chunk.finish_reason === 'tool_calls'
-                ? 'STOP'
-                : chunk.finish_reason === 'length'
-                  ? 'MAX_TOKENS'
-                  : null,
-          },
-        ],
-      };
-      reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+      parts.push({ functionCall: { name: call.function.name, args } });
     }
+  } else if (chunk.delta) {
+    parts.push({ text: chunk.delta });
+  }
+  const payload = {
+    candidates: [
+      {
+        content: { role: 'model', parts },
+        index: 0,
+        finishReason:
+          chunk.finish_reason === 'stop' || chunk.finish_reason === 'tool_calls'
+            ? 'STOP'
+            : chunk.finish_reason === 'length'
+              ? 'MAX_TOKENS'
+              : null,
+      },
+    ],
+  };
+  reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
 ```
 
 - [ ] **Step 7: 运行确认通过**
@@ -1674,6 +1687,7 @@ git commit -m "feat: Gemini 出站序列化 functionCall（core + SSE 流式）"
 ### Task 10: OpenAI 兼容 provider 填充 reasoning 字段
 
 **Files:**
+
 - Modify: `packages/core/src/providers/openai-compatible.ts`（`chat()` 约 52-86 行、`stream()` 约 88-142 行）
 - Test: `packages/core/src/providers/__tests__/provider-contracts.test.ts`（追加）
 
@@ -1755,22 +1769,22 @@ Expected: FAIL —— `seen[0].reasoning` 为 `undefined`（现有实现把 reas
 改写 `chat()` 中的 reasoning 处理（保持 `content` 语义不变，另填 `reasoning`）：
 
 ```ts
-    const choice = data.choices[0];
-    const msg = choice?.message;
-    const primary = typeof msg?.content === 'string' ? msg.content : '';
-    const reasoning =
-      (typeof msg?.reasoning_content === 'string' ? msg.reasoning_content : '') ||
-      (typeof msg?.reasoning === 'string' ? msg.reasoning : '');
-    const content = primary || reasoning;
-    return {
-      id: data.id,
-      model: data.model,
-      created: data.created,
-      content,
-      finish_reason: (choice?.finish_reason ?? 'stop') as ChatResponse['finish_reason'],
-      ...(reasoning && !primary ? { reasoning } : {}),
-      usage: data.usage,
-    };
+const choice = data.choices[0];
+const msg = choice?.message;
+const primary = typeof msg?.content === 'string' ? msg.content : '';
+const reasoning =
+  (typeof msg?.reasoning_content === 'string' ? msg.reasoning_content : '') ||
+  (typeof msg?.reasoning === 'string' ? msg.reasoning : '');
+const content = primary || reasoning;
+return {
+  id: data.id,
+  model: data.model,
+  created: data.created,
+  content,
+  finish_reason: (choice?.finish_reason ?? 'stop') as ChatResponse['finish_reason'],
+  ...(reasoning && !primary ? { reasoning } : {}),
+  usage: data.usage,
+};
 ```
 
 > **不改变既有 `content` 行为**：`content = primary || reasoning` 原样保留。新增的 `reasoning` 字段仅在「只有 reasoning、没有正文」时填充，因此对所有既有调用方是纯增量。
@@ -1792,6 +1806,7 @@ git commit -m "feat(core): OpenAI 兼容 provider 分离输出 reasoning 字段"
 ### Task 11: 全量验证与收尾
 
 **Files:**
+
 - 无新增；仅验证。
 
 - [ ] **Step 1: 构建运行时**
