@@ -41,15 +41,19 @@ describe('openai inbound tools', () => {
     const out = openAIToChatRequest(body);
     assert.equal(out.tools?.[0]?.function.name, 'search');
     assert.deepEqual(out.raw, body);
+    assert.equal(out.rawProtocol, 'openai');
   });
 
-  it('omits tools and raw when the client sent neither', () => {
-    const out = openAIToChatRequest({
+  it('captures raw and rawProtocol even without tools', () => {
+    const body = {
       model: 'm',
       messages: [{ role: 'user', content: 'hi' }],
-    } as OpenAIChatCompletionRequest);
+      seed: 3,
+    } as unknown as OpenAIChatCompletionRequest;
+    const out = openAIToChatRequest(body);
     assert.equal(out.tools, undefined);
-    assert.equal(out.raw, undefined);
+    assert.deepEqual(out.raw, body);
+    assert.equal(out.rawProtocol, 'openai');
   });
 
   it('keeps assistant tool_calls on the message', () => {

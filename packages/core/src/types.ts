@@ -102,6 +102,7 @@ export const ChatRequestSchema = z.object({
   stop: z.union([z.string(), z.array(z.string())]).optional(),
   tools: z.array(ToolDefinitionSchema).optional(),
   raw: z.unknown().optional(),
+  rawProtocol: z.enum(['openai', 'anthropic', 'gemini']).optional(),
 });
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 

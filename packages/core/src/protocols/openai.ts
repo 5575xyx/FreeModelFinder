@@ -94,10 +94,6 @@ export function openAIToChatRequest(req: OpenAIChatCompletionRequest): ChatReque
       ...(reasoning ? { reasoning } : {}),
     };
   });
-  const hasTools = req.tools !== undefined && req.tools.length > 0;
-  const hasToolContent = messages.some(
-    (m) => (m.tool_calls !== undefined && m.tool_calls.length > 0) || m.role === 'tool',
-  );
   return {
     model: req.model,
     messages,
@@ -106,8 +102,9 @@ export function openAIToChatRequest(req: OpenAIChatCompletionRequest): ChatReque
     max_tokens: req.max_tokens,
     stream: req.stream ?? false,
     stop: req.stop,
-    ...(hasTools ? { tools: req.tools } : {}),
-    ...(hasTools || hasToolContent ? { raw: req } : {}),
+    ...(req.tools && req.tools.length > 0 ? { tools: req.tools } : {}),
+    raw: req,
+    rawProtocol: 'openai',
   };
 }
 
