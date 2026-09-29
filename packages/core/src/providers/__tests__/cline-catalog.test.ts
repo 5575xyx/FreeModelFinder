@@ -57,6 +57,27 @@ describe('cline catalog', () => {
     assert.ok(requestedInit?.signal, 'a timeout signal must be attached');
   });
 
+  it('aborts a hanging upstream request once the timeout elapses', async () => {
+    let captured: AbortSignal | undefined;
+    const fetchImpl = ((_input: string | URL | Request, init?: RequestInit) => {
+      const signal = init?.signal ?? undefined;
+      captured = signal;
+      return new Promise<Response>((_resolve, reject) => {
+        if (!signal) {
+          reject(new Error('missing timeout signal'));
+          return;
+        }
+        const abort = () => reject(new DOMException('The operation was aborted', 'AbortError'));
+        if (signal.aborted) abort();
+        else signal.addEventListener('abort', abort, { once: true });
+      });
+    }) as typeof fetch;
+    const models = await listClineCatalogModels({ fetchImpl, timeoutMs: 1 });
+    assert.equal(models, null);
+    assert.ok(captured, 'fetch must receive a timeout signal');
+    assert.equal(captured.aborted, true);
+  });
+
   it('serves a fresh cache without refetching', async () => {
     const { fetchImpl, calls } = sequenceFetch([FREE_PAYLOAD]);
     const first = await listClineCatalogModels({ fetchImpl });
@@ -120,6 +141,27 @@ describe('cline catalog', () => {
     assert.deepEqual(first, second);
   });
 
+  it('merges concurrent expired refreshes into one failing fetch and serves stale data', async () => {
+    let clock = 1_000_000;
+    const now = () => clock;
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      if (calls > 1) throw new Error('network down');
+      return responseOf({ free: [{ id: 'old' }] });
+    }) as typeof fetch;
+    const warmed = await listClineCatalogModels({ fetchImpl, now });
+    assert.deepEqual(warmed, [{ id: 'old' }]);
+    clock += 31 * 60_000;
+    const [first, second] = await Promise.all([
+      listClineCatalogModels({ fetchImpl, now }),
+      listClineCatalogModels({ fetchImpl, now }),
+    ]);
+    assert.equal(calls, 2);
+    assert.deepEqual(first, [{ id: 'old' }]);
+    assert.deepEqual(first, second);
+  });
+
   it('short-circuits to null when dynamic models are disabled', async () => {
     const { fetchImpl, calls } = sequenceFetch([FREE_PAYLOAD]);
     assert.equal(await listClineCatalogModels({ fetchImpl, dynamicModels: false }), null);
@@ -154,8 +196,13 @@ describe('cline catalog', () => {
   });
 
   it('treats a non-2xx response as a failed refresh', async () => {
-    const fetchImpl = (async () => responseOf({ free: [] }, 500)) as typeof fetch;
+    let upstream: Response | undefined;
+    const fetchImpl = (async () => {
+      upstream = responseOf({ free: [] }, 500);
+      return upstream;
+    }) as typeof fetch;
     assert.equal(await listClineCatalogModels({ fetchImpl }), null);
+    assert.equal(upstream?.bodyUsed, true);
   });
 
   it('treats a non-JSON body as a failed refresh', async () => {
@@ -165,8 +212,13 @@ describe('cline catalog', () => {
 
   it('treats an oversized body as a failed refresh', async () => {
     const oversized = 'x'.repeat(4 * 1024 * 1024 + 1);
-    const fetchImpl = (async () => new Response(oversized, { status: 200 })) as typeof fetch;
+    let upstream: Response | undefined;
+    const fetchImpl = (async () => {
+      upstream = new Response(oversized, { status: 200 });
+      return upstream;
+    }) as typeof fetch;
     assert.equal(await listClineCatalogModels({ fetchImpl }), null);
+    assert.equal(upstream?.bodyUsed, true);
   });
 
   it('converges an invalid fetch implementation to null instead of throwing', async () => {
@@ -183,6 +235,7 @@ describe('cline catalog', () => {
             { id: 'y', name: '  Why  ', description: 'desc', context_length: 8192 },
             { id: 'z' },
             { id: 'w', name: 42, description: 42 },
+            { id: 'v', name: '   ', description: '' },
           ],
         },
       ]).fetchImpl,
@@ -192,6 +245,7 @@ describe('cline catalog', () => {
       { id: 'y', name: 'Why', description: 'desc', contextWindow: 8192 },
       { id: 'z' },
       { id: 'w' },
+      { id: 'v' },
     ]);
   });
 });

@@ -62,8 +62,8 @@ function normalizeFreeGroup(payload: unknown): ClineCatalogModel[] {
     if (typeof record.name === 'string' && record.name.trim()) {
       model.name = record.name.trim();
     }
-    if (typeof record.description === 'string') {
-      model.description = record.description;
+    if (typeof record.description === 'string' && record.description.trim()) {
+      model.description = record.description.trim();
     }
     if (typeof record.context_length === 'number' && record.context_length > 0) {
       model.contextWindow = record.context_length;
@@ -82,10 +82,12 @@ async function fetchUpstreamModels(opts: ClineCatalogOptions): Promise<ClineCata
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
+    await response.text().catch(() => undefined);
     throw new Error(`cline catalog: upstream responded ${response.status}`);
   }
   const declared = Number(response.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    await response.body?.cancel().catch(() => undefined);
     throw new Error('cline catalog: upstream body too large');
   }
   const text = await response.text();
