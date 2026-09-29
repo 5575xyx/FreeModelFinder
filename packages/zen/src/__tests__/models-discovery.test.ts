@@ -82,3 +82,37 @@ describe('zen protocol inference', () => {
     assert.equal(caps.metadata.zen?.['chatty']?.reasoning, true);
   });
 });
+
+describe('zen discovery errors', () => {
+  it('throws on a non-2xx models response', async () => {
+    const failing = (async () => new Response('nope', { status: 500 })) as typeof fetch;
+    await assert.rejects(() => fetchModels('https://opencode.ai/zen', 'public', failing));
+  });
+
+  it('throws on an empty models list', async () => {
+    await assert.rejects(() =>
+      fetchModels('https://opencode.ai/zen', 'public', fetchJson({ data: [] })),
+    );
+  });
+
+  it('throws when the capability catalog has no opencode models', async () => {
+    await assert.rejects(() =>
+      fetchCapabilities({ zen: 'https://x' }, fetchJson({ other: { id: 'other', models: {} } })),
+    );
+  });
+
+  it('classifies a /go/ api as the go tier', async () => {
+    const caps = await fetchCapabilities(
+      { zen: 'https://x' },
+      fetchJson({
+        someprov: {
+          id: 'someprov',
+          api: 'https://opencode.ai/zen/go/v1',
+          npm: '@ai-sdk/openai-compatible',
+          models: { g: { id: 'g' } },
+        },
+      }),
+    );
+    assert.equal(caps.native.go?.['g'], 'chat');
+  });
+});

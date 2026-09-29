@@ -1,4 +1,5 @@
 import type { ZenNativeProtocol } from '../config/index.js';
+import { OPENCODE_CLIENT_HEADERS, openCodeUserAgent } from '../identity/client.js';
 import type { ZenModelMetadata, ZenTier } from './types.js';
 
 export interface ZenCapabilities {
@@ -9,7 +10,7 @@ export interface ZenCapabilities {
 
 export interface CapabilityEndpoints {
   zen: string;
-  go: string;
+  go?: string;
   zenDocs?: string;
   goDocs?: string;
 }
@@ -48,8 +49,12 @@ export async function fetchModels(
   key: string,
   fetchImpl: typeof fetch,
 ): Promise<string[]> {
-  const res = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/v1/models`, {
-    headers: { authorization: `Bearer ${key}` },
+  const res = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/v1/models`, {
+    headers: {
+      authorization: `Bearer ${key}`,
+      ...OPENCODE_CLIENT_HEADERS,
+      'user-agent': openCodeUserAgent(),
+    },
   });
   if (!res.ok) throw new Error(`models endpoint returned HTTP ${res.status}`);
   const payload = asRecord(await res.json());
@@ -67,15 +72,15 @@ export async function fetchCapabilities(
   endpoints: CapabilityEndpoints,
   fetchImpl: typeof fetch,
 ): Promise<ZenCapabilities> {
-  const res = await fetchImpl(endpoints.zen);
+  const res = await fetchImpl(endpoints.zen, {
+    headers: { accept: 'application/json', 'user-agent': openCodeUserAgent() },
+  });
   if (!res.ok) throw new Error(`capability endpoint returned HTTP ${res.status}`);
   const providers = asRecord(await res.json());
   if (!providers) throw new Error('capability endpoint returned no providers');
-  const result: ZenCapabilities = {
-    native: { zen: {}, go: {} },
-    unsupported: { zen: {}, go: {} },
-    metadata: { zen: {}, go: {} },
-  };
+  const native: Record<ZenTier, Record<string, ZenNativeProtocol>> = { zen: {}, go: {} };
+  const unsupported: Record<ZenTier, Record<string, boolean>> = { zen: {}, go: {} };
+  const metadata: Record<ZenTier, Record<string, ZenModelMetadata>> = { zen: {}, go: {} };
   for (const [providerId, raw] of Object.entries(providers)) {
     const provider = asRecord(raw);
     if (!provider) continue;
@@ -84,22 +89,27 @@ export async function fetchCapabilities(
     const providerNpm = str(provider['npm']) ?? '';
     const models = asRecord(provider['models']);
     if (!models) continue;
-    const nativeLayer = result.native[tier] as Record<string, ZenNativeProtocol>;
-    const unsupportedLayer = result.unsupported[tier] as Record<string, boolean>;
-    const metadataLayer = result.metadata[tier] as Record<string, ZenModelMetadata>;
     for (const [modelKey, rawModel] of Object.entries(models)) {
       const model = asRecord(rawModel);
       if (!model) continue;
-      const modelId = str(model['id']) ?? modelKey;
+      const modelIdRaw = str(model['id']);
+      const modelId = modelIdRaw && modelIdRaw.trim() ? modelIdRaw : modelKey;
       const modelProvider = asRecord(model['provider']);
-      const npm = str(modelProvider?.['npm']) ?? providerNpm;
+      const npmRaw = str(modelProvider?.['npm']);
+      const npm = npmRaw && npmRaw.trim() ? npmRaw : providerNpm;
       const protocol = protocolForSdk(npm);
-      if (protocol) nativeLayer[modelId] = protocol;
-      else unsupportedLayer[modelId] = true;
-      metadataLayer[modelId] = metadataOf(model);
+      if (protocol) native[tier][modelId] = protocol;
+      else unsupported[tier][modelId] = true;
+      metadata[tier][modelId] = metadataOf(model);
     }
   }
-  return result;
+  const hasAny =
+    Object.keys(native.zen).length > 0 ||
+    Object.keys(native.go).length > 0 ||
+    Object.keys(unsupported.zen).length > 0 ||
+    Object.keys(unsupported.go).length > 0;
+  if (!hasAny) throw new Error('capability endpoint returned no Zen or Go models');
+  return { native, unsupported, metadata };
 }
 
 function metadataOf(model: Record<string, unknown>): ZenModelMetadata {
