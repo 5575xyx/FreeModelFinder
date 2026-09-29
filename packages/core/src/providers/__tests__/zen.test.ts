@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import type { IncomingMessage } from 'node:http';
 import { Readable } from 'node:stream';
 import { describe, it } from 'node:test';
-import type { ZenHttpClient, ZenHttpRequest, ZenHttpResponse } from '@freemodelfinder/zen';
+import type {
+  ZenGateway,
+  ZenHttpClient,
+  ZenHttpRequest,
+  ZenHttpResponse,
+} from '@freemodelfinder/zen';
+import type { ProviderContext } from '../base.js';
 import { ZenProvider } from '../zen.js';
 
 const ZEN_MODELS = {
@@ -85,6 +91,46 @@ class FakeClient implements ZenHttpClient {
   }
 }
 
+function recordingGateway(calls: string[]): ZenGateway {
+  return {
+    listRoutes: () => [{ id: 'free-model' }],
+    isFreeModel: () => true,
+    snapshot: () => ({}),
+    chat: async () => {
+      calls.push('chat');
+      return { id: 'x', model: 'free-model', created: 1, content: 'hi', finish_reason: 'stop' };
+    },
+    stream: async function* () {
+      calls.push('stream');
+      yield* [];
+    },
+    start: async () => undefined,
+    stop: () => undefined,
+    refresh: async () => {
+      calls.push('refresh');
+      return {};
+    },
+    loadCache: async () => {
+      calls.push('loadCache');
+      return { catalog: false, pricing: false };
+    },
+    monitor: () => ({}),
+  } as unknown as ZenGateway;
+}
+
+class RecordingZenProvider extends ZenProvider {
+  constructor(
+    ctx: ProviderContext,
+    private readonly injected: ZenGateway,
+  ) {
+    super(ctx);
+  }
+
+  protected override createGateway(): ZenGateway {
+    return this.injected;
+  }
+}
+
 describe('zen (opencode) provider', () => {
   it('reports credentials from the anonymous flag and the key pools', () => {
     const anonymous = new ZenProvider({
@@ -145,5 +191,50 @@ describe('zen (opencode) provider', () => {
     assert.equal(response.rawProtocol, 'openai');
     assert.deepEqual(response.raw, CHAT_BODY);
     assert.ok(client.requests.length >= 1);
+  });
+
+  it('loads the zen cache once before the first chat refresh', async () => {
+    const calls: string[] = [];
+    const provider = new RecordingZenProvider(
+      { credentials: { apiKey: '', extra: { anonymous: true } } },
+      recordingGateway(calls),
+    );
+
+    await provider.chat({
+      model: 'free-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: false,
+    });
+
+    assert.deepEqual(calls, ['loadCache', 'refresh', 'chat']);
+  });
+
+  it('loads the zen cache once before the first listModels refresh', async () => {
+    const calls: string[] = [];
+    const provider = new RecordingZenProvider(
+      { credentials: { apiKey: '', extra: { anonymous: true } } },
+      recordingGateway(calls),
+    );
+
+    const models = await provider.listModels();
+    assert.ok(models.length >= 1);
+    assert.deepEqual(calls, ['loadCache', 'refresh']);
+  });
+
+  it('does not reload the zen cache on subsequent calls', async () => {
+    const calls: string[] = [];
+    const provider = new RecordingZenProvider(
+      { credentials: { apiKey: '', extra: { anonymous: true } } },
+      recordingGateway(calls),
+    );
+
+    await provider.chat({
+      model: 'free-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: false,
+    });
+    await provider.listModels();
+
+    assert.equal(calls.filter((call) => call === 'loadCache').length, 1);
   });
 });

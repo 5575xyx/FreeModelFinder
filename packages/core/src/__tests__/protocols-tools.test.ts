@@ -435,9 +435,51 @@ describe('gemini outbound functionCall', () => {
 });
 
 describe('response raw carrier', () => {
-  it('does not leak ChatResponse.raw into the OpenAI wire payload', () => {
+  it('passes the raw OpenAI body through for an openai -> openai response', () => {
+    const raw = { id: 'x', object: 'chat.completion', secretUpstreamField: 1 };
     const payload = chatResponseToOpenAI({
       id: 'x',
+      model: 'm',
+      created: 1,
+      content: 'hi',
+      finish_reason: 'stop',
+      raw,
+      rawProtocol: 'openai',
+    });
+    assert.equal(payload, raw);
+  });
+
+  it('does not leak a cross-protocol raw body into the OpenAI wire payload', () => {
+    const payload = chatResponseToOpenAI({
+      id: 'x',
+      model: 'm',
+      created: 1,
+      content: 'hi',
+      finish_reason: 'stop',
+      raw: { secretUpstreamField: 1 },
+      rawProtocol: 'anthropic',
+    }) as Record<string, unknown>;
+    assert.equal('raw' in payload, false);
+    assert.equal(JSON.stringify(payload).includes('secretUpstreamField'), false);
+  });
+
+  it('passes the raw Anthropic body through for an anthropic -> anthropic response', () => {
+    const raw = { id: 'msg_1', type: 'message', secretUpstreamField: 1 };
+    const payload = chatResponseToAnthropic({
+      id: 'msg_1',
+      model: 'm',
+      created: 1,
+      content: 'hi',
+      finish_reason: 'stop',
+      raw,
+      rawProtocol: 'anthropic',
+    });
+    assert.equal(payload, raw);
+  });
+
+  it('does not leak a cross-protocol raw body into the Anthropic wire payload', () => {
+    const payload = chatResponseToAnthropic({
+      id: 'msg_1',
       model: 'm',
       created: 1,
       content: 'hi',

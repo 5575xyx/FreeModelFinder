@@ -120,17 +120,44 @@ describe('configuration encryption and migration', () => {
     ).proxies;
     assert.ok(Array.isArray(persistedProxies));
     assert.equal(persistedProxies.length, proxies.length);
-    assert.ok(persistedProxies.every((value) => typeof value === 'string' && looksEncrypted(value)));
+    assert.ok(
+      persistedProxies.every((value) => typeof value === 'string' && looksEncrypted(value)),
+    );
 
     const loaded = await loadConfig();
-    const loadedProxies = (
-      loaded.providers.opencode?.credentials?.extra as { proxies?: string[] }
-    ).proxies;
+    const loadedProxies = (loaded.providers.opencode?.credentials?.extra as { proxies?: string[] })
+      .proxies;
     assert.deepEqual(loadedProxies, proxies);
     const sources = loaded.providers.custom?.credentials?.extra?.sources as Array<{
       apiKey: string;
     }>;
     assert.equal(sources[0]?.apiKey, 'custom-source-secret');
+  });
+
+  it('encrypts and round-trips extra.goKeys credentials', async () => {
+    const goKeys = ['go-key-one', 'go-key-two'];
+    const config = baseConfig();
+    config.providers.opencode = {
+      enabled: true,
+      credentials: { apiKey: '', extra: { goKeys } },
+    };
+
+    await saveConfig(config);
+
+    const raw = await readFile(CONFIG_PATH, 'utf8');
+    assert.doesNotMatch(raw, /go-key-one|go-key-two/);
+    const persisted = JSON.parse(raw) as AppConfig;
+    const persistedGoKeys = (
+      persisted.providers.opencode?.credentials?.extra as { goKeys?: unknown[] }
+    ).goKeys;
+    assert.ok(Array.isArray(persistedGoKeys));
+    assert.equal(persistedGoKeys.length, goKeys.length);
+    assert.ok(persistedGoKeys.every((value) => typeof value === 'string' && looksEncrypted(value)));
+
+    const loaded = await loadConfig();
+    const loadedGoKeys = (loaded.providers.opencode?.credentials?.extra as { goKeys?: string[] })
+      .goKeys;
+    assert.deepEqual(loadedGoKeys, goKeys);
   });
 
   it('keeps reading legacy plaintext proxies (backward compatible)', async () => {
@@ -144,9 +171,8 @@ describe('configuration encryption and migration', () => {
     await writeFile(CONFIG_PATH, JSON.stringify(raw, null, 2), { mode: 0o600 });
 
     const loaded = await loadConfig();
-    const loadedProxies = (
-      loaded.providers.opencode?.credentials?.extra as { proxies?: string[] }
-    ).proxies;
+    const loadedProxies = (loaded.providers.opencode?.credentials?.extra as { proxies?: string[] })
+      .proxies;
     assert.deepEqual(loadedProxies, legacyProxies);
   });
 

@@ -168,6 +168,9 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
 }
 
 export function chatResponseToAnthropic(res: ChatResponse) {
+  if (res.raw != null && res.rawProtocol === 'anthropic') {
+    return res.raw;
+  }
   const content: Array<Record<string, unknown>> = [];
   if (res.content) {
     content.push({ type: 'text', text: res.content });

@@ -109,6 +109,9 @@ export function openAIToChatRequest(req: OpenAIChatCompletionRequest): ChatReque
 }
 
 export function chatResponseToOpenAI(res: ChatResponse) {
+  if (res.raw != null && res.rawProtocol === 'openai') {
+    return res.raw;
+  }
   const message: Record<string, unknown> = { role: 'assistant', content: res.content };
   if (res.tool_calls && res.tool_calls.length > 0) message.tool_calls = res.tool_calls;
   if (res.reasoning) message.reasoning = res.reasoning;

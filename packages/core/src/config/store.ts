@@ -162,6 +162,10 @@ function mapExtraSecrets(
       typeof proxy === 'string' && proxy ? transform(proxy) : proxy,
     );
   }
+  const goKeys = extra.goKeys;
+  if (Array.isArray(goKeys)) {
+    next.goKeys = goKeys.map((key) => (typeof key === 'string' && key ? transform(key) : key));
+  }
   return next;
 }
 
@@ -225,9 +229,7 @@ function encryptProviders(config: AppConfig, masterKey: Buffer): AppConfig {
           ? encryptString(clone.credentials.apiKey, masterKey)
           : clone.credentials.apiKey,
         apiKeys: mapKeyArray(clone.credentials.apiKeys, (value) => encryptString(value, masterKey)),
-        extra: mapExtraSecrets(clone.credentials.extra, (value) =>
-          encryptString(value, masterKey),
-        ),
+        extra: mapExtraSecrets(clone.credentials.extra, (value) => encryptString(value, masterKey)),
       };
     }
     providers[id as ProviderId] = clone;

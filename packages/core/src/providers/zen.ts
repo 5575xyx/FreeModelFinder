@@ -27,6 +27,7 @@ export class ZenProvider extends BaseProvider {
 
   private gateway: ZenGateway | undefined;
   private refreshed = false;
+  private cacheLoaded = false;
 
   override hasCredentials(): boolean {
     const extra = asRecord(this.ctx.credentials?.extra);
@@ -59,6 +60,10 @@ export class ZenProvider extends BaseProvider {
     });
   }
 
+  protected createGateway(options: ZenGatewayOptions): ZenGateway {
+    return createZenGateway(options);
+  }
+
   private gatewayInstance(): ZenGateway {
     if (!this.gateway) {
       const extra = asRecord(this.ctx.credentials?.extra) ?? {};
@@ -66,12 +71,19 @@ export class ZenProvider extends BaseProvider {
       if (this.ctx.fetchImpl) options.fetchImpl = this.ctx.fetchImpl;
       const httpClient = extra.httpClient as ZenHttpClient | undefined;
       if (httpClient) options.httpClient = httpClient;
-      this.gateway = createZenGateway(options);
+      this.gateway = this.createGateway(options);
     }
     return this.gateway;
   }
 
+  private async ensureCacheLoaded(gateway: ZenGateway): Promise<void> {
+    if (this.cacheLoaded) return;
+    await gateway.loadCache().catch(() => undefined);
+    this.cacheLoaded = true;
+  }
+
   private async ensureRefreshed(gateway: ZenGateway): Promise<void> {
+    await this.ensureCacheLoaded(gateway);
     if (this.refreshed) return;
     await gateway.refresh().catch(() => undefined);
     this.refreshed = true;
@@ -88,6 +100,7 @@ export class ZenProvider extends BaseProvider {
 
   async listModels(): Promise<ModelInfo[]> {
     const gateway = this.gatewayInstance();
+    await this.ensureCacheLoaded(gateway);
     await gateway.refresh().catch(() => undefined);
     this.refreshed = true;
     const { hasZen, hasGo, hasAnonymous } = this.routeFlags();
