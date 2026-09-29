@@ -1,10 +1,8 @@
 export type ProxyKind = 'direct' | 'http' | 'https' | 'socks5' | 'socks5h';
 
-export interface ProxySpec {
-  kind: ProxyKind;
-  url?: string;
-  label: string;
-}
+export type ProxySpec =
+  | { kind: 'direct'; label: string }
+  | { kind: 'http' | 'https' | 'socks5' | 'socks5h'; url: string; label: string };
 
 export function redactProxy(value: string): string {
   try {
@@ -30,16 +28,16 @@ export function parseProxy(raw: string): ProxySpec | null {
   } catch {
     return null;
   }
+  const redacted = redactProxy(value);
   switch (url.protocol) {
     case 'http:':
+      return { kind: 'http', url: value, label: redacted };
     case 'https:':
+      return { kind: 'https', url: value, label: redacted };
     case 'socks5:':
+      return { kind: 'socks5', url: value, label: redacted };
     case 'socks5h:':
-      return {
-        kind: url.protocol.slice(0, -1) as ProxyKind,
-        url: value,
-        label: redactProxy(value),
-      };
+      return { kind: 'socks5h', url: value, label: redacted };
     default:
       return null;
   }
@@ -79,7 +77,7 @@ export function parseProxyList(
   for (const raw of sources) {
     const spec = parseProxy(raw);
     if (!spec) continue;
-    const key = spec.url ?? 'direct';
+    const key = spec.kind === 'direct' ? 'direct' : spec.url;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(spec);

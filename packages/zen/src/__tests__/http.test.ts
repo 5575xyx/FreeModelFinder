@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { after, before, describe, it } from 'node:test';
+import { HttpProxyAgent } from 'http-proxy-agent';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 import { createNodeHttpClient, resolveAgent } from '../http.js';
 import { parseProxy } from '../proxy/spec.js';
 
@@ -62,11 +65,31 @@ describe('zen http client', () => {
     assert.equal(text, 'data: one\n\ndata: two\n\n');
   });
 
-  it('selects an agent per proxy kind and none for direct', () => {
-    assert.equal(resolveAgent(direct), undefined);
-    assert.ok(resolveAgent(parseProxy('http://127.0.0.1:7890')!));
-    assert.ok(resolveAgent(parseProxy('https://127.0.0.1:7890')!));
-    assert.ok(resolveAgent(parseProxy('socks5://127.0.0.1:1080')!));
-    assert.ok(resolveAgent(parseProxy('socks5h://127.0.0.1:1080')!));
+  it('rejects when the request is aborted before the response', async () => {
+    const client = createNodeHttpClient();
+    const controller = new AbortController();
+    const promise = client.send({
+      url: `http://127.0.0.1:${port}/echo`,
+      method: 'GET',
+      proxy: direct,
+      signal: controller.signal,
+    });
+    controller.abort();
+    await assert.rejects(promise);
+  });
+
+  it('selects an agent by target scheme and proxy kind', () => {
+    assert.equal(resolveAgent(direct, 'https://opencode.ai'), undefined);
+    assert.ok(
+      resolveAgent(parseProxy('http://p:1')!, 'https://opencode.ai') instanceof HttpsProxyAgent,
+    );
+    assert.ok(resolveAgent(parseProxy('http://p:1')!, 'http://x') instanceof HttpProxyAgent);
+    assert.ok(resolveAgent(parseProxy('https://p:1')!, 'http://x') instanceof HttpsProxyAgent);
+    assert.ok(
+      resolveAgent(parseProxy('socks5://p:1')!, 'https://opencode.ai') instanceof SocksProxyAgent,
+    );
+    assert.ok(
+      resolveAgent(parseProxy('socks5h://p:1')!, 'https://opencode.ai') instanceof SocksProxyAgent,
+    );
   });
 });

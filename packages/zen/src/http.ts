@@ -25,21 +25,31 @@ export interface ZenHttpClient {
   send(request: ZenHttpRequest): Promise<ZenHttpResponse>;
 }
 
-export function resolveAgent(proxy: ProxySpec): Agent | undefined {
-  switch (proxy.kind) {
-    case 'direct':
-      return undefined;
-    case 'http':
-      return new HttpProxyAgent(proxy.url as string);
-    case 'https':
-      return new HttpsProxyAgent(proxy.url as string);
-    case 'socks5':
-    case 'socks5h':
-      return new SocksProxyAgent(proxy.url as string);
+export function resolveAgent(proxy: ProxySpec, targetUrl: string): Agent | undefined {
+  if (proxy.kind === 'direct') return undefined;
+  if (proxy.kind === 'socks5' || proxy.kind === 'socks5h') {
+    return new SocksProxyAgent(proxy.url);
   }
+  if (targetUrl.startsWith('https:') || proxy.kind === 'https') {
+    return new HttpsProxyAgent(proxy.url);
+  }
+  return new HttpProxyAgent(proxy.url);
 }
 
 export function createNodeHttpClient(): ZenHttpClient {
+  const cache = new Map<string, Agent>();
+
+  const agentFor = (proxy: ProxySpec, targetUrl: string): Agent | undefined => {
+    if (proxy.kind === 'direct') return undefined;
+    const target = targetUrl.startsWith('https:') ? 'https' : 'http';
+    const key = `${proxy.kind}\u0000${proxy.url}\u0000${target}`;
+    const cached = cache.get(key);
+    if (cached) return cached;
+    const agent = resolveAgent(proxy, targetUrl);
+    if (agent) cache.set(key, agent);
+    return agent;
+  };
+
   return {
     send(request) {
       return new Promise<ZenHttpResponse>((resolve, reject) => {
@@ -50,7 +60,7 @@ export function createNodeHttpClient(): ZenHttpClient {
           {
             method: request.method,
             headers: request.headers,
-            agent: resolveAgent(request.proxy),
+            agent: agentFor(request.proxy, request.url),
             signal: request.signal,
           },
           (response) => {
