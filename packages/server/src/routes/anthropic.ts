@@ -137,25 +137,25 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
       for (const notice of preNotices) {
         write('fmf_route_notice', notice);
       }
-      write('content_block_start', {
-        type: 'content_block_start',
-        index: 0,
-        content_block: { type: 'text', text: '' },
-      });
-
-      let blockIndex = 0;
-      let blockKind: 'text' | 'tool_use' = 'text';
+      let blockIndex = -1;
+      let blockKind: 'text' | 'tool_use' | null = null;
+      let currentToolIndex: number | null = null;
       let sawToolCalls = false;
+      let chunkFinishReason: string | null = null;
 
       try {
         for await (const chunk of provider.stream(dispatchReq)) {
+          if (chunk.finish_reason) chunkFinishReason = chunk.finish_reason;
           if (chunk.tool_calls && chunk.tool_calls.length > 0) {
             sawToolCalls = true;
             for (const call of chunk.tool_calls) {
-              if (blockKind !== 'tool_use') {
-                write('content_block_stop', { type: 'content_block_stop', index: blockIndex });
+              if (blockKind !== 'tool_use' || currentToolIndex !== call.index) {
+                if (blockKind !== null) {
+                  write('content_block_stop', { type: 'content_block_stop', index: blockIndex });
+                }
                 blockIndex += 1;
                 blockKind = 'tool_use';
+                currentToolIndex = call.index;
                 write('content_block_start', {
                   type: 'content_block_start',
                   index: blockIndex,
@@ -179,9 +179,12 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
           }
           if (chunk.delta) {
             if (blockKind !== 'text') {
-              write('content_block_stop', { type: 'content_block_stop', index: blockIndex });
+              if (blockKind !== null) {
+                write('content_block_stop', { type: 'content_block_stop', index: blockIndex });
+              }
               blockIndex += 1;
               blockKind = 'text';
+              currentToolIndex = null;
               write('content_block_start', {
                 type: 'content_block_start',
                 index: blockIndex,
@@ -195,10 +198,22 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
             });
           }
         }
+        if (blockKind === null) {
+          blockIndex += 1;
+          blockKind = 'text';
+          write('content_block_start', {
+            type: 'content_block_start',
+            index: blockIndex,
+            content_block: { type: 'text', text: '' },
+          });
+        }
         write('content_block_stop', { type: 'content_block_stop', index: blockIndex });
         write('message_delta', {
           type: 'message_delta',
-          delta: { stop_reason: sawToolCalls ? 'tool_use' : 'end_turn' },
+          delta: {
+            stop_reason:
+              sawToolCalls || chunkFinishReason === 'tool_calls' ? 'tool_use' : 'end_turn',
+          },
           usage: { output_tokens: 0 },
         });
         const back = await router.maybeSwitchBack(chatReq.model);
