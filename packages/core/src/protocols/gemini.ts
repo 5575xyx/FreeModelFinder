@@ -1,9 +1,19 @@
-import type { ChatMessage, ChatRequest } from '../types.js';
+import type { ChatMessage, ChatRequest, ToolCall, ToolDefinition } from '../types.js';
 
 interface GeminiContentPart {
   text?: string;
   inlineData?: { mimeType?: string; data?: string };
   fileData?: { mimeType?: string; fileUri?: string };
+  functionCall?: { name?: string; args?: Record<string, unknown> };
+  functionResponse?: { name?: string; response?: unknown };
+}
+
+interface GeminiToolDeclaration {
+  functionDeclarations?: Array<{
+    name?: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  }>;
 }
 
 export interface GeminiHttpRequest {
@@ -12,12 +22,46 @@ export interface GeminiHttpRequest {
     parts: GeminiContentPart[];
   }>;
   systemInstruction?: { parts: Array<{ text: string }> };
+  tools?: GeminiToolDeclaration[];
   generationConfig?: {
     temperature?: number;
     topP?: number;
     maxOutputTokens?: number;
     stopSequences?: string[];
   };
+}
+
+function geminiToolsToDefinitions(tools: GeminiToolDeclaration[]): ToolDefinition[] {
+  const out: ToolDefinition[] = [];
+  for (const t of tools) {
+    for (const d of t.functionDeclarations ?? []) {
+      if (!d.name) continue;
+      out.push({
+        type: 'function',
+        function: {
+          name: d.name,
+          ...(d.description ? { description: d.description } : {}),
+          ...(d.parameters ? { parameters: d.parameters } : {}),
+        },
+      });
+    }
+  }
+  return out;
+}
+
+function geminiFunctionCalls(parts: GeminiContentPart[]): ToolCall[] | undefined {
+  const calls: ToolCall[] = [];
+  for (const p of parts) {
+    if (!p.functionCall?.name) continue;
+    calls.push({
+      type: 'function',
+      function: {
+        name: p.functionCall.name,
+        arguments: JSON.stringify(p.functionCall.args ?? {}),
+      },
+    });
+  }
+  return calls.length > 0 ? calls : undefined;
 }
 
 export function geminiToChatRequest(
@@ -33,6 +77,19 @@ export function geminiToChatRequest(
     });
   }
   for (const c of req.contents) {
+    const responses = c.parts.filter((p) => p.functionResponse?.name);
+    if (responses.length > 0) {
+      for (const r of responses) {
+        const fn = r.functionResponse!;
+        messages.push({
+          role: 'tool',
+          name: fn.name ?? '',
+          content: JSON.stringify(fn.response ?? {}),
+        });
+      }
+      continue;
+    }
+
     const text = c.parts
       .filter((p) => typeof p.text === 'string')
       .map((p) => p.text!)
@@ -56,12 +113,17 @@ export function geminiToChatRequest(
         parts.push({ type: 'text', text: p.text });
       }
     }
-    messages.push({
+    const entry: ChatMessage = {
       role: c.role === 'model' ? 'assistant' : 'user',
       content: text,
       contentParts: sawImage ? parts : undefined,
-    });
+    };
+    const calls = geminiFunctionCalls(c.parts);
+    if (calls) entry.tool_calls = calls;
+    messages.push(entry);
   }
+
+  const tools = req.tools ? geminiToolsToDefinitions(req.tools) : [];
   return {
     model,
     messages,
@@ -70,6 +132,9 @@ export function geminiToChatRequest(
     max_tokens: req.generationConfig?.maxOutputTokens,
     stop: req.generationConfig?.stopSequences,
     stream,
+    ...(tools.length > 0 ? { tools } : {}),
+    raw: req,
+    rawProtocol: 'gemini',
   };
 }
 

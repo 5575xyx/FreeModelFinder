@@ -11,6 +11,7 @@ import {
   streamChunkToOpenAI,
   type OpenAIChatCompletionRequest,
 } from '../protocols/openai.js';
+import { geminiToChatRequest, type GeminiHttpRequest } from '../protocols/gemini.js';
 import { ChatRequestSchema, type ChatResponse, type StreamChunk } from '../types.js';
 
 describe('tools typing', () => {
@@ -332,5 +333,48 @@ describe('anthropic outbound tool_use', () => {
     }) as { content: Array<Record<string, unknown>> };
     assert.deepEqual(payload.content[0], { type: 'text', text: 'let me check' });
     assert.equal((payload.content[1] as Record<string, unknown>).type, 'tool_use');
+  });
+});
+
+describe('gemini inbound tools', () => {
+  it('maps functionDeclarations, functionCall and functionResponse', () => {
+    const body = {
+      contents: [
+        { role: 'user', parts: [{ text: 'weather?' }] },
+        {
+          role: 'model',
+          parts: [{ functionCall: { name: 'get_weather', args: { city: 'SH' } } }],
+        },
+        {
+          role: 'user',
+          parts: [{ functionResponse: { name: 'get_weather', response: { r: 'sunny' } } }],
+        },
+      ],
+      tools: [{ functionDeclarations: [{ name: 'get_weather', parameters: { type: 'object' } }] }],
+      generationConfig: { temperature: 0.2 },
+    } as unknown as GeminiHttpRequest;
+
+    const out = geminiToChatRequest('m', body);
+    assert.equal(out.tools?.[0]?.function.name, 'get_weather');
+    assert.deepEqual(out.raw, body);
+    assert.equal(out.rawProtocol, 'gemini');
+
+    const modelMsg = out.messages.find((m) => m.role === 'assistant');
+    assert.equal(modelMsg?.tool_calls?.[0]?.function.name, 'get_weather');
+    assert.equal(modelMsg?.tool_calls?.[0]?.function.arguments, '{"city":"SH"}');
+
+    const fnResp = out.messages.find((m) => m.role === 'tool');
+    assert.equal(fnResp?.content, '{"r":"sunny"}');
+    assert.equal(fnResp?.name, 'get_weather');
+  });
+
+  it('captures raw and rawProtocol without tools', () => {
+    const body = {
+      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+    } as unknown as GeminiHttpRequest;
+    const out = geminiToChatRequest('m', body);
+    assert.equal(out.tools, undefined);
+    assert.deepEqual(out.raw, body);
+    assert.equal(out.rawProtocol, 'gemini');
   });
 });
