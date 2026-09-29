@@ -606,6 +606,15 @@ git commit -m "feat(zen): 流折叠、Anthropic thinking 编码与协议 barrel"
 
 - **P1-C3**：agent 形变（`prepareAnonymousBody`/`shapeKeyBody`）、`ForcedEffort`、stale-reasoning 重试。
 
+## 终审移交项（P1-C3 / P1-D / P1-E 必须承接）
+
+1. **流式同协议 `raw`/`rawProtocol` 未填充**（Important，计划缺口）：`StreamChunk.raw` 字段已定义但 `stream.ts` 无赋值点；spec「响应侧 raw 载体」要求流式同协议时回填原始 SSE 行。需在 P1-E 接线消费方之前补齐。
+2. **Anthropic `thinking` 的 `signature` 不承载**（Important，显式有损）：`ZenChatMessage.reasoning`/`ZenChatResponse.reasoning` 均为纯字符串，`signature_delta` 与块内 `signature` 丢弃；同协议靠 `raw` 保真，跨协议重放可能被 Anthropic 拒绝无签名 thinking。需扩展 core/zen 类型或明确记为有损。
+3. **Responses 流式的 `output_item.done` reasoning 与 `function_call_arguments.done` 兜底**（Minor）。
+4. **`output_item` 关联键**：当前仅用 `output_index`，Go 用 `item.id ?? item_id ?? output_index`（`stream_parser.go:354-364`）；同 index 复用边界可能错配。
+5. **chat 非流式在 `choices` 非空时忽略 `error`**（Minor，流式侧已修）。
+6. **chat 空 content 回退 reasoning**（计划 R1 指定，偏离 Go，会让客户端收到重复内容）。
+
 ## 自查记录
 
 1. **Spec 覆盖**：spec「中间表示策略」响应侧（同协议 `raw` 回流 + 跨协议结构化）由 R1–R3 落地；SSE（`stream.go` 族）由 R4；非流式折叠（`collapse.go`）由 R5；C1 移交的 Anthropic `thinking` 双向由 R2 + R5 落地。
