@@ -39,6 +39,14 @@ function cloneTierBooleans(
   return out;
 }
 
+function copyMetadata(md: ZenModelMetadata): ZenModelMetadata {
+  return {
+    ...md,
+    ...(md.inputModalities ? { inputModalities: [...md.inputModalities] } : {}),
+    ...(md.outputModalities ? { outputModalities: [...md.outputModalities] } : {}),
+  };
+}
+
 function cloneTierMetadata(
   source: Partial<Record<ZenTier, Record<string, ZenModelMetadata>>> | undefined,
 ): Record<ZenTier, Map<string, ZenModelMetadata>> {
@@ -46,7 +54,7 @@ function cloneTierMetadata(
   for (const tier of TIERS) {
     const layer = source?.[tier];
     if (!layer) continue;
-    for (const [model, md] of Object.entries(layer)) out[tier].set(model, md);
+    for (const [model, md] of Object.entries(layer)) out[tier].set(model, copyMetadata(md));
   }
   return out;
 }
@@ -91,9 +99,24 @@ export class ZenCatalog {
   replace(capabilities: CatalogCapabilities): void {
     this.zen = toSet(capabilities.zen, this.zen);
     this.go = toSet(capabilities.go, this.go);
-    if (capabilities.native) this.nativeProtocols = cloneTierProtocols(capabilities.native);
-    if (capabilities.unsupported) this.unsupported = cloneTierBooleans(capabilities.unsupported);
-    if (capabilities.metadata) this.metadata = cloneTierMetadata(capabilities.metadata);
+    if (capabilities.native) {
+      for (const tier of TIERS) {
+        const layer = capabilities.native[tier];
+        if (layer) this.nativeProtocols[tier] = new Map(Object.entries(layer));
+      }
+    }
+    if (capabilities.unsupported) {
+      for (const tier of TIERS) {
+        const layer = capabilities.unsupported[tier];
+        if (!layer) continue;
+        const set = new Set<string>();
+        for (const [model, value] of Object.entries(layer)) if (value) set.add(model);
+        this.unsupported[tier] = set;
+      }
+    }
+    if (capabilities.metadata) {
+      this.metadata = cloneTierMetadata(capabilities.metadata);
+    }
     this.updatedAt = Date.now();
     this.cacheSource = 'live';
     this.stale = false;
@@ -113,7 +136,8 @@ export class ZenCatalog {
   }
 
   metadataForTier(model: string, tier: ZenTier): ZenModelMetadata | undefined {
-    return this.metadata[tier].get(model);
+    const md = this.metadata[tier].get(model);
+    return md ? copyMetadata(md) : undefined;
   }
 
   snapshot(): CatalogSnapshot {

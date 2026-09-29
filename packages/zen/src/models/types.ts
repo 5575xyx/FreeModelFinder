@@ -53,4 +53,4 @@ export interface CatalogCapabilities {
   metadata?: Partial<Record<ZenTier, Record<string, ZenModelMetadata>>>;
 }
 
-export const TIERS: ZenTier[] = ['zen', 'go'];
+export const TIERS: readonly ZenTier[] = ['zen', 'go'];

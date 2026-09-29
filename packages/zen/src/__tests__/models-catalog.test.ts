@@ -56,4 +56,40 @@ describe('zen catalog state', () => {
     });
     assert.equal(c.supported('x'), false);
   });
+
+  it('preserves tiers omitted from an incremental replace', () => {
+    const c = new ZenCatalog('zen', {});
+    c.replace({
+      zen: ['a'],
+      go: ['b'],
+      native: { zen: { a: 'chat' }, go: { b: 'responses' } },
+      unsupported: { zen: {}, go: {} },
+      metadata: { zen: {}, go: {} },
+    });
+    c.replace({ zen: ['a', 'c'], native: { zen: { a: 'chat', c: 'chat' } } });
+    assert.equal(c.protocolFor('b', 'go'), 'responses');
+    assert.equal(c.supported('b'), true);
+  });
+
+  it('does not leak metadata mutations in or out', () => {
+    const c = new ZenCatalog('zen', {});
+    const md = { contextWindow: 1000 };
+    c.replace({
+      zen: ['a'],
+      native: { zen: { a: 'chat' } },
+      metadata: { zen: { a: md } },
+    });
+    md.contextWindow = 999;
+    assert.equal(c.metadataForTier('a', 'zen')?.contextWindow, 1000);
+    const returned = c.metadataForTier('a', 'zen');
+    if (returned) returned.contextWindow = 777;
+    assert.equal(c.metadataForTier('a', 'zen')?.contextWindow, 1000);
+  });
+
+  it('reports exposed and cacheSource in the snapshot', () => {
+    const c = catalog();
+    const snap = c.snapshot();
+    assert.equal(snap.exposed, 3);
+    assert.equal(snap.cacheSource, 'live');
+  });
 });
