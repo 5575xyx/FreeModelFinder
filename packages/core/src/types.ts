@@ -237,6 +237,7 @@ export interface ProviderSettings {
   enabled: boolean;
   credentials?: ProviderCredentials;
   credentialError?: string;
+  dynamicModels?: boolean;
 }
 
 export interface GatewayKeyEntry {

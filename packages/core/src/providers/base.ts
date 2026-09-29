@@ -17,6 +17,7 @@ export interface ProviderContext {
   credentials: ProviderCredentials;
   credentialRuntime?: CredentialRuntime;
   fetchImpl?: typeof fetch;
+  dynamicModels?: boolean;
   onResponse?: (event: {
     provider: ProviderId;
     model: string;

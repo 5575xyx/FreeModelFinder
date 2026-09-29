@@ -189,6 +189,7 @@ export class ProviderRegistry {
     const instance = new Ctor({
       credentials: settings?.credentials ?? { apiKey: '' },
       credentialRuntime: this.credentialRuntimeFor(id),
+      dynamicModels: settings?.dynamicModels,
       onResponse: (event) => this.quotaTracker.recordResponse(event),
       onUsage: (event) => {
         this.quotaTracker.recordUsage(event);

@@ -11,6 +11,7 @@ process.env.FREEMODELFINDER_HOME = testHome;
 const { createTestRuntime } = await import('../../credentials/runtime.js');
 const { loadPools } = await import('../../credentials/credential-store.js');
 const { ClineProvider, ClineError } = await import('../cline.js');
+const { __resetCatalogCacheForTests } = await import('../cline-catalog.js');
 const { parseRateLimitError } = await import('../../router/auto-router.js');
 
 type TestRuntime = ReturnType<typeof createTestRuntime>;
@@ -180,11 +181,13 @@ function brokenStreamResponse(firstDelta: string): Response {
 function makeProvider(
   fetchImpl: typeof fetch,
   runtime: TestRuntime,
+  dynamicModels?: boolean,
 ): InstanceType<typeof ClineProvider> {
   return new ClineProvider({
     credentials: { apiKey: '' },
     credentialRuntime: runtime,
     fetchImpl,
+    dynamicModels,
   });
 }
 
@@ -1064,5 +1067,136 @@ describe('ClineProvider chat and stream fixtures', () => {
     );
     assert.ok(models.every((model) => model.provider === 'cline'));
     assert.ok(models.every((model) => model.free === true));
+  });
+});
+
+describe('ClineProvider dynamic model catalog', () => {
+  beforeEach(async () => {
+    __resetCatalogCacheForTests();
+    await resetHome();
+  });
+
+  const builtinIds = [
+    'cline:cline-free/deepseek-v4.1-flash',
+    'cline:deepseek/deepseek-v4-flash',
+    'cline:z-ai/glm-5.3-flash',
+    'cline:poolside/laguna-s-2.1:free',
+  ];
+
+  it('unions the upstream free catalog with the built-in models', async () => {
+    const runtime = newRuntime();
+    const { fetchImpl } = harness(() =>
+      json({
+        free: [
+          {
+            id: 'cline-free/deepseek-v4.1-flash',
+            name: 'DeepSeek V4.1 Flash',
+            description: 'upstream flash entry',
+            context_length: 131_072,
+          },
+          { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5', context_length: 262_144 },
+        ],
+      }),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const models = await provider.listModels();
+    assert.deepEqual(
+      models.map((model) => model.id),
+      [
+        'cline:cline-free/deepseek-v4.1-flash',
+        'cline:moonshotai/kimi-k2.5',
+        'cline:deepseek/deepseek-v4-flash',
+        'cline:z-ai/glm-5.3-flash',
+        'cline:poolside/laguna-s-2.1:free',
+      ],
+    );
+    const overlap = models[0];
+    assert.equal(overlap?.displayName, 'DeepSeek V4.1 Flash');
+    assert.equal(overlap?.description, 'upstream flash entry');
+    assert.equal(overlap?.contextWindow, 131_072);
+    assert.equal(overlap?.free, true);
+    assert.equal(overlap?.provider, 'cline');
+  });
+
+  it('keeps every built-in model when the upstream free group drops them', async () => {
+    const runtime = newRuntime();
+    const { fetchImpl } = harness(() =>
+      json({ free: [{ id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' }] }),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const models = await provider.listModels();
+    const ids = models.map((model) => model.id);
+    for (const builtin of builtinIds) {
+      assert.ok(ids.includes(builtin), `${builtin} must stay in the catalog`);
+    }
+    assert.equal(models.length, builtinIds.length + 1);
+  });
+
+  it('returns only the built-in models without fetching when dynamicModels is off', async () => {
+    const runtime = newRuntime();
+    const { calls, fetchImpl } = harness(() =>
+      json({ free: [{ id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' }] }),
+    );
+    const provider = makeProvider(fetchImpl, runtime, false);
+
+    const models = await provider.listModels();
+    assert.deepEqual(
+      models.map((model) => model.id),
+      builtinIds,
+    );
+    assert.equal(calls.length, 0);
+  });
+
+  it('falls back to the built-in models when the upstream catalog request fails', async () => {
+    const runtime = newRuntime();
+    const { fetchImpl } = harness(() => {
+      throw new TypeError('network down');
+    });
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const models = await provider.listModels();
+    assert.deepEqual(
+      models.map((model) => model.id),
+      builtinIds,
+    );
+  });
+
+  it('maps upstream metadata onto ModelInfo fields', async () => {
+    const runtime = newRuntime();
+    const { fetchImpl } = harness(() =>
+      json({
+        free: [
+          {
+            id: 'moonshotai/kimi-k2.5',
+            name: 'Kimi K2.5',
+            description: 'flagship',
+            context_length: 262_144,
+          },
+          { id: 'upstream/no-context', name: 'No Context', context_length: 0 },
+          { id: 'upstream/bare' },
+        ],
+      }),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const models = await provider.listModels();
+    const rich = models.find((model) => model.id === 'cline:moonshotai/kimi-k2.5');
+    assert.equal(rich?.displayName, 'Kimi K2.5');
+    assert.equal(rich?.description, 'flagship');
+    assert.equal(rich?.contextWindow, 262_144);
+    assert.equal(rich?.free, true);
+    assert.equal(rich?.provider, 'cline');
+    assert.deepEqual(rich?.capabilities, ['text']);
+
+    const noContext = models.find((model) => model.id === 'cline:upstream/no-context');
+    assert.equal(noContext?.displayName, 'No Context');
+    assert.equal(noContext?.contextWindow, undefined);
+
+    const bare = models.find((model) => model.id === 'cline:upstream/bare');
+    assert.equal(bare?.displayName, 'upstream/bare');
+    assert.equal(bare?.description, undefined);
+    assert.equal(bare?.contextWindow, undefined);
   });
 });

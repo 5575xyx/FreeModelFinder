@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { CredentialRuntime } from '../../credentials/runtime.js';
 import type { BaseProvider } from '../../providers/base.js';
+import { __resetCatalogCacheForTests } from '../../providers/cline-catalog.js';
 import { ProviderRegistry, resetAutoPoolCursor } from '../../registry.js';
 import { composeModelId, bareModelId } from '../../model-id.js';
 import { parseRateLimitError } from '../../router/auto-router.js';
@@ -712,7 +713,14 @@ describe('ProviderRegistry cline credential seams', () => {
 
   it('warms the credential pool before aggregating models', async () => {
     const stub = stubRuntime(true);
-    const registry = new ProviderRegistry(clineConfig(true), undefined, undefined, stub.runtime);
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        cline: { enabled: true, credentials: { apiKey: '' }, dynamicModels: false },
+      }),
+      undefined,
+      undefined,
+      stub.runtime,
+    );
     const result = await registry.listAllModels(true);
     assert.ok(stub.getCalls() > 0, 'listAllModels must warm cline credentials first');
     assert.deepEqual(result.succeededProviders, ['cline']);
@@ -725,6 +733,57 @@ describe('ProviderRegistry cline credential seams', () => {
         'cline:poolside/laguna-s-2.1:free',
       ],
     );
+  });
+
+  it('injects dynamicModels from provider settings into the cline provider context', async () => {
+    __resetCatalogCacheForTests();
+    const off = new ProviderRegistry(
+      configWithProviders({
+        cline: { enabled: true, credentials: { apiKey: '' }, dynamicModels: false },
+      }),
+      undefined,
+      undefined,
+      stubRuntime(true).runtime,
+    );
+    const originalFetch = globalThis.fetch;
+    let fetchCount = 0;
+    globalThis.fetch = (async () => {
+      fetchCount += 1;
+      return new Response('{}', { status: 500 });
+    }) as typeof fetch;
+    try {
+      const offModels = await off.getProvider('cline').listModels();
+      assert.equal(fetchCount, 0, 'dynamicModels: false must short-circuit before any fetch');
+      assert.deepEqual(
+        offModels.map((model) => model.id),
+        [
+          'cline:cline-free/deepseek-v4.1-flash',
+          'cline:deepseek/deepseek-v4-flash',
+          'cline:z-ai/glm-5.3-flash',
+          'cline:poolside/laguna-s-2.1:free',
+        ],
+      );
+
+      const byDefault = new ProviderRegistry(
+        clineConfig(true),
+        undefined,
+        undefined,
+        stubRuntime(true).runtime,
+      );
+      const defaultModels = await byDefault.getProvider('cline').listModels();
+      assert.equal(fetchCount, 1, 'an unset switch must default to dynamic');
+      assert.deepEqual(
+        defaultModels.map((model) => model.id),
+        [
+          'cline:cline-free/deepseek-v4.1-flash',
+          'cline:deepseek/deepseek-v4-flash',
+          'cline:z-ai/glm-5.3-flash',
+          'cline:poolside/laguna-s-2.1:free',
+        ],
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('routes canonical cline ids without a double prefix', () => {

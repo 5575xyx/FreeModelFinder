@@ -11,6 +11,8 @@ import type {
   StreamChunk,
 } from '../types.js';
 import { BaseProvider } from './base.js';
+import type { ClineCatalogModel } from './cline-catalog.js';
+import { listClineCatalogModels } from './cline-catalog.js';
 import { toOpenAIMessages } from './openai-messages.js';
 
 const REFRESH_URL = 'https://api.cline.bot/api/v1/auth/refresh';
@@ -202,6 +204,17 @@ function framesFromText(text: string): SseFrame[] {
   return frames;
 }
 
+function dedupeById(models: ClineCatalogModel[]): ClineCatalogModel[] {
+  const seen = new Set<string>();
+  const merged: ClineCatalogModel[] = [];
+  for (const model of models) {
+    if (seen.has(model.id)) continue;
+    seen.add(model.id);
+    merged.push(model);
+  }
+  return merged;
+}
+
 export class ClineProvider extends BaseProvider {
   readonly id: ProviderId = 'cline';
   readonly displayName = 'Cline';
@@ -214,10 +227,17 @@ export class ClineProvider extends BaseProvider {
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    return BUILTIN_MODELS.map((id): ModelInfo => ({
-      id: `cline:${id}`,
+    const dynamic = await listClineCatalogModels({
+      dynamicModels: this.ctx.dynamicModels,
+      fetchImpl: this.ctx.fetchImpl,
+    });
+    const merged = dedupeById([...(dynamic ?? []), ...BUILTIN_MODELS.map((id) => ({ id }))]);
+    return merged.map((model): ModelInfo => ({
+      id: `cline:${model.id}`,
       provider: 'cline',
-      displayName: id,
+      displayName: model.name ?? model.id,
+      ...(model.description === undefined ? {} : { description: model.description }),
+      ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
       free: true,
       capabilities: ['text'],
     }));
