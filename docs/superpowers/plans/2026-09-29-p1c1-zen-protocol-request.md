@@ -692,6 +692,13 @@ git commit -m "feat(zen): prepareRequest 分派与同协议 raw 短路"
 - **P1-C2**：响应转换（upstream body → `ChatResponse`，并填充 `raw`/`rawProtocol`）+ SSE 解析/重发 + 非流式折叠。
 - **P1-C3**：agent 形变（`prepareAnonymousBody`/`shapeKeyBody`）、`ForcedEffort`、stale-reasoning 重试。
 
+## 终审移交项（P1-C2/C3 必须承接）
+
+1. **Anthropic 跨协议 reasoning 历史**（终审 Important）：`anthropic.ts` 目前不把 assistant 的 `reasoning` 编码为 Anthropic `thinking` 块（Go `content.go:286-292` 会）。因 `ZenChatMessage.reasoning` 是无 `signature` 的纯文本，直接产出 `thinking` 块可能被 Anthropic 拒绝；正确做法依赖 **P1-C2 的响应侧 reasoning 表示**（是否保留 `signature`/`encrypted`），故归入 P1-C2/C3。
+2. **`ZenProtocol` 与 config 的 `ZenNativeProtocol` 取值重复**（Minor）：建议后续别名复用，避免漂移。
+3. **Chat/Responses 的 `stream` 字段**：Go 恒写入，当前仅在 `!== undefined` 时写入（行为等价，记录）。
+4. **chat 工具未规范化**（Minor）：Go 恒补 `{type:'function',function:{name,parameters:schemaOrDefault}}`；当前原样透传。
+
 ## 自查记录
 
 1. **Spec 覆盖**：spec「中间表示策略」的请求侧（同协议 `raw` 零损 + 跨协议结构化）由 C1–C5 落地；响应侧 `raw` 载体由 C0 落地（决策已写入 spec）；响应转换/SSE 明确归属 P1-C2，agent 形变等归属 P1-C3。
