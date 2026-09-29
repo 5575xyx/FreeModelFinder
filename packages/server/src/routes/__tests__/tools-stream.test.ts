@@ -139,6 +139,13 @@ describe('anthropic sse tool blocks', () => {
     const kinds = [...out.matchAll(/"content_block":\{"type":"(text|tool_use)"/g)].map((m) => m[1]);
     assert.deepEqual(kinds, ['text', 'tool_use', 'text']);
   });
+
+  it('maps a length finish reason to max_tokens', async () => {
+    const out = await collect([
+      { id: 'x', model: 'm', created: 1, delta: 'x', finish_reason: 'length' },
+    ]);
+    assert.ok(out.includes('"stop_reason":"max_tokens"'));
+  });
 });
 
 async function collectGeminiStream(chunks: StreamChunk[]): Promise<string> {

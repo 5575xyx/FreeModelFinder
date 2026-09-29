@@ -212,7 +212,11 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
           type: 'message_delta',
           delta: {
             stop_reason:
-              sawToolCalls || chunkFinishReason === 'tool_calls' ? 'tool_use' : 'end_turn',
+              sawToolCalls || chunkFinishReason === 'tool_calls'
+                ? 'tool_use'
+                : chunkFinishReason === 'length'
+                  ? 'max_tokens'
+                  : 'end_turn',
           },
           usage: { output_tokens: 0 },
         });

@@ -1,4 +1,4 @@
-import type { ChatMessage } from '../types.js';
+import type { ChatMessage, ChatRequest } from '../types.js';
 
 export interface OpenAIMessageOut {
   role: string;
@@ -29,4 +29,11 @@ export function toOpenAIMessages(messages: ChatMessage[]): OpenAIMessageOut[] {
     }
     return { role: m.role, content: m.content, ...extras };
   });
+}
+
+export function toUpstreamChatFields(req: ChatRequest): Record<string, unknown> {
+  const fields: Record<string, unknown> = { ...req };
+  delete fields.raw;
+  delete fields.rawProtocol;
+  return fields;
 }

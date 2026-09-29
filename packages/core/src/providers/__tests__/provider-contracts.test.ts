@@ -344,4 +344,34 @@ describe('openai-compatible reasoning field', () => {
     assert.equal(seen[0]?.delta, 'step one');
     assert.equal(seen[1]?.delta, 'answer');
   });
+
+  it('does not send raw or rawProtocol upstream', async () => {
+    let captured = '';
+    const provider = new ReasoningProbeProvider({
+      credentials: { apiKey: 'k' },
+      fetchImpl: (async (_url: string, init?: RequestInit) => {
+        captured = String(init?.body ?? '');
+        return new Response(
+          JSON.stringify({
+            id: 'x',
+            model: 'm',
+            created: 1,
+            choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }) as typeof fetch,
+    });
+    await provider.chat({
+      model: 'm',
+      messages: [],
+      tools: [{ type: 'function', function: { name: 'f' } }],
+      raw: { secret: 1 },
+      rawProtocol: 'openai',
+    });
+    const body = JSON.parse(captured) as Record<string, unknown>;
+    assert.equal('raw' in body, false);
+    assert.equal('rawProtocol' in body, false);
+    assert.deepEqual(body.tools, [{ type: 'function', function: { name: 'f' } }]);
+  });
 });

@@ -338,6 +338,18 @@ describe('anthropic outbound tool_use', () => {
     assert.deepEqual(payload.content[0], { type: 'text', text: 'let me check' });
     assert.equal((payload.content[1] as Record<string, unknown>).type, 'tool_use');
   });
+
+  it('does not duplicate reasoning-only text as a second block', () => {
+    const payload = chatResponseToAnthropic({
+      id: 'm',
+      model: 'm',
+      created: 1,
+      content: 'think',
+      reasoning: 'think',
+      finish_reason: 'stop',
+    }) as { content: Array<Record<string, unknown>> };
+    assert.deepEqual(payload.content, [{ type: 'text', text: 'think' }]);
+  });
 });
 
 describe('gemini inbound tools', () => {
