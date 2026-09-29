@@ -39,11 +39,21 @@ describe('zen key pool', () => {
       maxAttempts: 3,
     });
     const node = pool.all()[0]!;
-    pool.markFailure(node, 429, undefined, Date.now() + 120_000);
-    assert.equal(pool.inCooldown(node, Date.now()), true);
+    const now = Date.now();
+    pool.markFailure(node, 429, undefined, 120_000);
+    assert.equal(pool.inCooldown(node, now), true);
+    const earliest = pool.earliestCooldown(now);
+    assert.ok(earliest !== undefined);
+    assert.ok(earliest <= now + 300_000 && earliest >= now + 120_000);
     const cursor = pool.cursorFor('s');
     const next = cursor.next();
     assert.notEqual(next?.keyId, node.keyId);
+  });
+
+  it('rejects an empty proxy list', () => {
+    assert.throws(
+      () => new ZenKeyPool(['k1'], [], client, { cooldownBaseMs: 1000, maxAttempts: 3 }),
+    );
   });
 
   it('reports the earliest cooldown when every key is cooling', () => {

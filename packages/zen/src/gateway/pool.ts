@@ -126,6 +126,9 @@ export class ZenKeyPool {
     client: ZenHttpClient,
     options: ZenKeyPoolOptions,
   ) {
+    if (proxies.length === 0) {
+      throw new Error('zen key pool requires at least one proxy');
+    }
     this.cooldownBaseMs = options.cooldownBaseMs;
     this.maxAttempts = options.maxAttempts;
     const transports = proxies.map((spec) => createZenProxyTransport(spec, client));
