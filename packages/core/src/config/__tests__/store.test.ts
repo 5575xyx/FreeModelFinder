@@ -100,6 +100,56 @@ describe('configuration encryption and migration', () => {
     }
   });
 
+  it('encrypts and round-trips extra.proxies credentials', async () => {
+    const proxies = ['direct', 'http://proxy-user:proxy-pass@proxy.example:8080'];
+    const config = baseConfig();
+    config.providers.opencode = {
+      enabled: true,
+      credentials: { apiKey: '', extra: { proxies } },
+    };
+
+    await saveConfig(config);
+
+    const raw = await readFile(CONFIG_PATH, 'utf8');
+    assert.doesNotMatch(raw, /proxy-user:proxy-pass/);
+    assert.doesNotMatch(raw, /proxy\.example:8080/);
+    assert.doesNotMatch(raw, /"direct"/);
+    const persisted = JSON.parse(raw) as AppConfig;
+    const persistedProxies = (
+      persisted.providers.opencode?.credentials?.extra as { proxies?: unknown[] }
+    ).proxies;
+    assert.ok(Array.isArray(persistedProxies));
+    assert.equal(persistedProxies.length, proxies.length);
+    assert.ok(persistedProxies.every((value) => typeof value === 'string' && looksEncrypted(value)));
+
+    const loaded = await loadConfig();
+    const loadedProxies = (
+      loaded.providers.opencode?.credentials?.extra as { proxies?: string[] }
+    ).proxies;
+    assert.deepEqual(loadedProxies, proxies);
+    const sources = loaded.providers.custom?.credentials?.extra?.sources as Array<{
+      apiKey: string;
+    }>;
+    assert.equal(sources[0]?.apiKey, 'custom-source-secret');
+  });
+
+  it('keeps reading legacy plaintext proxies (backward compatible)', async () => {
+    await saveConfig(baseConfig());
+    const legacyProxies = ['http://legacy-user:legacy-pass@proxy.example:3128'];
+    const raw = JSON.parse(await readFile(CONFIG_PATH, 'utf8')) as AppConfig;
+    raw.providers.opencode = {
+      enabled: true,
+      credentials: { apiKey: '', extra: { proxies: legacyProxies } },
+    };
+    await writeFile(CONFIG_PATH, JSON.stringify(raw, null, 2), { mode: 0o600 });
+
+    const loaded = await loadConfig();
+    const loadedProxies = (
+      loaded.providers.opencode?.credentials?.extra as { proxies?: string[] }
+    ).proxies;
+    assert.deepEqual(loadedProxies, legacyProxies);
+  });
+
   it('keeps v3 payloads bound to their random master key', () => {
     const key = randomBytes(32);
     const otherKey = randomBytes(32);

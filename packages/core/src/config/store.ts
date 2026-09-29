@@ -135,16 +135,15 @@ export async function loadMasterKey(): Promise<Buffer> {
   }
 }
 
-function mapCustomSourceKeys(
+function mapExtraSecrets(
   extra: Record<string, unknown> | undefined,
   transform: (value: string) => string,
 ): Record<string, unknown> | undefined {
   if (!extra) return extra;
+  const next: Record<string, unknown> = { ...extra };
   const sources = extra.sources;
-  if (!Array.isArray(sources)) return { ...extra };
-  return {
-    ...extra,
-    sources: sources.map((source) => {
+  if (Array.isArray(sources)) {
+    next.sources = sources.map((source) => {
       if (!source || typeof source !== 'object') return source;
       const clone = { ...(source as Record<string, unknown>) };
       if (Array.isArray(clone.apiKey)) {
@@ -155,8 +154,15 @@ function mapCustomSourceKeys(
         clone.apiKey = transform(clone.apiKey);
       }
       return clone;
-    }),
-  };
+    });
+  }
+  const proxies = extra.proxies;
+  if (Array.isArray(proxies)) {
+    next.proxies = proxies.map((proxy) =>
+      typeof proxy === 'string' && proxy ? transform(proxy) : proxy,
+    );
+  }
+  return next;
 }
 
 function mapKeyArray(
@@ -219,7 +225,7 @@ function encryptProviders(config: AppConfig, masterKey: Buffer): AppConfig {
           ? encryptString(clone.credentials.apiKey, masterKey)
           : clone.credentials.apiKey,
         apiKeys: mapKeyArray(clone.credentials.apiKeys, (value) => encryptString(value, masterKey)),
-        extra: mapCustomSourceKeys(clone.credentials.extra, (value) =>
+        extra: mapExtraSecrets(clone.credentials.extra, (value) =>
           encryptString(value, masterKey),
         ),
       };
@@ -304,7 +310,7 @@ function decryptProviders(
       try {
         clone.credentials = {
           ...clone.credentials,
-          extra: mapCustomSourceKeys(clone.credentials.extra, (value) =>
+          extra: mapExtraSecrets(clone.credentials.extra, (value) =>
             decryptSecret(value, masterKey),
           ),
         };
@@ -314,7 +320,7 @@ function decryptProviders(
         clone.credentialError = `custom source key decryption failed: ${reason}. Please re-enter the API key in Settings.`;
         clone.credentials = {
           ...clone.credentials,
-          extra: mapCustomSourceKeys(clone.credentials.extra, () => ''),
+          extra: mapExtraSecrets(clone.credentials.extra, () => ''),
         };
       }
     }
