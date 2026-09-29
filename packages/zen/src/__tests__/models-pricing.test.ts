@@ -21,7 +21,8 @@ const FIXTURE = {
 const EXTRA = {
   other: { id: 'other', models: { skip: { id: 'skip' } } },
   'my-opencode-custom': {
-    id: 'my-opencode-custom',
+    id: '',
+    name: 'my-opencode-custom',
     models: { alias: { id: 'alias', cost: { input: 0, output: 0 } } },
   },
 };
@@ -110,6 +111,22 @@ describe('models.dev edge cases', () => {
       })['d']?.deprecated,
       true,
     );
+  });
+
+  it('ignores non-string and padded status values', () => {
+    const decoded = decodeModelsDev({
+      opencode: {
+        id: 'opencode',
+        models: {
+          a: { id: 'a', status: 123, lifecycle: 'retired' },
+          b: { id: 'b', status: '  ', lifecycle: 'deprecated' },
+          c: { id: 'c', status: '  deprecated  ' },
+        },
+      },
+    });
+    assert.equal(decoded['a']?.deprecated, true);
+    assert.equal(decoded['b']?.deprecated, true);
+    assert.equal(decoded['c']?.deprecated, true);
   });
 
   it('surfaces errors and staleness in the snapshot', () => {

@@ -37,7 +37,10 @@ function isDeprecated(model: Record<string, unknown>): boolean {
 
 function firstNonEmptyString(...values: unknown[]): string {
   for (const value of values) {
-    if (typeof value === 'string' && value.trim()) return value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) return trimmed;
+    }
   }
   return '';
 }
