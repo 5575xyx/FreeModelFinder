@@ -43,6 +43,41 @@ describe('zen chat response parsing', () => {
     assert.equal(res.content, 'think');
     assert.equal(res.reasoning, 'think');
   });
+
+  it('joins array content parts', () => {
+    const res = parseChatResponse({
+      id: 'x',
+      model: 'm',
+      created: 1,
+      choices: [
+        {
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: 'hi' },
+              { type: 'text', text: '!' },
+            ],
+          },
+          finish_reason: 'stop',
+        },
+      ],
+    });
+    assert.equal(res.content, 'hi!');
+  });
+
+  it('maps legacy function_call finish reason to tool_calls', () => {
+    const res = parseChatResponse({
+      id: 'x',
+      model: 'm',
+      created: 1,
+      choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'function_call' }],
+    });
+    assert.equal(res.finish_reason, 'tool_calls');
+  });
+
+  it('throws when choices are empty, surfacing the upstream error message', () => {
+    assert.throws(() => parseChatResponse({ id: 'x', error: { message: 'boom' } }), /boom/);
+  });
 });
 
 describe('zen convertResponse raw passthrough', () => {

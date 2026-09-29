@@ -20,6 +20,21 @@ function num(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
+function decodeContent(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => {
+        const record = asRecord(part);
+        return record && (record['type'] === 'text' || record['type'] === 'output_text')
+          ? (str(record['text']) ?? '')
+          : '';
+      })
+      .join('');
+  }
+  return '';
+}
+
 function parseUsage(value: unknown): ZenUsage | undefined {
   const usage = asRecord(value);
   if (!usage) return undefined;
@@ -59,15 +74,23 @@ const FINISH = new Set(['stop', 'length', 'tool_calls', 'content_filter']);
 
 function finishReason(value: unknown): ZenChatResponse['finish_reason'] {
   const v = str(value);
+  if (v === 'function_call') return 'tool_calls';
   return v && FINISH.has(v) ? (v as ZenChatResponse['finish_reason']) : null;
 }
 
 export function parseChatResponse(body: unknown): ZenChatResponse {
   const payload = asRecord(body) ?? {};
   const choices = Array.isArray(payload['choices']) ? (payload['choices'] as unknown[]) : [];
+  if (choices.length === 0) {
+    const error = asRecord(payload['error']);
+    const message = error
+      ? (str(error['message']) ?? 'upstream returned no choices')
+      : 'upstream returned no choices';
+    throw new Error(message);
+  }
   const choice = asRecord(choices[0]) ?? {};
   const message = asRecord(choice['message']) ?? {};
-  const primary = str(message['content']) ?? '';
+  const primary = decodeContent(message['content']);
   const reasoning = str(message['reasoning_content']) ?? str(message['reasoning']) ?? '';
   const tool_calls = parseToolCalls(message['tool_calls']);
   const usage = parseUsage(payload['usage']);
