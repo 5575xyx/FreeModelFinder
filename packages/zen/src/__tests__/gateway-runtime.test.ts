@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { describe, it } from 'node:test';
 import { normalizeZenConfig, type ZenConfig } from '../config/index.js';
@@ -88,6 +91,13 @@ function fixedFetch(): typeof fetch {
   return impl as unknown as typeof fetch;
 }
 
+function failingFetch(): typeof fetch {
+  const impl = async (): Promise<Response> => {
+    throw new Error('offline');
+  };
+  return impl as unknown as typeof fetch;
+}
+
 function inbound(status: number, body: string, headers: IncomingHttpHeaders): ZenHttpResponse {
   return {
     status,
@@ -115,6 +125,27 @@ class FakeClient implements ZenHttpClient {
   }
 }
 
+class HangingClient implements ZenHttpClient {
+  send(request: ZenHttpRequest): Promise<ZenHttpResponse> {
+    return new Promise<ZenHttpResponse>((_resolve, reject) => {
+      const signal = request.signal;
+      if (!signal) return;
+      const keepAlive = setTimeout(() => undefined, 5_000);
+      const abort = (): void => {
+        clearTimeout(keepAlive);
+        const error = new Error('upstream request aborted');
+        error.name = 'AbortError';
+        reject(error);
+      };
+      if (signal.aborted) {
+        abort();
+        return;
+      }
+      signal.addEventListener('abort', abort, { once: true });
+    });
+  }
+}
+
 function makeGateway(client: ZenHttpClient): ZenGateway {
   const config: ZenConfig = normalizeZenConfig({ anonymous: true });
   return createZenGateway({
@@ -137,11 +168,15 @@ describe('zen gateway runtime', () => {
       'start',
       'stop',
       'refresh',
+      'loadCache',
       'monitor',
     ] as const) {
       assert.equal(typeof gateway[name], 'function');
     }
     assert.ok(gateway.monitor() instanceof ZenAttemptMonitor);
+
+    const loaded = await gateway.loadCache();
+    assert.deepEqual(loaded, { catalog: false, pricing: false });
 
     await gateway.refresh();
     const snapshot = gateway.snapshot();
@@ -193,6 +228,30 @@ describe('zen gateway runtime', () => {
     assert.ok(client.requests.length >= 1);
     const sent = JSON.parse(client.requests[0]!.body!) as Record<string, unknown>;
     assert.equal(sent['stream'], true);
+    assert.equal(client.requests[0]!.connectTimeoutMs, 5000);
+  });
+
+  it('applies the configured per-attempt timeout to upstream requests', async () => {
+    const base = normalizeZenConfig({ anonymous: true });
+    const config: ZenConfig = {
+      ...base,
+      performance: { ...base.performance, attemptTimeoutSeconds: 2 },
+    };
+    const client = new FakeClient(() => inboundJson(200, CHAT_BODY));
+    const gateway = createZenGateway({
+      config,
+      proxies: PROXIES,
+      httpClient: client,
+      fetchImpl: fixedFetch(),
+      logger: {},
+    });
+    await gateway.refresh();
+
+    await gateway.chat({ model: 'free-model', messages: [{ role: 'user', content: 'hi' }] });
+
+    assert.equal(client.requests[0]!.attemptTimeoutMs, 2000);
+    assert.equal(client.requests[0]!.connectTimeoutMs, 5000);
+    gateway.stop();
   });
 
   it('collapses an anonymous SSE body for a non-streaming chat request', async () => {
@@ -230,5 +289,77 @@ describe('zen gateway runtime', () => {
     assert.equal(chunks.map((chunk) => chunk.delta).join(''), 'hello');
     assert.equal(chunks[0]!.rawProtocol, 'openai');
     assert.ok(chunks[0]!.raw !== undefined);
+  });
+
+  it('loads the disk catalog cache during start before the first refresh', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'zen-cache-'));
+    const catalogPath = join(dir, 'catalog.json');
+    const cache = {
+      schema_version: 3,
+      updated_at: '2026-09-01T00:00:00.000Z',
+      zen: ['cached-model'],
+      go: [],
+      native_protocols: {},
+      unsupported: {},
+      metadata: {},
+    };
+    await writeFile(catalogPath, JSON.stringify(cache), 'utf8');
+    const config: ZenConfig = normalizeZenConfig({ anonymous: true });
+    const gateway = createZenGateway({
+      config,
+      proxies: PROXIES,
+      httpClient: new FakeClient(() => inboundJson(200, CHAT_BODY)),
+      fetchImpl: failingFetch(),
+      cachePaths: { catalog: catalogPath },
+      logger: {},
+    });
+    try {
+      await gateway.start();
+      const snapshot = gateway.snapshot();
+      assert.equal(snapshot.models.cacheSource, 'disk');
+      assert.equal(snapshot.models.stale, true);
+      assert.ok(snapshot.models.total >= 1);
+    } finally {
+      gateway.stop();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects chat when the caller signal is already aborted', async () => {
+    const gateway = makeGateway(new FakeClient(() => inboundJson(200, CHAT_BODY)));
+    await gateway.refresh();
+
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      gateway.chat({
+        model: 'free-model',
+        messages: [{ role: 'user', content: 'hi' }],
+        signal: controller.signal,
+      }),
+      /abort/i,
+    );
+  });
+
+  it('rejects chat when the total request timeout elapses', async () => {
+    const base = normalizeZenConfig({ anonymous: true });
+    const config: ZenConfig = { ...base, retry: { ...base.retry, timeoutSeconds: 0.05 } };
+    const gateway = createZenGateway({
+      config,
+      proxies: PROXIES,
+      httpClient: new HangingClient(),
+      fetchImpl: fixedFetch(),
+      logger: {},
+    });
+    await gateway.refresh();
+
+    await assert.rejects(
+      gateway.chat({
+        model: 'free-model',
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+      /abort/i,
+    );
+    gateway.stop();
   });
 });

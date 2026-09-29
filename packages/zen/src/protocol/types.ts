@@ -47,6 +47,7 @@ export interface ZenChatRequest {
   tools?: ZenToolDefinition[];
   raw?: unknown;
   rawProtocol?: ZenClientProtocol;
+  signal?: AbortSignal;
 }
 
 export type ZenRequest = ZenChatRequest;

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage } from 'node:http';
 import type { ZenConfig } from '../config/index.js';
-import type { ZenHttpClient } from '../http.js';
+import type { ZenHttpClient, ZenHttpRequest, ZenHttpResponse } from '../http.js';
 import { createNodeHttpClient } from '../http.js';
 import { canonicalSessionId } from '../identity/session.js';
 import { ZenCatalog } from '../models/catalog.js';
@@ -86,9 +86,10 @@ export interface ZenGateway {
   snapshot(): ZenGatewaySnapshot;
   chat(request: ZenRequest): Promise<ZenChatResponse>;
   stream(request: ZenRequest): AsyncIterable<ZenStreamChunk>;
-  start(): void;
+  start(): Promise<void>;
   stop(): void;
   refresh(): Promise<ZenRefreshResult>;
+  loadCache(): Promise<{ catalog: boolean; pricing: boolean }>;
   monitor(): ZenAttemptMonitor;
 }
 
@@ -112,9 +113,45 @@ function resolveProxies(options: ZenGatewayOptions): ProxySpec[] {
 // gateway runtime owns no HTTP request, so it mints a fresh request/session
 // pair per call. The session is canonicalized so the upstream sees a
 // well-formed affinity value. P1-E may instead thread ids from the core layer.
-function makeRequestIds(): ZenRequestIds {
+function makeRequestIds(signal?: AbortSignal): ZenRequestIds {
   const request = `req_${randomUUID().replace(/-/g, '')}`;
-  return { request, session: canonicalSessionId(request) };
+  const ids: ZenRequestIds = { request, session: canonicalSessionId(request) };
+  if (signal) ids.signal = signal;
+  return ids;
+}
+
+// The request budget is the tighter of the caller cancellation, derived from
+// request.signal, and the configured total deadline (retry.timeoutSeconds).
+// AbortSignal.any keeps either edge able to stop the retry scan so a hung
+// upstream or proxy cannot hold the call open forever.
+function requestDeadline(request: ZenRequest, timeoutSeconds: number): AbortSignal {
+  const milliseconds = Math.max(1, Math.trunc(timeoutSeconds * 1000));
+  const deadline = AbortSignal.timeout(milliseconds);
+  return request.signal ? AbortSignal.any([request.signal, deadline]) : deadline;
+}
+
+// Applies performance.connectTimeoutSeconds/attemptTimeoutSeconds to every
+// outbound request without binding to a concrete transport: the optional
+// per-request deadline fields are honored by the node http client and can be
+// overridden by an injected ZenHttpClient that sets its own values.
+function withConfiguredTimeouts(
+  client: ZenHttpClient,
+  performance: ZenConfig['performance'],
+): ZenHttpClient {
+  const connectTimeoutMs = performance.connectTimeoutSeconds * 1000;
+  const attemptTimeoutMs = performance.attemptTimeoutSeconds * 1000;
+  return {
+    send(request: ZenHttpRequest): Promise<ZenHttpResponse> {
+      const enriched: ZenHttpRequest = { ...request };
+      if (connectTimeoutMs > 0 && enriched.connectTimeoutMs === undefined) {
+        enriched.connectTimeoutMs = connectTimeoutMs;
+      }
+      if (attemptTimeoutMs > 0 && enriched.attemptTimeoutMs === undefined) {
+        enriched.attemptTimeoutMs = attemptTimeoutMs;
+      }
+      return client.send(enriched);
+    },
+  };
 }
 
 function parseJsonBody(text: string): unknown {
@@ -182,7 +219,8 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
   const now = options.now ?? (() => Date.now());
   const logger = options.logger ?? {};
   const proxies = resolveProxies(options);
-  const httpClient = options.httpClient ?? createNodeHttpClient();
+  const rawHttpClient = options.httpClient ?? createNodeHttpClient();
+  const httpClient = withConfiguredTimeouts(rawHttpClient, config.performance);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const monitor = new ZenAttemptMonitor();
 
@@ -247,7 +285,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
 
   async function chat(request: ZenRequest): Promise<ZenChatResponse> {
     const route = routeFor(request);
-    const ids = makeRequestIds();
+    const ids = makeRequestIds(requestDeadline(request, config.retry.timeoutSeconds));
     const result = await doUpstream(upstreamOptions, route, request, ids);
     if (result.error !== undefined || result.response === undefined) {
       throw result.error ?? new Error('upstream request failed');
@@ -286,7 +324,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
   // byte-exact passthrough is not retained by SseParser and is recorded lossy.
   async function* stream(request: ZenRequest): AsyncGenerator<ZenStreamChunk> {
     const route = routeFor(request);
-    const ids = makeRequestIds();
+    const ids = makeRequestIds(requestDeadline(request, config.retry.timeoutSeconds));
     const clientProtocol = request.rawProtocol ?? 'openai';
     const streamed = await doUpstreamStream(upstreamOptions, route, request, ids);
     const upstreamProtocol = streamed.effectiveRoute.protocol;
@@ -327,18 +365,23 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     };
   }
 
-  function start(): void {
+  async function start(): Promise<void> {
+    await refresher.loadCache();
     refresher.start();
   }
 
   function stop(): void {
     refresher.stop();
-    const closable = httpClient as { close?: () => void };
+    const closable = rawHttpClient as { close?: () => void };
     if (typeof closable.close === 'function') closable.close();
   }
 
   function refresh(): Promise<ZenRefreshResult> {
     return refresher.refreshOnce();
+  }
+
+  function loadCache(): Promise<{ catalog: boolean; pricing: boolean }> {
+    return refresher.loadCache();
   }
 
   return {
@@ -350,6 +393,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     start,
     stop,
     refresh,
+    loadCache,
     monitor: () => monitor,
   };
 }

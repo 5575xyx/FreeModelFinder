@@ -13,6 +13,8 @@ export interface ZenHttpRequest {
   body?: string;
   proxy: ProxySpec;
   signal?: AbortSignal;
+  connectTimeoutMs?: number;
+  attemptTimeoutMs?: number;
 }
 
 export interface ZenHttpResponse {
@@ -55,15 +57,27 @@ export function createNodeHttpClient(): ZenHttpClient {
       return new Promise<ZenHttpResponse>((resolve, reject) => {
         const url = new URL(request.url);
         const transport = url.protocol === 'https:' ? https : http;
+        const signals: AbortSignal[] = [];
+        if (request.signal) signals.push(request.signal);
+        const attemptMs = request.attemptTimeoutMs ?? 0;
+        if (attemptMs > 0) signals.push(AbortSignal.timeout(attemptMs));
+        const signal =
+          signals.length === 0
+            ? undefined
+            : signals.length === 1
+              ? signals[0]
+              : AbortSignal.any(signals);
+        const connectMs = request.connectTimeoutMs ?? 0;
         const req = transport.request(
           url,
           {
             method: request.method,
             headers: request.headers,
             agent: agentFor(request.proxy, request.url),
-            signal: request.signal,
+            signal,
           },
           (response) => {
+            if (connectMs > 0) req.setTimeout(0);
             resolve({
               status: response.statusCode ?? 0,
               headers: response.headers,
@@ -71,6 +85,11 @@ export function createNodeHttpClient(): ZenHttpClient {
             });
           },
         );
+        if (connectMs > 0) {
+          req.setTimeout(connectMs, () => {
+            req.destroy(new Error(`upstream connect timeout after ${connectMs}ms`));
+          });
+        }
         req.on('error', reject);
         if (request.body !== undefined) req.write(request.body);
         req.end();

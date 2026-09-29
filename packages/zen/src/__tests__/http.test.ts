@@ -15,6 +15,7 @@ before(async () => {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
+      if (req.url === '/hang') return;
       if (req.url === '/stream') {
         res.writeHead(200, { 'content-type': 'text/event-stream' });
         res.write('data: one\n\n');
@@ -30,7 +31,13 @@ before(async () => {
   port = typeof addr === 'object' && addr ? addr.port : 0;
 });
 
-after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+after(
+  () =>
+    new Promise<void>((resolve) => {
+      server.closeAllConnections?.();
+      server.close(() => resolve());
+    }),
+);
 
 const direct = { kind: 'direct' as const, label: 'direct' };
 
@@ -76,6 +83,30 @@ describe('zen http client', () => {
     });
     controller.abort();
     await assert.rejects(promise);
+  });
+
+  it('rejects when the per-attempt timeout elapses', async () => {
+    const client = createNodeHttpClient();
+    await assert.rejects(
+      client.send({
+        url: `http://127.0.0.1:${port}/hang`,
+        method: 'GET',
+        proxy: direct,
+        attemptTimeoutMs: 30,
+      }),
+    );
+  });
+
+  it('rejects when the connect timeout elapses', async () => {
+    const client = createNodeHttpClient();
+    await assert.rejects(
+      client.send({
+        url: `http://127.0.0.1:${port}/hang`,
+        method: 'GET',
+        proxy: direct,
+        connectTimeoutMs: 30,
+      }),
+    );
   });
 
   it('selects an agent by target scheme and proxy kind', () => {
