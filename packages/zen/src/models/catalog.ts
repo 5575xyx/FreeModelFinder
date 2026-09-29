@@ -97,6 +97,12 @@ export class ZenCatalog {
     this.refreshAfterMs = intervalMs;
   }
 
+  markLoadedFromCache(updatedAt: number): void {
+    this.cacheSource = 'disk';
+    this.stale = true;
+    if (updatedAt > 0) this.updatedAt = updatedAt;
+  }
+
   replace(capabilities: CatalogCapabilities): void {
     this.zen = toSet(capabilities.zen, this.zen);
     this.go = toSet(capabilities.go, this.go);

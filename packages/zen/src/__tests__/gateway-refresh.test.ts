@@ -57,6 +57,8 @@ interface FakeState {
   fail: boolean;
   docs?: boolean;
   zenModels?: string[];
+  pricingFail?: boolean;
+  modelsDevCalls?: number;
 }
 
 function jsonResponse(payload: unknown): Response {
@@ -70,7 +72,10 @@ function makeFetch(state: FakeState): typeof fetch {
   const fetchImpl = async (input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (state.fail) return new Response('boom', { status: 500 });
-    if (url.includes('models.dev')) return jsonResponse(MODELS_DEV);
+    if (url.includes('models.dev')) {
+      state.modelsDevCalls = (state.modelsDevCalls ?? 0) + 1;
+      return state.pricingFail ? new Response('boom', { status: 500 }) : jsonResponse(MODELS_DEV);
+    }
     if (url.includes('models.opencode.ai')) return jsonResponse(CAPABILITIES);
     if (url.endsWith('zen.mdx')) {
       return state.docs
@@ -128,7 +133,10 @@ describe('zen refresher', () => {
       });
       const summary = await reloaded.loadCache();
       assert.equal(summary.catalog, true);
-      assert.equal(reloadedCatalog.snapshot().total, snapshot.total);
+      const reloadedSnapshot = reloadedCatalog.snapshot();
+      assert.equal(reloadedSnapshot.total, snapshot.total);
+      assert.equal(reloadedSnapshot.cacheSource, 'disk');
+      assert.equal(reloadedSnapshot.stale, true);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -202,5 +210,38 @@ describe('zen refresher', () => {
 
     assert.ok(catalog.list().includes('doc-only'));
     assert.equal(catalog.protocolFor('doc-only', 'zen'), 'chat');
+  });
+
+  it('refreshes models.dev once, then serves pricing from the 24h window', async () => {
+    const state: FakeState = { fail: false };
+    const pricing = new ZenPricingStore();
+    const refresher = new ZenRefresher({
+      config,
+      catalog: new ZenCatalog('go', {}),
+      pricing,
+      fetchImpl: makeFetch(state),
+    });
+
+    await refresher.refreshOnce();
+    assert.equal(state.modelsDevCalls, 1);
+    assert.equal(pricing.snapshot().ready, true);
+
+    await refresher.refreshOnce();
+    assert.equal(state.modelsDevCalls, 1);
+  });
+
+  it('surfaces a pricing fetch failure on the store snapshot', async () => {
+    const state: FakeState = { fail: false, pricingFail: true };
+    const pricing = new ZenPricingStore();
+    const refresher = new ZenRefresher({
+      config,
+      catalog: new ZenCatalog('go', {}),
+      pricing,
+      fetchImpl: makeFetch(state),
+    });
+
+    await refresher.refreshOnce();
+    assert.equal(state.modelsDevCalls, 1);
+    assert.ok(pricing.snapshot().lastError);
   });
 });

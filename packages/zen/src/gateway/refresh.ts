@@ -266,6 +266,7 @@ export class ZenRefresher {
           unsupported: parsed.unsupported,
           metadata: parsed.metadata,
         });
+        this.catalog.markLoadedFromCache(this.updatedAt);
         this.catalog.setRefreshIntervalMs(this.intervalMs);
         summary.catalog = true;
       }
@@ -324,7 +325,11 @@ export class ZenRefresher {
         await this.persistCatalogCache();
       }
 
-      const pricingCount = await this.tryRefreshPricing(now, errors);
+      const pricingSnapshot = this.pricing.snapshot(this.now());
+      const pricingCount =
+        !pricingSnapshot.ready || pricingSnapshot.stale
+          ? await this.tryRefreshPricing(now, errors)
+          : pricingSnapshot.models;
 
       this.lastErrorMessage = errors.join('; ');
       const snapshot = this.catalog.snapshot();
@@ -433,7 +438,9 @@ export class ZenRefresher {
       }
       return Object.keys(decoded).length;
     } catch (error) {
-      errors.push(`pricing: ${errorMessage(error)}`);
+      const message = errorMessage(error);
+      errors.push(`pricing: ${message}`);
+      this.pricing.recordError(message);
       return 0;
     }
   }
