@@ -17,6 +17,7 @@ const localUiHeaders = {
 const DEVICE_URL = 'https://api.workos.com/user_management/authorize/device';
 const AUTH_URL = 'https://api.workos.com/user_management/authenticate';
 const REGISTER_URL = 'https://api.cline.bot/api/v1/auth/register';
+const CATALOG_URL = 'https://api.cline.bot/api/v1/ai/cline/recommended-models';
 
 const COLD_ACCOUNT_ID = 'acc-cold';
 const LIST_ACCOUNT_ID = 'acc-list';
@@ -27,6 +28,8 @@ type Scenario =
 
 let scenario: Scenario = 'approve';
 let authPolls = 0;
+let catalogFetches = 0;
+const passthroughUrls: string[] = [];
 let realFetch: typeof fetch;
 
 function json(body: unknown, status = 200): Response {
@@ -80,6 +83,13 @@ function installUpstreamStub(): void {
         data: { refreshToken: 'rt-secret-value', userInfo: { email: 'ada@example.com' } },
       });
     }
+    if (url === CATALOG_URL) {
+      catalogFetches += 1;
+      return json({
+        free: [{ id: 'test-free/model', name: 'Test Free', context_length: 4096 }],
+      });
+    }
+    passthroughUrls.push(url);
     return realFetch(input, init);
   }) as typeof fetch;
 }
@@ -201,6 +211,17 @@ describe('cline startup warm-up', () => {
     });
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().providers.cline.hasKey, true);
+  });
+
+  it('serves the cline catalog through the local upstream stub', async () => {
+    const response = await app.inject({ method: 'GET', url: '/v1/models' });
+    assert.equal(response.statusCode, 200);
+    assert.ok(catalogFetches >= 1, `expected the catalog stub to answer, got ${catalogFetches}`);
+    assert.equal(
+      passthroughUrls.filter((url) => url.includes('api.cline.bot')).length,
+      0,
+      passthroughUrls.join(','),
+    );
   });
 
   it('warms again when the provider registry is rebuilt', async () => {
@@ -685,6 +706,62 @@ describe('cline hasKey seam', () => {
   it('keeps the apiKey based hasKey behaviour of other providers', async () => {
     assert.equal(await hasKey('openrouter'), true);
     assert.equal(await hasKey('gemini'), false);
+  });
+});
+
+describe('cline dynamicModels persistence', () => {
+  let app: FastifyInstance;
+
+  before(async () => {
+    await resetAccounts();
+    ({ app } = await createServer({
+      registry: new ProviderRegistry(testConfig()),
+      watchIntervalMs: 60 * 60 * 1000,
+    }));
+  });
+
+  after(async () => {
+    await app.close();
+    await resetAccounts();
+  });
+
+  async function echoDynamicModels(): Promise<unknown> {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    assert.equal(response.statusCode, 200);
+    return response.json().providers.cline.dynamicModels;
+  }
+
+  async function postProvider(payload: Record<string, unknown>): Promise<void> {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload,
+    });
+    assert.equal(response.statusCode, 200, response.body);
+  }
+
+  it('echoes dynamicModels as enabled when the stored config omits it', async () => {
+    assert.equal(await echoDynamicModels(), true);
+  });
+
+  it('persists a stored dynamicModels false and echoes it back', async () => {
+    await postProvider({ provider: 'cline', dynamicModels: false });
+    assert.equal(await echoDynamicModels(), false);
+    await postProvider({ provider: 'cline', dynamicModels: true });
+    assert.equal(await echoDynamicModels(), true);
+  });
+
+  it('keeps dynamicModels when a later POST omits the field', async () => {
+    await postProvider({ provider: 'cline', dynamicModels: false });
+    await postProvider({ provider: 'cline', enabled: true });
+    assert.equal(await echoDynamicModels(), false);
+    await postProvider({ provider: 'cline', apiKeys: ['sk-test-value'] });
+    assert.equal(await echoDynamicModels(), false);
   });
 });
 

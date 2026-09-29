@@ -47,12 +47,18 @@ const invalidAccount = {
   usage: { requests: 0, promptTokens: 0, completionTokens: 0 },
 };
 
-function clineConfig(cline: { enabled: boolean; hasKey: boolean }) {
+function clineConfig(cline: { enabled: boolean; hasKey: boolean; dynamicModels?: boolean }) {
+  const { dynamicModels, ...rest } = cline;
   return {
     ...configPayload,
     providers: {
       ...configPayload.providers,
-      cline: { ...cline, keyCount: 0, keyMeta: [] },
+      cline: {
+        ...rest,
+        keyCount: 0,
+        keyMeta: [],
+        ...(dynamicModels === undefined ? {} : { dynamicModels }),
+      },
     },
   };
 }
@@ -522,11 +528,86 @@ describe('cline card state', () => {
   }, 15_000);
 });
 
+describe('cline dynamic models checkbox', () => {
+  async function waitForLoadedConfig(): Promise<void> {
+    await waitFor(() => {
+      const enableBox = screen.getByRole('checkbox', { name: '启用 Cline' }) as HTMLInputElement;
+      expect(enableBox.checked).toBe(true);
+    });
+  }
+
+  it('checks the box when the stored config omits dynamicModels', async () => {
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json(clineConfig({ enabled: true, hasKey: true })),
+      ),
+    );
+    render(<SettingsView />);
+    await waitForLoadedConfig();
+    await waitFor(() => {
+      const box = screen.getByRole('checkbox', {
+        name: '动态同步上游免费模型',
+      }) as HTMLInputElement;
+      expect(box.checked).toBe(true);
+    });
+  });
+
+  it('unchecks the box when the config echoes dynamicModels false', async () => {
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json(clineConfig({ enabled: true, hasKey: true, dynamicModels: false })),
+      ),
+    );
+    render(<SettingsView />);
+    await waitForLoadedConfig();
+    await waitFor(() => {
+      const box = screen.getByRole('checkbox', {
+        name: '动态同步上游免费模型',
+      }) as HTMLInputElement;
+      expect(box.checked).toBe(false);
+    });
+  });
+
+  it('POSTs dynamicModels without the enabled flag when the box flips', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(accountsUrl, () => HttpResponse.json({ accounts: [] })),
+      http.post(providersUrl, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const onChanged = vi.fn();
+    const user = userEvent.setup();
+    render(<ClineAccountsPanel enabled onChanged={onChanged} />);
+
+    const box = (await screen.findByRole('checkbox', {
+      name: '动态同步上游免费模型',
+    })) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    await user.click(box);
+    await waitFor(() => expect(writes[0]).toEqual({ provider: 'cline', dynamicModels: false }));
+    expect(writes[0]).not.toHaveProperty('enabled');
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('keeps the box unchecked when the panel renders dynamicModels false', async () => {
+    server.use(http.get(accountsUrl, () => HttpResponse.json({ accounts: [] })));
+    render(<ClineAccountsPanel enabled dynamicModels={false} />);
+    const box = (await screen.findByRole('checkbox', {
+      name: '动态同步上游免费模型',
+    })) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+  });
+});
+
 describe('cline i18n keys', () => {
   const CLINE_KEYS = [
     'platforms.cline.hint',
     'platforms.cline.label',
     'settings.cline.enable',
+    'settings.cline.dynamicModels',
+    'settings.cline.dynamicModels.hint',
     'settings.cline.enableFailed',
     'settings.cline.accounts.title',
     'settings.cline.accounts.count',

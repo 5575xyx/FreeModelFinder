@@ -638,6 +638,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             id,
             {
               enabled: s?.enabled ?? false,
+              dynamicModels: s?.dynamicModels ?? true,
               hasKey:
                 id === 'cline'
                   ? !!s?.enabled && getCredentialRuntime().hasActiveAccounts('cline')
@@ -769,6 +770,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         apiKey?: string;
         apiKeys?: string[];
         enabled?: boolean;
+        dynamicModels?: boolean;
         baseUrl?: string;
         clearCredentials?: boolean;
         appendKeys?: string[];
@@ -790,6 +792,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         apiKey,
         apiKeys,
         enabled,
+        dynamicModels,
         baseUrl,
         clearCredentials,
         models,
@@ -972,10 +975,12 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           }
         }
       }
+      const dynamicModelsPatch = typeof dynamicModels === 'boolean' ? { dynamicModels } : {};
       try {
         const next = await updateConfig((cfg) => {
           const cur = (cfg.providers[providerId] ?? { enabled: false }) as {
             enabled: boolean;
+            dynamicModels?: boolean;
             credentials?: {
               apiKey: string;
               apiKeys?: string[];
@@ -990,6 +995,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             if (clearCredentials === true) {
               cfg.providers[providerId] = {
                 ...cur,
+                ...dynamicModelsPatch,
                 enabled: enabled ?? false,
                 credentials: undefined,
               };
@@ -1042,6 +1048,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             const topBaseUrl = cleanBaseUrl !== undefined ? cleanBaseUrl : cur.credentials?.baseUrl;
             cfg.providers[providerId] = {
               ...cur,
+              ...dynamicModelsPatch,
               enabled: enabled ?? cur.enabled,
               credentials: {
                 apiKey: topApiKeys[0] ?? topKey,
@@ -1081,6 +1088,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           const nextKey = nextApiKeys?.[0] ?? cleanApiKey ?? '';
           cfg.providers[providerId] = {
             ...cur,
+            ...dynamicModelsPatch,
             enabled: enabled ?? cur.enabled,
             credentials: shouldClear
               ? undefined

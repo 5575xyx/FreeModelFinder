@@ -72,10 +72,12 @@ const accountsUrl = `${GATEWAY}/api/cline/accounts`;
 
 export function ClineAccountsPanel({
   enabled = false,
+  dynamicModels,
   onChanged,
   onLoginSuccess,
 }: {
   enabled?: boolean;
+  dynamicModels?: boolean;
   onChanged?: () => void;
   onLoginSuccess?: (label: string) => void;
 }) {
@@ -250,6 +252,30 @@ export function ClineAccountsPanel({
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   }
 
+  async function postDynamicModels(value: boolean): Promise<void> {
+    const res = await fetch(
+      `${GATEWAY}/api/providers`,
+      withUiHeaders({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider: 'cline', dynamicModels: value }),
+      }),
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  }
+
+  async function handleDynamicToggle(event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const next = event.target.checked;
+    setActionError('');
+    setNotice('');
+    try {
+      await postDynamicModels(next);
+      onChanged?.();
+    } catch (error) {
+      if (aliveRef.current) setActionError(messageOf(error));
+    }
+  }
+
   async function startLogin(): Promise<void> {
     if (phase === 'starting' || phase === 'awaiting') return;
     setPhase('starting');
@@ -390,6 +416,22 @@ export function ClineAccountsPanel({
           {t('settings.cline.enable')}
         </label>
       </div>
+
+      <label className="inline-flex cursor-pointer items-start gap-1.5 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={dynamicModels !== false}
+          onChange={(event) => void handleDynamicToggle(event)}
+          aria-label={t('settings.cline.dynamicModels')}
+          className="mt-0.5 h-3.5 w-3.5 accent-[var(--color-primary,#4f7cff)]"
+        />
+        <span className="space-y-0.5">
+          <span className="block text-foreground">{t('settings.cline.dynamicModels')}</span>
+          <span className="block text-[11px] text-muted-foreground">
+            {t('settings.cline.dynamicModels.hint')}
+          </span>
+        </span>
+      </label>
 
       {loadFailed && (
         <p className="text-xs text-destructive">{t('settings.cline.accounts.loadFailed')}</p>

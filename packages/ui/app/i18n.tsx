@@ -451,6 +451,8 @@ export const zh: Dict = {
   'platforms.cline.label': 'Cline',
 
   'settings.cline.enable': '启用 Cline',
+  'settings.cline.dynamicModels': '动态同步上游免费模型',
+  'settings.cline.dynamicModels.hint': '关闭后仅使用内置的免费模型清单',
   'settings.cline.enableFailed': '已登录，但自动启用失败，请手动勾选「启用 Cline」',
   'settings.cline.accounts.title': 'Cline 账号',
   'settings.cline.accounts.count': '{n} 个',
@@ -985,6 +987,8 @@ export const en: Dict = {
   'platforms.cline.label': 'Cline',
 
   'settings.cline.enable': 'Enable Cline',
+  'settings.cline.dynamicModels': 'Sync upstream free models dynamically',
+  'settings.cline.dynamicModels.hint': 'Turn off to keep only the built-in free model list',
   'settings.cline.enableFailed':
     'Signed in, but auto-enable failed. Turn on "Enable Cline" manually.',
   'settings.cline.accounts.title': 'Cline accounts',

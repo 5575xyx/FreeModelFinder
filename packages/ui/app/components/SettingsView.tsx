@@ -58,6 +58,7 @@ type ConfigRes = {
     {
       enabled: boolean;
       hasKey: boolean;
+      dynamicModels?: boolean;
       keyCount?: number;
       keyMeta?: Array<{ id: string; hint: string }>;
       credentialError?: string;
@@ -1885,6 +1886,7 @@ export function SettingsView({
                       {isCline && (
                         <ClineAccountsPanel
                           enabled={!!state?.enabled}
+                          dynamicModels={state?.dynamicModels}
                           onChanged={refreshConfig}
                           onLoginSuccess={(label) =>
                             setToast({
