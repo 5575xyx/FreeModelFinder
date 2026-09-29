@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatRequest, ToolCall, ToolDefinition } from '../types.js';
+import type { ChatMessage, ChatRequest, ChatResponse, ToolCall, ToolDefinition } from '../types.js';
 
 export interface AnthropicTool {
   name: string;
@@ -167,25 +167,49 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
   };
 }
 
-export function chatResponseToAnthropic(res: {
-  id: string;
-  model: string;
-  content: string;
-  finish_reason: string | null;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
-}) {
+export function chatResponseToAnthropic(res: ChatResponse) {
+  const content: Array<Record<string, unknown>> = [];
+  if (res.tool_calls && res.tool_calls.length > 0) {
+    for (const call of res.tool_calls) {
+      let input: unknown = {};
+      const rawArgs = call.function.arguments;
+      if (rawArgs) {
+        try {
+          input = JSON.parse(rawArgs);
+        } catch {
+          input = {};
+        }
+      }
+      content.push({
+        type: 'tool_use',
+        id: call.id ?? `call_${Math.random().toString(36).slice(2, 10)}`,
+        name: call.function.name,
+        input,
+      });
+    }
+  } else {
+    content.push({ type: 'text', text: res.content });
+  }
+  if (res.reasoning) {
+    content.unshift({ type: 'text', text: res.reasoning });
+  }
+
+  const stop_reason =
+    res.finish_reason === 'length'
+      ? 'max_tokens'
+      : res.finish_reason === 'tool_calls'
+        ? 'tool_use'
+        : res.finish_reason === 'stop'
+          ? 'end_turn'
+          : res.finish_reason;
+
   return {
     id: res.id,
     type: 'message',
     role: 'assistant',
     model: res.model,
-    content: [{ type: 'text', text: res.content }],
-    stop_reason:
-      res.finish_reason === 'length'
-        ? 'max_tokens'
-        : res.finish_reason === 'stop'
-          ? 'end_turn'
-          : res.finish_reason,
+    content,
+    stop_reason,
     usage: {
       input_tokens: res.usage?.prompt_tokens ?? 0,
       output_tokens: res.usage?.completion_tokens ?? 0,

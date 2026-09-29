@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { anthropicToChatRequest, type AnthropicMessagesRequest } from '../protocols/anthropic.js';
+import {
+  anthropicToChatRequest,
+  chatResponseToAnthropic,
+  type AnthropicMessagesRequest,
+} from '../protocols/anthropic.js';
 import {
   chatResponseToOpenAI,
   openAIToChatRequest,
@@ -252,5 +256,38 @@ describe('anthropic inbound tools', () => {
       max_tokens: 16,
     } as unknown as AnthropicMessagesRequest);
     assert.equal(out.messages[0]?.tool_calls?.[0]?.function.arguments, '{}');
+  });
+});
+
+describe('anthropic outbound tool_use', () => {
+  it('emits a tool_use block and stop_reason tool_use', () => {
+    const payload = chatResponseToAnthropic({
+      id: 'msg_1',
+      model: 'm',
+      created: 1,
+      content: '',
+      finish_reason: 'tool_calls',
+      tool_calls: [
+        { id: 'call_1', type: 'function', function: { name: 'f', arguments: '{"q":1}' } },
+      ],
+    }) as { content: Array<Record<string, unknown>>; stop_reason: string };
+    assert.equal(payload.stop_reason, 'tool_use');
+    const block = payload.content[0] as Record<string, unknown>;
+    assert.equal(block.type, 'tool_use');
+    assert.equal(block.id, 'call_1');
+    assert.equal(block.name, 'f');
+    assert.deepEqual(block.input, { q: 1 });
+  });
+
+  it('keeps text block when there are no tool calls', () => {
+    const payload = chatResponseToAnthropic({
+      id: 'msg_1',
+      model: 'm',
+      created: 1,
+      content: 'hello',
+      finish_reason: 'stop',
+    }) as { content: Array<Record<string, unknown>>; stop_reason: string };
+    assert.equal(payload.stop_reason, 'end_turn');
+    assert.deepEqual(payload.content, [{ type: 'text', text: 'hello' }]);
   });
 });
