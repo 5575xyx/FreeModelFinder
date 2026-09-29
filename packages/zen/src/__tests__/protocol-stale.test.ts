@@ -6,14 +6,19 @@ describe('zen stale reasoning', () => {
   it('detects a stale reasoning reference error', () => {
     assert.equal(
       isStaleReasoningReference(
-        JSON.stringify({ error: { message: "Referenced reasoning item 'rs_1' was not found or has expired" } }),
+        JSON.stringify({
+          error: { message: "Referenced reasoning item 'rs_1' was not found or has expired" },
+        }),
       ),
       true,
     );
   });
 
   it('does not treat an unrelated reasoning validation error as stale', () => {
-    assert.equal(isStaleReasoningReference(JSON.stringify({ error: { message: 'unknown reasoning field' } })), false);
+    assert.equal(
+      isStaleReasoningReference(JSON.stringify({ error: { message: 'unknown reasoning field' } })),
+      false,
+    );
     assert.equal(isStaleReasoningReference('plain text'), false);
   });
 

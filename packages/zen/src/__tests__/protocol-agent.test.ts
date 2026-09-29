@@ -25,7 +25,9 @@ describe('zen agent shaping', () => {
       'chat',
     );
     const tools = body.tools as Array<Record<string, unknown>>;
-    const bashCount = tools.filter((t) => (t.function as Record<string, unknown>).name === 'bash').length;
+    const bashCount = tools.filter(
+      (t) => (t.function as Record<string, unknown>).name === 'bash',
+    ).length;
     assert.equal(bashCount, 1);
     assert.equal(tools.length, CORE_AGENT_TOOLS.length);
   });
@@ -39,7 +41,9 @@ describe('zen agent shaping', () => {
   it('uses the flat responses tool shape for the responses protocol', () => {
     const body = prepareAnonymousBody({ model: 'm', messages: [] }, 'responses');
     const tools = body.tools as Array<Record<string, unknown>>;
-    assert.ok(tools.every((t) => t.type === 'function' && typeof t.name === 'string' && !('function' in t)));
+    assert.ok(
+      tools.every((t) => t.type === 'function' && typeof t.name === 'string' && !('function' in t)),
+    );
     const names = tools.map((t) => t.name);
     assert.deepEqual(names, [...CORE_AGENT_TOOLS]);
   });
