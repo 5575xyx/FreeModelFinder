@@ -34,8 +34,10 @@ import {
   type ZenUpstreamOptions,
 } from './upstream.js';
 
-// Mirrors the client→upstream protocol table in internal/protocol/response.go:
-// a same-protocol response can be forwarded verbatim (raw + rawProtocol).
+// Mirrors the same-protocol shortcut in internal/gateway/gateway.go:206-210
+// (and its stream twin in protocol/response.ts): when the client protocol maps
+// to the upstream protocol the response/stream can be forwarded verbatim and
+// keeps raw + rawProtocol.
 const CLIENT_TO_PROTOCOL: Partial<Record<ZenClientProtocol, ZenProtocol>> = {
   openai: 'chat',
   anthropic: 'anthropic',
@@ -87,9 +89,9 @@ export interface ZenGateway {
   monitor(): ZenAttemptMonitor;
 }
 
-// Mirrors resolveProxies in internal/gateway/runtime.go:104-112 / New in
-// gateway.go:40-66: the configured proxy list plus the optional proxy file.
-// A caller may inject already-parsed specs (tests) or the file contents.
+// Mirrors newTransportPool(cfg.RuntimeProxies(), ...) in
+// internal/gateway/gateway.go:41: the configured proxy list plus the optional
+// proxy file. A caller may inject already-parsed specs (tests) or the contents.
 function resolveProxies(options: ZenGatewayOptions): ProxySpec[] {
   if (options.proxies && options.proxies.length > 0) return options.proxies;
   let content = options.proxyfileContent;
@@ -103,9 +105,10 @@ function resolveProxies(options: ZenGatewayOptions): ProxySpec[] {
   return parseProxyList(options.config.proxies, content);
 }
 
-// Mirrors identity.DeriveRequestIDs in internal/identity: the gateway runtime
-// owns no HTTP request, so it mints a fresh request/session pair per call. The
-// session is canonicalized so the upstream sees a well-formed affinity value.
+// Mirrors identity.DeriveRequestIDs in internal/identity/request.go:24: the
+// gateway runtime owns no HTTP request, so it mints a fresh request/session
+// pair per call. The session is canonicalized so the upstream sees a
+// well-formed affinity value. P1-E may instead thread ids from the core layer.
 function makeRequestIds(): ZenRequestIds {
   const request = `req_${randomUUID().replace(/-/g, '')}`;
   return { request, session: canonicalSessionId(request) };
