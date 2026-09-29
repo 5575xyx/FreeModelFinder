@@ -131,7 +131,8 @@ async function handleStream(
           let args: unknown = {};
           if (call.function?.arguments) {
             try {
-              args = JSON.parse(call.function.arguments);
+              const parsed: unknown = JSON.parse(call.function.arguments);
+              args = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
             } catch {
               args = {};
             }

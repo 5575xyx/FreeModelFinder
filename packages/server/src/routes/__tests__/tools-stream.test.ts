@@ -197,5 +197,21 @@ describe('gemini sse functionCall', () => {
     ]);
     assert.ok(out.includes('"functionCall"'));
     assert.ok(out.includes('"name":"f"'));
+    assert.ok(out.includes('"args":{"q":1}'));
+    assert.ok(out.includes('"finishReason":"STOP"'));
+    assert.ok(!out.includes('"args":[1,2]'));
+  });
+
+  it('normalizes non-object streamed arguments to an empty object', async () => {
+    const out = await collectGeminiStream([
+      {
+        id: 'x',
+        model: 'm',
+        created: 1,
+        delta: '',
+        tool_calls: [{ index: 0, id: 'c2', function: { name: 'g', arguments: '[1,2]' } }],
+      },
+    ]);
+    assert.ok(out.includes('"args":{}'));
   });
 });

@@ -401,6 +401,18 @@ describe('gemini outbound functionCall', () => {
     assert.deepEqual((part.functionCall as { args: unknown }).args, { q: 1 });
   });
 
+  it('normalizes non-object arguments to an empty object', () => {
+    const payload = chatResponseToGemini({
+      content: '',
+      finish_reason: 'tool_calls',
+      tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '[1,2]' } }],
+    }) as { candidates: Array<{ content: { parts: Array<Record<string, unknown>> } }> };
+    const part = payload.candidates[0]?.content.parts[0] as {
+      functionCall: { args: unknown };
+    };
+    assert.deepEqual(part.functionCall.args, {});
+  });
+
   it('keeps text part when there are no tool calls', () => {
     const payload = chatResponseToGemini({
       content: 'hello',
