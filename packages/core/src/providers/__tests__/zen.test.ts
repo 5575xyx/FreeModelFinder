@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import type { IncomingMessage } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { describe, it } from 'node:test';
 import type {
@@ -167,7 +170,16 @@ describe('zen (opencode) provider', () => {
 
   it('throws when the catalog is unavailable so the registry can fall back', async () => {
     const provider = new ZenProvider({
-      credentials: { apiKey: '', extra: { anonymous: true } },
+      credentials: {
+        apiKey: '',
+        extra: {
+          anonymous: true,
+          cachePaths: {
+            catalog: join(tmpdir(), 'fmf-zen-no-cache', 'catalog.json'),
+            pricing: join(tmpdir(), 'fmf-zen-no-cache', 'pricing.json'),
+          },
+        },
+      },
       fetchImpl: (async () => new Response('unavailable', { status: 503 })) as typeof fetch,
     });
     await assert.rejects(provider.listModels(), /opencode model catalog unavailable/);
@@ -236,5 +248,41 @@ describe('zen (opencode) provider', () => {
     await provider.listModels();
 
     assert.equal(calls.filter((call) => call === 'loadCache').length, 1);
+  });
+
+  it('loads a pre-written catalog cache from disk without a network fetch', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'zen-provider-cache-'));
+    const catalogPath = join(dir, 'zen.models.catalog.json');
+    const pricingPath = join(dir, 'missing-pricing.json');
+    const cache = {
+      schema_version: 3,
+      updated_at: '2026-09-01T00:00:00.000Z',
+      zen: ['cached-free-model'],
+      go: [],
+      native_protocols: { zen: { 'cached-free-model': 'chat' } },
+      unsupported: {},
+      metadata: {},
+    };
+    await writeFile(catalogPath, JSON.stringify(cache), 'utf8');
+
+    try {
+      const provider = new ZenProvider({
+        credentials: {
+          apiKey: '',
+          extra: { anonymous: true, cachePaths: { catalog: catalogPath, pricing: pricingPath } },
+        },
+        fetchImpl: (async () => {
+          throw new Error('offline');
+        }) as typeof fetch,
+      });
+
+      const models = await provider.listModels();
+      assert.ok(
+        models.some((model) => model.id === 'opencode:cached-free-model'),
+        'the cached catalog model must be served from disk',
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

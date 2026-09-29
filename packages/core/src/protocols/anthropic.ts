@@ -168,7 +168,14 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
 }
 
 export function chatResponseToAnthropic(res: ChatResponse) {
-  if (res.raw != null && res.rawProtocol === 'anthropic') {
+  // Zero-loss passthrough only for a real single upstream JSON document. A
+  // forced-stream collapse (or any array) must be serialized structurally.
+  if (
+    res.rawProtocol === 'anthropic' &&
+    typeof res.raw === 'object' &&
+    res.raw !== null &&
+    !Array.isArray(res.raw)
+  ) {
     return res.raw;
   }
   const content: Array<Record<string, unknown>> = [];

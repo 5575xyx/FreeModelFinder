@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import {
   createZenGateway,
   normalizeZenConfig,
@@ -7,6 +8,7 @@ import {
   type ZenHttpClient,
   type ZenRoute,
 } from '@freemodelfinder/zen';
+import { CONFIG_DIR } from '../config/store.js';
 import type { ChatRequest, ChatResponse, ModelInfo, ProviderId, StreamChunk } from '../types.js';
 import { BaseProvider } from './base.js';
 
@@ -19,6 +21,21 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 function stringKeys(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+// Cache the model catalog and pricing next to the rest of the config so the
+// zen gateway can serve models before the first network refresh. Tests may
+// override the paths through credentials.extra.cachePaths.
+function resolveCachePaths(extra: Record<string, unknown>): { catalog: string; pricing: string } {
+  const override = asRecord(extra.cachePaths);
+  const catalog =
+    typeof override?.catalog === 'string' && override.catalog ? override.catalog : undefined;
+  const pricing =
+    typeof override?.pricing === 'string' && override.pricing ? override.pricing : undefined;
+  return {
+    catalog: catalog ?? join(CONFIG_DIR, 'zen.models.catalog.json'),
+    pricing: pricing ?? join(CONFIG_DIR, 'zen.models.dev.json'),
+  };
 }
 
 export class ZenProvider extends BaseProvider {
@@ -67,7 +84,10 @@ export class ZenProvider extends BaseProvider {
   private gatewayInstance(): ZenGateway {
     if (!this.gateway) {
       const extra = asRecord(this.ctx.credentials?.extra) ?? {};
-      const options: ZenGatewayOptions = { config: this.config() };
+      const options: ZenGatewayOptions = {
+        config: this.config(),
+        cachePaths: resolveCachePaths(extra),
+      };
       if (this.ctx.fetchImpl) options.fetchImpl = this.ctx.fetchImpl;
       const httpClient = extra.httpClient as ZenHttpClient | undefined;
       if (httpClient) options.httpClient = httpClient;

@@ -297,7 +297,6 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     }
     const clientProtocol = request.rawProtocol ?? 'openai';
     const upstreamProtocol = result.effectiveRoute.protocol;
-    const sameProtocol = CLIENT_TO_PROTOCOL[clientProtocol] === upstreamProtocol;
     // Mirrors gateway.go:230-243: the anonymous lane (and a shaped free key
     // body) is forced to stream, so a non-streaming client must have the SSE
     // events collapsed back into one document. The response content type is
@@ -309,10 +308,11 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
       const collapsed = collapseSseText(upstreamProtocol, text);
       // A shaped route whose body turned out to be a plain JSON document (or an
       // empty stream) has no SSE frames to collapse; keep the single-JSON path.
+      // A real collapse has no single upstream JSON document, so the structured
+      // collapsed response is authoritative: never attach the parsed event array
+      // as `raw`, which same-protocol passthrough would forward to the client.
       if (collapsed.events.length > 0) {
-        return sameProtocol
-          ? { ...collapsed.response, raw: collapsed.events, rawProtocol: clientProtocol }
-          : collapsed.response;
+        return collapsed.response;
       }
     }
     return convertResponse(parseJsonBody(text), upstreamProtocol, clientProtocol);

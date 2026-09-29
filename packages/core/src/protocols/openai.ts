@@ -109,7 +109,14 @@ export function openAIToChatRequest(req: OpenAIChatCompletionRequest): ChatReque
 }
 
 export function chatResponseToOpenAI(res: ChatResponse) {
-  if (res.raw != null && res.rawProtocol === 'openai') {
+  // Zero-loss passthrough only for a real single upstream JSON document. A
+  // forced-stream collapse (or any array) must be serialized structurally.
+  if (
+    res.rawProtocol === 'openai' &&
+    typeof res.raw === 'object' &&
+    res.raw !== null &&
+    !Array.isArray(res.raw)
+  ) {
     return res.raw;
   }
   const message: Record<string, unknown> = { role: 'assistant', content: res.content };

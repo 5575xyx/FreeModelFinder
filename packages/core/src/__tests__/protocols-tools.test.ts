@@ -463,6 +463,23 @@ describe('response raw carrier', () => {
     assert.equal(JSON.stringify(payload).includes('secretUpstreamField'), false);
   });
 
+  it('serializes structurally when the OpenAI raw carrier is an event array', () => {
+    const payload = chatResponseToOpenAI({
+      id: 'x',
+      model: 'm',
+      created: 1,
+      content: 'hi',
+      finish_reason: 'stop',
+      raw: [{ data: '{"delta":"hi"}' }],
+      rawProtocol: 'openai',
+    }) as Record<string, unknown>;
+    assert.equal(Array.isArray(payload), false);
+    assert.equal(payload.object, 'chat.completion');
+    assert.equal(payload.model, 'm');
+    assert.equal('raw' in payload, false);
+    assert.equal(JSON.stringify(payload).includes('"data"'), false);
+  });
+
   it('passes the raw Anthropic body through for an anthropic -> anthropic response', () => {
     const raw = { id: 'msg_1', type: 'message', secretUpstreamField: 1 };
     const payload = chatResponseToAnthropic({
@@ -489,6 +506,23 @@ describe('response raw carrier', () => {
     }) as Record<string, unknown>;
     assert.equal('raw' in payload, false);
     assert.equal(JSON.stringify(payload).includes('secretUpstreamField'), false);
+  });
+
+  it('serializes structurally when the Anthropic raw carrier is an event array', () => {
+    const payload = chatResponseToAnthropic({
+      id: 'msg_1',
+      model: 'm',
+      created: 1,
+      content: 'hi',
+      finish_reason: 'stop',
+      raw: [{ data: '{"delta":"hi"}' }],
+      rawProtocol: 'anthropic',
+    }) as Record<string, unknown>;
+    assert.equal(Array.isArray(payload), false);
+    assert.equal(payload.type, 'message');
+    assert.equal(payload.model, 'm');
+    assert.equal('raw' in payload, false);
+    assert.equal(JSON.stringify(payload).includes('"data"'), false);
   });
 
   it('does not leak StreamChunk.raw into the OpenAI stream delta', () => {
