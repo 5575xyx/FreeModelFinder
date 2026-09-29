@@ -415,7 +415,7 @@ describe('zen catalog routing', () => {
     assert.equal(route.anonymous, true);
     assert.equal(route.tier, 'zen');
     assert.equal(route.protocol, 'chat');
-    assert.deepEqual(route.keyTiers, ['go', 'zen']);
+    assert.deepEqual(route.keyTiers, ['zen']);
   });
 
   it('routes a paid model through the preferred key tier', () => {
@@ -1237,3 +1237,21 @@ git commit -m "feat(zen): 原子 JSON 缓存与 models 模块导出"
 1. **Spec 覆盖**：spec「模型发现与定价」节的 `models/catalog.ts`（Route/匿名资格/per-tier 协议）、`models/pricing.ts`（models.dev → 匿名资格）、`models/cache.ts`（磁盘缓存）由 B1–B5 落地；`models/discovery.ts` 的**能力目录 + `/v1/models`** 落地，**官方 `.mdx` 文档回退**明确延后到 P1-D（已在 B4 注明）。✅
 2. **占位符扫描**：无 TBD/TODO；每个代码步骤给出完整代码。
 3. **类型一致性**：`ZenTier`/`ZenRoute`/`AnonymousDecision`/`PricingDecider`（B1）被 B2/B3 复用；`ZenCapabilities`（B4）的 `native/unsupported/metadata` 形状与 `CatalogCapabilities`（B1）对齐（字段全 optional，`replace()` 直接接受）。
+
+## 延后到 P1-D 的清单（终审要求登记）
+
+P1-B 只落地「纯逻辑 + 注入式 fetchImpl」部分；以下 opencode2api `internal/models` / `internal/identity` 能力**刻意未纳入 P1-B**，P1-D 的刷新编排必须逐条覆盖，否则视为缺口：
+
+| 参考能力                                                                    | 说明                                                                                                                                         |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Catalog.LoadCache` / `SaveCache`                                           | 目录磁盘缓存：`schema_version` 校验、模型 ID 归一化、capabilities 合法性校验（`cache.go`）。P1-B 仅提供通用 `readJsonCache`/`writeJsonCache` |
+| `ZenPricingStore` 的 `fetch` / `Refresh` / `Start` + `loadCache`            | models.dev 抓取、24h 定时刷新、定价缓存读写（P1-B 只做解码 + `decide` + `snapshot`）                                                         |
+| `Catalog.AvailableModels` / `Diagnostic` / `CopyState` / `MetadataSnapshot` | 供 `/v1/models` 暴露与诊断的派生接口                                                                                                         |
+| `Route.ProtocolFor(tier)`                                                   | 便捷访问器（P1-B 用 `route.protocols[tier]` 代替）                                                                                           |
+| 官方 `.mdx` 文档协议表回退                                                  | `fetchProtocolDocs` 解析 + 覆盖能力目录（`CapabilityEndpoints.zenDocs/goDocs` 已预留）                                                       |
+| `fetchModels` 返回 HTTP 状态码                                              | 参考返回 `(models, status, err)`，P1-D 的代理健康记录需要状态码                                                                              |
+| 官方建议：`PricingStore` 的 name_free 回退 `source`                         | 参考在 name 命中时返回 `name_free`；P1-B 返回 `metadata_pending`/`metadata_model_missing`（仅诊断字段差异，行为一致，已由测试锁定）          |
+| `PricingStore` 的模型 ID `FirstString` 语义                                 | pricing 的 `String(model['id'] ?? id)` 未处理空串；discovery 已正确                                                                          |
+| 缓存临时名唯一性                                                            | 参考用 `CreateTemp` + 写锁 + `chmod 0600`；P1-B 用 `pid.Date.now()` 后缀                                                                     |
+
+> 集成提示（终审）：`fetchCapabilities()` **不产出** `zen`/`go` 模型清单；P1-D 必须把 `fetchModels()` 的结果与能力目录合并后，再调用 `ZenCatalog.replace()`（与参考 `ReplaceWithCapabilities` 的调用形态一致）。
