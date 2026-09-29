@@ -111,4 +111,77 @@ describe('zen collapse', () => {
     ]);
     assert.equal(res.tool_calls?.[0]?.function.arguments, '{"q":1}');
   });
+
+  it('merges usage field-wise so a later frame does not wipe earlier fields', () => {
+    const res = collapseChunks([
+      { id: 'x', model: 'm', created: 1, delta: '', usage: { prompt_tokens: 10 } },
+      { id: 'x', model: 'm', created: 1, delta: '', usage: { completion_tokens: 50 } },
+    ]);
+    assert.equal(res.usage?.prompt_tokens, 10);
+    assert.equal(res.usage?.completion_tokens, 50);
+    assert.equal(res.usage?.total_tokens, 60);
+  });
+});
+
+describe('zen stream error events', () => {
+  it('throws on a chat error event', () => {
+    assert.throws(() => parseChatChunk({ error: { message: 'boom' } }), /boom/);
+  });
+
+  it('throws on an anthropic error event', () => {
+    assert.throws(() => parseAnthropicChunk({ type: 'error', error: { message: 'boom' } }), /boom/);
+  });
+
+  it('throws on a responses error event', () => {
+    assert.throws(() => parseResponsesChunk({ type: 'error', error: { message: 'boom' } }), /boom/);
+  });
+});
+
+describe('zen responses stream tool correlation', () => {
+  it('correlates id/name and concatenates arguments across a folded stream', () => {
+    const chunks = [
+      parseResponsesChunk({
+        type: 'response.created',
+        response: { id: 'resp_1', model: 'm', created_at: 1 },
+      }),
+      parseResponsesChunk({
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: { type: 'function_call', call_id: 'call_1', name: 'f' },
+      }),
+      parseResponsesChunk({
+        type: 'response.function_call_arguments.delta',
+        output_index: 0,
+        delta: '{"q"',
+      }),
+      parseResponsesChunk({
+        type: 'response.function_call_arguments.delta',
+        output_index: 0,
+        delta: ':1}',
+      }),
+      parseResponsesChunk({
+        type: 'response.completed',
+        response: {
+          id: 'resp_1',
+          model: 'm',
+          status: 'completed',
+          output: [{ type: 'function_call', call_id: 'call_1', name: 'f', arguments: '{"q":1}' }],
+        },
+      }),
+    ];
+    const res = collapseChunks(chunks);
+    assert.equal(res.id, 'resp_1');
+    assert.equal(res.finish_reason, 'tool_calls');
+    assert.equal(res.tool_calls?.[0]?.id, 'call_1');
+    assert.equal(res.tool_calls?.[0]?.function.name, 'f');
+    assert.equal(res.tool_calls?.[0]?.function.arguments, '{"q":1}');
+  });
+
+  it('reads reasoning summary deltas as reasoning', () => {
+    const chunk = parseResponsesChunk({
+      type: 'response.reasoning_summary_text.delta',
+      delta: 'why',
+    });
+    assert.equal(chunk.reasoning, 'why');
+  });
 });

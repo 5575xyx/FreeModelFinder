@@ -198,6 +198,9 @@ function parseToolCallDeltas(value: unknown): ZenToolCallDelta[] | undefined {
 
 export function parseChatChunk(payload: unknown): ZenStreamChunk {
   const value = asRecord(payload) ?? {};
+  if (value['error'] !== undefined && value['error'] !== null) {
+    throw new Error(streamErrorMessage(value, 'upstream Chat stream error'));
+  }
   const chunk = emptyChunk(value);
   const choices = Array.isArray(value['choices']) ? value['choices'] : [];
   const choice = asRecord(choices[0]);
@@ -219,6 +222,9 @@ export function parseChatChunk(payload: unknown): ZenStreamChunk {
 
 export function parseAnthropicChunk(payload: unknown): ZenStreamChunk {
   const value = asRecord(payload) ?? {};
+  if (str(value['type']) === 'error') {
+    throw new Error(streamErrorMessage(value, 'upstream Anthropic stream error'));
+  }
   const chunk = emptyChunk(value);
   switch (str(value['type'])) {
     case 'message_start': {
@@ -286,6 +292,34 @@ function responsesCompletedFinish(
   return 'stop';
 }
 
+function streamErrorMessage(value: Record<string, unknown>, fallback: string): string {
+  const error = value['error'];
+  const record = asRecord(error);
+  const message = firstString(str(record?.['message']), str(value['message']));
+  if (message !== undefined) return message;
+  if (typeof error === 'string' && error !== '') return error;
+  if (error !== undefined && error !== null) return JSON.stringify(error);
+  return fallback;
+}
+
+function mergeUsage(target: ZenUsage, source: ZenUsage): void {
+  if (source.prompt_tokens !== undefined && source.prompt_tokens !== 0) {
+    target.prompt_tokens = source.prompt_tokens;
+  }
+  if (source.completion_tokens !== undefined && source.completion_tokens !== 0) {
+    target.completion_tokens = source.completion_tokens;
+  }
+  if (source.total_tokens !== undefined && source.total_tokens !== 0) {
+    target.total_tokens = Math.max(target.total_tokens ?? 0, source.total_tokens);
+  }
+  const cached = source.prompt_tokens_details?.cached_tokens;
+  if (cached !== undefined && cached !== 0) {
+    target.prompt_tokens_details = { cached_tokens: cached };
+  }
+  const derived = (target.prompt_tokens ?? 0) + (target.completion_tokens ?? 0);
+  target.total_tokens = Math.max(target.total_tokens ?? 0, derived);
+}
+
 export function collapseChunks(chunks: ZenStreamChunk[]): ZenChatResponse {
   let id: string | undefined;
   let model: string | undefined;
@@ -324,7 +358,10 @@ export function collapseChunks(chunks: ZenStreamChunk[]): ZenChatResponse {
     if (chunk.finish_reason !== undefined && chunk.finish_reason !== null) {
       finish_reason = chunk.finish_reason;
     }
-    if (chunk.usage !== undefined) usage = chunk.usage;
+    if (chunk.usage !== undefined) {
+      usage = usage ?? {};
+      mergeUsage(usage, chunk.usage);
+    }
   }
 
   const response: ZenChatResponse = {
@@ -342,8 +379,15 @@ export function collapseChunks(chunks: ZenStreamChunk[]): ZenChatResponse {
 
 export function parseResponsesChunk(payload: unknown): ZenStreamChunk {
   const value = asRecord(payload) ?? {};
-  const chunk = emptyChunk(value);
   const type = str(value['type']) ?? '';
+  if (type === 'error') {
+    throw new Error(streamErrorMessage(value, 'upstream Responses stream error'));
+  }
+  const responseRecord = asRecord(value['response']);
+  if (responseRecord && responseRecord['error'] !== undefined && responseRecord['error'] !== null) {
+    throw new Error(streamErrorMessage(responseRecord, 'upstream Responses request failed'));
+  }
+  const chunk = emptyChunk(value);
   switch (type) {
     case 'response.created': {
       const response = asRecord(value['response']) ?? {};
@@ -358,6 +402,26 @@ export function parseResponsesChunk(payload: unknown): ZenStreamChunk {
     case 'response.output_text.delta': {
       const delta = str(value['delta']);
       if (delta !== undefined && delta !== '') chunk.delta = delta;
+      break;
+    }
+    case 'response.reasoning_summary_text.delta': {
+      const delta = str(value['delta']);
+      if (delta !== undefined && delta !== '') chunk.reasoning = delta;
+      break;
+    }
+    case 'response.output_item.added':
+    case 'response.output_item.done': {
+      const item = asRecord(value['item']);
+      if (str(item?.['type']) === 'function_call') {
+        const delta: ZenToolCallDelta = {
+          index: num(value['output_index']) ?? 0,
+          type: 'function',
+          function: { name: str(item?.['name']) ?? '' },
+        };
+        const id = firstString(str(item?.['call_id']), str(item?.['id']));
+        if (id !== undefined) delta.id = id;
+        chunk.tool_calls = [delta];
+      }
       break;
     }
     case 'response.function_call_arguments.delta': {
