@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { openAIToChatRequest, type OpenAIChatCompletionRequest } from '../protocols/openai.js';
 import { ChatRequestSchema } from '../types.js';
 
 describe('tools typing', () => {
@@ -26,5 +27,44 @@ describe('tools typing', () => {
     });
     assert.equal(parsed.tools, undefined);
     assert.equal(parsed.raw, undefined);
+  });
+});
+
+describe('openai inbound tools', () => {
+  it('keeps tools and captures the raw body', () => {
+    const body = {
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [{ type: 'function', function: { name: 'search', parameters: { type: 'object' } } }],
+      seed: 7,
+    } as unknown as OpenAIChatCompletionRequest;
+    const out = openAIToChatRequest(body);
+    assert.equal(out.tools?.[0]?.function.name, 'search');
+    assert.deepEqual(out.raw, body);
+  });
+
+  it('omits tools and raw when the client sent neither', () => {
+    const out = openAIToChatRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+    } as OpenAIChatCompletionRequest);
+    assert.equal(out.tools, undefined);
+    assert.equal(out.raw, undefined);
+  });
+
+  it('keeps assistant tool_calls on the message', () => {
+    const out = openAIToChatRequest({
+      model: 'm',
+      messages: [
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            { id: 'call_1', type: 'function', function: { name: 'f', arguments: '{}' } },
+          ],
+        },
+      ],
+    } as unknown as OpenAIChatCompletionRequest);
+    assert.equal(out.messages[0]?.tool_calls?.[0]?.id, 'call_1');
   });
 });
