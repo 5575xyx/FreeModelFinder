@@ -78,8 +78,10 @@ export function parseProxyList(
   const out: ProxySpec[] = [];
   for (const raw of sources) {
     const spec = parseProxy(raw);
-    if (!spec || seen.has(spec.label)) continue;
-    seen.add(spec.label);
+    if (!spec) continue;
+    const key = spec.url ?? 'direct';
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push(spec);
   }
   if (out.length === 0) out.push({ kind: 'direct', label: 'direct' });
