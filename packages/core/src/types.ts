@@ -46,12 +46,49 @@ export const ChatContentPartSchema = z.union([
   }),
 ]);
 
+export const ToolFunctionParametersSchema = z.record(z.unknown());
+
+export const ToolDefinitionSchema = z.object({
+  type: z.literal('function').optional(),
+  function: z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    parameters: ToolFunctionParametersSchema.optional(),
+  }),
+});
+export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
+
+export const ToolCallSchema = z.object({
+  id: z.string().optional(),
+  type: z.literal('function').optional(),
+  function: z.object({
+    name: z.string(),
+    arguments: z.string().optional(),
+  }),
+});
+export type ToolCall = z.infer<typeof ToolCallSchema>;
+
+export const ToolCallDeltaSchema = z.object({
+  index: z.number().int().nonnegative(),
+  id: z.string().optional(),
+  type: z.literal('function').optional(),
+  function: z
+    .object({
+      name: z.string().optional(),
+      arguments: z.string().optional(),
+    })
+    .optional(),
+});
+export type ToolCallDelta = z.infer<typeof ToolCallDeltaSchema>;
+
 export const ChatMessageSchema = z.object({
   role: RoleSchema,
   content: z.string(),
   contentParts: z.array(ChatContentPartSchema).optional(),
   name: z.string().optional(),
   tool_call_id: z.string().optional(),
+  tool_calls: z.array(ToolCallSchema).optional(),
+  reasoning: z.string().optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
@@ -63,6 +100,8 @@ export const ChatRequestSchema = z.object({
   max_tokens: z.number().int().positive().optional(),
   stream: z.boolean().optional().default(false),
   stop: z.union([z.string(), z.array(z.string())]).optional(),
+  tools: z.array(ToolDefinitionSchema).optional(),
+  raw: z.unknown().optional(),
 });
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 
@@ -72,6 +111,8 @@ export interface ChatResponse {
   created: number;
   content: string;
   finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
+  tool_calls?: ToolCall[];
+  reasoning?: string;
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
@@ -86,6 +127,8 @@ export interface StreamChunk {
   created: number;
   delta: string;
   finish_reason?: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
+  tool_calls?: ToolCallDelta[];
+  reasoning?: string;
 }
 
 export interface ModelInfo {
