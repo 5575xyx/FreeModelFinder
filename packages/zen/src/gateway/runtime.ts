@@ -11,10 +11,12 @@ import type { CatalogSnapshot, ZenRoute, ZenTier } from '../models/types.js';
 import { parseProxyList, type ProxySpec } from '../proxy/spec.js';
 import { convertResponse } from '../protocol/response.js';
 import {
+  collapseChunks,
   parseAnthropicChunk,
   parseChatChunk,
   parseResponsesChunk,
   SseParser,
+  type SseEvent,
 } from '../protocol/stream.js';
 import type {
   ZenChatResponse,
@@ -141,6 +143,36 @@ function parseStreamChunk(protocol: ZenProtocol, payload: unknown): ZenStreamChu
   }
 }
 
+function headerText(value: string | string[] | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
+
+// Mirrors wire.CollapseStream in internal/protocol/collapse.go:17 as used by
+// gateway.go:230-243: replay the upstream SSE frames through the protocol chunk
+// parser and collapse them into the single document a non-streaming client
+// asked for. The parsed frames are returned too so the caller can backfill raw.
+function collapseSseText(
+  protocol: ZenProtocol,
+  text: string,
+): { response: ZenChatResponse; events: SseEvent[] } {
+  const parser = new SseParser();
+  const chunks: ZenStreamChunk[] = [];
+  const events: SseEvent[] = [];
+  for (const event of parser.push(text)) {
+    if (event.data === '[DONE]') continue;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(event.data);
+    } catch {
+      throw new Error(`upstream stream sent malformed JSON: ${event.data}`);
+    }
+    events.push(event);
+    chunks.push(parseStreamChunk(protocol, payload));
+  }
+  return { response: collapseChunks(chunks), events };
+}
+
 // Mirrors NewRuntimeManager + Gateway.New in internal/gateway/runtime.go:52-112
 // and gateway.go:40-66: assemble the proxies, key/anonymous pools, catalog,
 // pricing store, refresher and attempt monitor behind one facade.
@@ -225,7 +257,26 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
       throw new Error(`upstream returned HTTP ${response.status}: ${text}`);
     }
     const clientProtocol = request.rawProtocol ?? 'openai';
-    return convertResponse(parseJsonBody(text), result.effectiveRoute.protocol, clientProtocol);
+    const upstreamProtocol = result.effectiveRoute.protocol;
+    const sameProtocol = CLIENT_TO_PROTOCOL[clientProtocol] === upstreamProtocol;
+    // Mirrors gateway.go:230-243: the anonymous lane (and a shaped free key
+    // body) is forced to stream, so a non-streaming client must have the SSE
+    // events collapsed back into one document. The response content type is
+    // authoritative when present.
+    const contentType = headerText(response.headers['content-type']);
+    const shaped = result.effectiveRoute.anonymous || catalog.isFreeModel(result.effectiveRoute.id);
+    const streamed = shaped || (contentType?.includes('text/event-stream') ?? false);
+    if (streamed) {
+      const collapsed = collapseSseText(upstreamProtocol, text);
+      // A shaped route whose body turned out to be a plain JSON document (or an
+      // empty stream) has no SSE frames to collapse; keep the single-JSON path.
+      if (collapsed.events.length > 0) {
+        return sameProtocol
+          ? { ...collapsed.response, raw: collapsed.events, rawProtocol: clientProtocol }
+          : collapsed.response;
+      }
+    }
+    return convertResponse(parseJsonBody(text), upstreamProtocol, clientProtocol);
   }
 
   // Mirrors the streamed branch of handleInference in internal/gateway/gateway.go:

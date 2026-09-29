@@ -187,6 +187,24 @@ describe('zen gateway runtime', () => {
     assert.equal(sent['stream'], true);
   });
 
+  it('collapses an anonymous SSE body for a non-streaming chat request', async () => {
+    const client = new FakeClient(() => inboundSse(SSE));
+    const gateway = makeGateway(client);
+    await gateway.refresh();
+
+    const response = await gateway.chat({
+      model: 'free-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      rawProtocol: 'openai',
+    });
+
+    assert.equal(response.model, 'free-model');
+    assert.equal(response.content, 'hello');
+    assert.equal(response.finish_reason, 'stop');
+    assert.equal(response.rawProtocol, 'openai');
+    assert.ok(response.raw !== undefined);
+  });
+
   it('streams parsed chunks with the raw SSE frame attached', async () => {
     const gateway = makeGateway(new FakeClient(() => inboundSse(SSE)));
     await gateway.refresh();
