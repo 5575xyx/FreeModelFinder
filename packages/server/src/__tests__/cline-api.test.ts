@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import {
   ProviderRegistry,
+  __resetCatalogCacheForTests,
   createTestRuntime,
   getCredentialRuntime,
   type AppConfig,
@@ -158,6 +159,7 @@ after(() => {
 
 describe('cline startup warm-up', () => {
   let app: FastifyInstance;
+  let registry: ProviderRegistry;
   let originalWarm: typeof ProviderRegistry.prototype.warmCredentials;
   let warmCalls = 0;
   let warmResolvedAtReturn = false;
@@ -184,8 +186,9 @@ describe('cline startup warm-up', () => {
       resolved = true;
       return result;
     };
+    registry = new ProviderRegistry(testConfig());
     const server = await createServer({
-      registry: new ProviderRegistry(testConfig()),
+      registry,
       watchIntervalMs: 60 * 60 * 1000,
     });
     warmResolvedAtReturn = resolved;
@@ -216,7 +219,14 @@ describe('cline startup warm-up', () => {
   it('serves the cline catalog through the local upstream stub', async () => {
     const response = await app.inject({ method: 'GET', url: '/v1/models' });
     assert.equal(response.statusCode, 200);
-    assert.ok(catalogFetches >= 1, `expected the catalog stub to answer, got ${catalogFetches}`);
+
+    __resetCatalogCacheForTests();
+    const before = catalogFetches;
+    await registry.listAllModels(true);
+    assert.ok(
+      catalogFetches > before,
+      `expected a fresh catalog fetch through the stub, got ${catalogFetches} (before ${before})`,
+    );
     assert.equal(
       passthroughUrls.filter((url) => url.includes('api.cline.bot')).length,
       0,
@@ -762,6 +772,16 @@ describe('cline dynamicModels persistence', () => {
     assert.equal(await echoDynamicModels(), false);
     await postProvider({ provider: 'cline', apiKeys: ['sk-test-value'] });
     assert.equal(await echoDynamicModels(), false);
+  });
+
+  it('keeps dynamicModels across a clearCredentials POST', async () => {
+    await postProvider({ provider: 'cline', dynamicModels: false });
+    await postProvider({ provider: 'cline', clearCredentials: true });
+    assert.equal(await echoDynamicModels(), false);
+
+    await postProvider({ provider: 'cline', dynamicModels: false });
+    await postProvider({ provider: 'cline', clearCredentials: true, dynamicModels: true });
+    assert.equal(await echoDynamicModels(), true);
   });
 });
 

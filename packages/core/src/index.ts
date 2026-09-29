@@ -6,6 +6,7 @@ export { asModelList } from './config/model-list.js';
 export * from './config/crypto.js';
 export * from './config/snapshot.js';
 export * from './providers/index.js';
+export { __resetCatalogCacheForTests } from './providers/cline-catalog.js';
 export * from './protocols/index.js';
 export * from './onboarding.js';
 export { isQueueFullError, retryOnQueueFull, type RetryOnQueueFullOptions } from './queue-retry.js';

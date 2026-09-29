@@ -95,8 +95,10 @@ export function ClineAccountsPanel({
   const [actionError, setActionError] = useState('');
   const [notice, setNotice] = useState('');
   const [now, setNow] = useState(() => Date.now());
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   const aliveRef = useRef(true);
+  const settingsSavingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flowRef = useRef<Flow | null>(null);
@@ -240,40 +242,46 @@ export function ClineAccountsPanel({
     }
   }
 
-  async function postEnabled(value: boolean): Promise<void> {
+  async function postProviderSetting(body: Record<string, unknown>): Promise<void> {
     const res = await fetch(
       `${GATEWAY}/api/providers`,
       withUiHeaders({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ provider: 'cline', enabled: value }),
+        body: JSON.stringify(body),
       }),
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   }
 
+  async function postEnabled(value: boolean): Promise<void> {
+    await postProviderSetting({ provider: 'cline', enabled: value });
+  }
+
   async function postDynamicModels(value: boolean): Promise<void> {
-    const res = await fetch(
-      `${GATEWAY}/api/providers`,
-      withUiHeaders({
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ provider: 'cline', dynamicModels: value }),
-      }),
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await postProviderSetting({ provider: 'cline', dynamicModels: value });
+  }
+
+  async function runSettingSave(task: () => Promise<void>): Promise<void> {
+    if (settingsSavingRef.current) return;
+    settingsSavingRef.current = true;
+    setSettingsSaving(true);
+    setActionError('');
+    setNotice('');
+    try {
+      await task();
+      onChanged?.();
+    } catch (error) {
+      if (aliveRef.current) setActionError(messageOf(error));
+    } finally {
+      settingsSavingRef.current = false;
+      if (aliveRef.current) setSettingsSaving(false);
+    }
   }
 
   async function handleDynamicToggle(event: ChangeEvent<HTMLInputElement>): Promise<void> {
     const next = event.target.checked;
-    setActionError('');
-    setNotice('');
-    try {
-      await postDynamicModels(next);
-      onChanged?.();
-    } catch (error) {
-      if (aliveRef.current) setActionError(messageOf(error));
-    }
+    await runSettingSave(() => postDynamicModels(next));
   }
 
   async function startLogin(): Promise<void> {
@@ -373,14 +381,7 @@ export function ClineAccountsPanel({
 
   async function handleToggle(event: ChangeEvent<HTMLInputElement>): Promise<void> {
     const next = event.target.checked;
-    setActionError('');
-    setNotice('');
-    try {
-      await postEnabled(next);
-      onChanged?.();
-    } catch (error) {
-      if (aliveRef.current) setActionError(messageOf(error));
-    }
+    await runSettingSave(() => postEnabled(next));
   }
 
   async function copyCode(code: string): Promise<void> {
@@ -409,6 +410,7 @@ export function ClineAccountsPanel({
           <input
             type="checkbox"
             checked={enabled}
+            disabled={settingsSaving}
             onChange={(event) => void handleToggle(event)}
             aria-label={t('settings.cline.enable')}
             className="h-3.5 w-3.5 accent-[var(--color-primary,#4f7cff)]"
@@ -421,6 +423,7 @@ export function ClineAccountsPanel({
         <input
           type="checkbox"
           checked={dynamicModels !== false}
+          disabled={settingsSaving}
           onChange={(event) => void handleDynamicToggle(event)}
           aria-label={t('settings.cline.dynamicModels')}
           className="mt-0.5 h-3.5 w-3.5 accent-[var(--color-primary,#4f7cff)]"

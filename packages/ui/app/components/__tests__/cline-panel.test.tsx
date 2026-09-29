@@ -591,6 +591,37 @@ describe('cline dynamic models checkbox', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  it('ignores a second toggle while the first save is still in flight', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.get(accountsUrl, () => HttpResponse.json({ accounts: [] })),
+      http.post(providersUrl, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        await gate;
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<ClineAccountsPanel enabled />);
+
+    const box = (await screen.findByRole('checkbox', {
+      name: '动态同步上游免费模型',
+    })) as HTMLInputElement;
+    await user.click(box);
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(box.disabled).toBe(true);
+
+    await user.click(box);
+    expect(writes).toHaveLength(1);
+
+    release();
+    await waitFor(() => expect(box.disabled).toBe(false));
+  });
+
   it('keeps the box unchecked when the panel renders dynamicModels false', async () => {
     server.use(http.get(accountsUrl, () => HttpResponse.json({ accounts: [] })));
     render(<ClineAccountsPanel enabled dynamicModels={false} />);
