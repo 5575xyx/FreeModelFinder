@@ -175,7 +175,7 @@ export function chatResponseToAnthropic(res: ChatResponse) {
       const rawArgs = call.function.arguments;
       if (rawArgs) {
         try {
-          input = JSON.parse(rawArgs);
+          input = JSON.parse(rawArgs) || {};
         } catch {
           input = {};
         }

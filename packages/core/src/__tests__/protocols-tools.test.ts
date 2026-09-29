@@ -290,4 +290,17 @@ describe('anthropic outbound tool_use', () => {
     assert.equal(payload.stop_reason, 'end_turn');
     assert.deepEqual(payload.content, [{ type: 'text', text: 'hello' }]);
   });
+
+  it('falls back to an empty object for non-object tool arguments', () => {
+    const payload = chatResponseToAnthropic({
+      id: 'msg_2',
+      model: 'm',
+      created: 1,
+      content: '',
+      finish_reason: 'tool_calls',
+      tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: 'null' } }],
+    }) as { content: Array<Record<string, unknown>> };
+    const block = payload.content[0] as Record<string, unknown>;
+    assert.deepEqual(block.input, {});
+  });
 });
