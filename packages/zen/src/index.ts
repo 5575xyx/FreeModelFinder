@@ -21,3 +21,8 @@ export * from './protocol/stream.js';
 export * from './protocol/agent.js';
 export * from './protocol/effort.js';
 export * from './protocol/stale.js';
+export * from './gateway/health.js';
+export * from './gateway/pool.js';
+export * from './gateway/refresh.js';
+export * from './gateway/upstream.js';
+export * from './gateway/runtime.js';
