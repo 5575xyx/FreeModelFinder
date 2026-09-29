@@ -5,6 +5,7 @@ import {
   parseChatChunk,
   parseAnthropicChunk,
   parseResponsesChunk,
+  collapseChunks,
 } from '../protocol/stream.js';
 
 describe('zen sse parser', () => {
@@ -64,5 +65,50 @@ describe('zen stream chunk parsing', () => {
   it('parses a responses output_text delta', () => {
     const chunk = parseResponsesChunk({ type: 'response.output_text.delta', delta: 'hi' });
     assert.equal(chunk.delta, 'hi');
+  });
+});
+
+describe('zen collapse', () => {
+  it('aggregates content, tool calls, reasoning and usage', () => {
+    const res = collapseChunks([
+      { id: 'gen_1', model: 'm', created: 1, delta: 'He', reasoning: 'r1' },
+      { id: 'gen_1', model: 'm', created: 1, delta: 'llo' },
+      {
+        id: 'gen_1',
+        model: 'm',
+        created: 1,
+        delta: '',
+        finish_reason: 'tool_calls',
+        tool_calls: [{ index: 0, id: 'call_1', function: { name: 'f', arguments: '{"q":1}' } }],
+      },
+      { id: 'gen_1', model: 'm', created: 1, delta: '', usage: { total_tokens: 7 } },
+    ]);
+    assert.equal(res.id, 'gen_1');
+    assert.equal(res.content, 'Hello');
+    assert.equal(res.reasoning, 'r1');
+    assert.equal(res.finish_reason, 'tool_calls');
+    assert.equal(res.tool_calls?.[0]?.function.arguments, '{"q":1}');
+    assert.equal(res.usage?.total_tokens, 7);
+  });
+
+  it('concatenates streamed tool-call argument fragments by index', () => {
+    const res = collapseChunks([
+      {
+        id: 'x',
+        model: 'm',
+        created: 1,
+        delta: '',
+        tool_calls: [{ index: 0, id: 'call_1', function: { name: 'f', arguments: '{"q"' } }],
+      },
+      {
+        id: 'x',
+        model: 'm',
+        created: 1,
+        delta: '',
+        tool_calls: [{ index: 0, function: { arguments: ':1}' } }],
+      },
+      { id: 'x', model: 'm', created: 1, delta: '', finish_reason: 'tool_calls' },
+    ]);
+    assert.equal(res.tool_calls?.[0]?.function.arguments, '{"q":1}');
   });
 });

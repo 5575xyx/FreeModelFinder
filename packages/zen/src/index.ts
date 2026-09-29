@@ -16,3 +16,5 @@ export * from './protocol/chat.js';
 export * from './protocol/anthropic.js';
 export * from './protocol/responses.js';
 export * from './protocol/request.js';
+export * from './protocol/response.js';
+export * from './protocol/stream.js';

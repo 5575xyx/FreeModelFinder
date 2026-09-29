@@ -55,6 +55,9 @@ function messageToBlocks(message: ZenChatMessage): AnthropicBlock[] {
     ];
   }
   const blocks: AnthropicBlock[] = [];
+  if (message.reasoning) {
+    blocks.push({ type: 'thinking', thinking: message.reasoning });
+  }
   if (message.contentParts && message.contentParts.length > 0) {
     blocks.push(...contentPartsToBlocks(message.contentParts));
   } else if (message.content) {

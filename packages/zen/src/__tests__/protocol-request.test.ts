@@ -175,6 +175,16 @@ describe('zen anthropic body encoding', () => {
     const body = toAnthropicBody({ model: 'm', messages: [{ role: 'user', content: 'hi' }] });
     assert.equal(body.max_tokens, DEFAULT_ANTHROPIC_MAX_TOKENS);
   });
+
+  it('encodes assistant reasoning as a thinking block for anthropic', () => {
+    const body = toAnthropicBody({
+      model: 'm',
+      messages: [{ role: 'assistant', content: 'answer', reasoning: 'step' }],
+      max_tokens: 16,
+    });
+    const messages = body.messages as Array<{ content: Array<Record<string, unknown>> }>;
+    assert.deepEqual(messages[0]?.content[0], { type: 'thinking', thinking: 'step' });
+  });
 });
 
 describe('zen anthropic body encoding boundaries', () => {
@@ -390,7 +400,12 @@ describe('zen responses body encoding', () => {
 
 describe('zen prepareRequest', () => {
   it('short-circuits to the raw body when the client protocol is chat', () => {
-    const raw = { model: 'orig-model', messages: [{ role: 'user', content: 'hi' }], seed: 7, stream: true };
+    const raw = {
+      model: 'orig-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      seed: 7,
+      stream: true,
+    };
     const body = prepareRequest(
       {
         model: 'new-model',
@@ -455,10 +470,7 @@ describe('zen prepareRequest', () => {
 
   it('deep-clones the raw body so callers keep their original object', () => {
     const raw = { model: 'orig', messages: [{ role: 'user', content: 'hi' }] };
-    const body = prepareRequest(
-      { model: 'm', messages: [], raw, rawProtocol: 'openai' },
-      'chat',
-    );
+    const body = prepareRequest({ model: 'm', messages: [], raw, rawProtocol: 'openai' }, 'chat');
     body['model'] = 'changed';
     assert.equal(raw.model, 'orig', 'caller raw must not be mutated');
   });

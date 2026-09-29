@@ -1,4 +1,10 @@
-import type { ZenStreamChunk, ZenToolCallDelta, ZenUsage } from './types.js';
+import type {
+  ZenChatResponse,
+  ZenStreamChunk,
+  ZenToolCall,
+  ZenToolCallDelta,
+  ZenUsage,
+} from './types.js';
 
 export interface SseEvent {
   event?: string;
@@ -278,6 +284,60 @@ function responsesCompletedFinish(
     if (str(asRecord(raw)?.['type']) === 'function_call') return 'tool_calls';
   }
   return 'stop';
+}
+
+export function collapseChunks(chunks: ZenStreamChunk[]): ZenChatResponse {
+  let id: string | undefined;
+  let model: string | undefined;
+  let created: number | undefined;
+  let content = '';
+  let reasoning = '';
+  let finish_reason: ZenChatResponse['finish_reason'] = null;
+  let usage: ZenUsage | undefined;
+  const toolCalls: ZenToolCall[] = [];
+  const toolByIndex = new Map<number, ZenToolCall>();
+
+  for (const chunk of chunks) {
+    if (id === undefined && chunk.id !== '') id = chunk.id;
+    if (model === undefined && chunk.model !== '') model = chunk.model;
+    if (created === undefined && chunk.created !== 0) created = chunk.created;
+    content += chunk.delta;
+    if (chunk.reasoning !== undefined && chunk.reasoning !== '') reasoning += chunk.reasoning;
+    for (const delta of chunk.tool_calls ?? []) {
+      let target = toolByIndex.get(delta.index);
+      if (target === undefined) {
+        target = { type: 'function', function: { name: '' } };
+        toolByIndex.set(delta.index, target);
+        toolCalls.push(target);
+      }
+      if (target.id === undefined && delta.id !== undefined && delta.id !== '')
+        target.id = delta.id;
+      const name = delta.function?.name;
+      if (target.function.name === '' && name !== undefined && name !== '') {
+        target.function.name = name;
+      }
+      const args = delta.function?.arguments;
+      if (args !== undefined) {
+        target.function.arguments = (target.function.arguments ?? '') + args;
+      }
+    }
+    if (chunk.finish_reason !== undefined && chunk.finish_reason !== null) {
+      finish_reason = chunk.finish_reason;
+    }
+    if (chunk.usage !== undefined) usage = chunk.usage;
+  }
+
+  const response: ZenChatResponse = {
+    id: id ?? `zen-${Date.now()}`,
+    model: model ?? '',
+    created: created ?? Math.floor(Date.now() / 1000),
+    content,
+    finish_reason,
+  };
+  if (reasoning !== '') response.reasoning = reasoning;
+  if (toolCalls.length > 0) response.tool_calls = toolCalls;
+  if (usage !== undefined) response.usage = usage;
+  return response;
 }
 
 export function parseResponsesChunk(payload: unknown): ZenStreamChunk {
