@@ -59,4 +59,28 @@ describe('opencode hasKey seam', () => {
     });
     assert.equal(await hasKey(), false);
   });
+
+  it('reports opencode as keyed from a singular apiKey', async () => {
+    const current = registry.getConfig();
+    registry.updateConfig({
+      ...current,
+      providers: {
+        ...current.providers,
+        opencode: { enabled: true, credentials: { apiKey: 'sk-live-123' } },
+      },
+    });
+    assert.equal(await hasKey(), true);
+  });
+
+  it('reports opencode as keyed from goKeys', async () => {
+    const current = registry.getConfig();
+    registry.updateConfig({
+      ...current,
+      providers: {
+        ...current.providers,
+        opencode: { enabled: true, credentials: { apiKey: '', extra: { goKeys: ['go-key'] } } },
+      },
+    });
+    assert.equal(await hasKey(), true);
+  });
 });

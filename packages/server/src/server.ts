@@ -643,8 +643,13 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
               hasKey:
                 id === 'opencode'
                   ? !!s?.enabled &&
-                    (s?.credentials?.extra?.anonymous === true ||
-                      (s?.credentials?.apiKeys?.some((key) => !!key?.trim()) ?? false))
+                    (s?.credentials?.extra?.['anonymous'] === true ||
+                      (s?.credentials?.apiKeys?.some((key) => !!key?.trim()) ?? false) ||
+                      !!s?.credentials?.apiKey?.trim() ||
+                      (Array.isArray(s?.credentials?.extra?.['goKeys']) &&
+                        (s?.credentials?.extra?.['goKeys'] as unknown[]).some(
+                          (key) => typeof key === 'string' && !!key.trim(),
+                        )))
                   : id === 'cline'
                     ? !!s?.enabled && getCredentialRuntime().hasActiveAccounts('cline')
                     : !!s?.credentials?.apiKey,
