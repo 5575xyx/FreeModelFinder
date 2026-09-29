@@ -11,3 +11,8 @@ export * from './models/catalog.js';
 export * from './models/pricing.js';
 export * from './models/discovery.js';
 export * from './models/cache.js';
+export * from './protocol/types.js';
+export * from './protocol/chat.js';
+export * from './protocol/anthropic.js';
+export * from './protocol/responses.js';
+export * from './protocol/request.js';

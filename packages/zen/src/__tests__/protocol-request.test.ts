@@ -4,6 +4,7 @@ import { isZenProtocol } from '../protocol/types.js';
 import { toChatBody } from '../protocol/chat.js';
 import { toAnthropicBody, DEFAULT_ANTHROPIC_MAX_TOKENS } from '../protocol/anthropic.js';
 import { toResponsesBody } from '../protocol/responses.js';
+import { prepareRequest } from '../protocol/request.js';
 
 describe('zen protocol types', () => {
   it('accepts the three native protocols', () => {
@@ -384,5 +385,51 @@ describe('zen responses body encoding', () => {
     const content = input[0]?.content as Array<Record<string, unknown>>;
     assert.deepEqual(content[1], { type: 'input_image', image_url: 'https://example.com/a.png' });
     assert.deepEqual(content[0], { type: 'input_text', text: 'see' });
+  });
+});
+
+describe('zen prepareRequest', () => {
+  it('short-circuits to the raw body when the client protocol is chat', () => {
+    const raw = { model: 'orig-model', messages: [{ role: 'user', content: 'hi' }], seed: 7, stream: true };
+    const body = prepareRequest(
+      {
+        model: 'new-model',
+        messages: [{ role: 'user', content: 'hi' }],
+        raw,
+        rawProtocol: 'openai',
+      },
+      'chat',
+    );
+    assert.equal(body.model, 'new-model');
+    assert.equal(body['seed'], 7);
+    assert.equal(body.stream, true);
+  });
+
+  it('encodes structurally for a cross-protocol target', () => {
+    const body = prepareRequest(
+      {
+        model: 'm',
+        messages: [{ role: 'user', content: 'hi' }],
+        raw: { messages: [{ role: 'user', content: 'hi' }] },
+        rawProtocol: 'openai',
+      },
+      'anthropic',
+    );
+    assert.equal(body.max_tokens, 4096);
+    assert.ok(Array.isArray(body.messages));
+  });
+
+  it('does not reuse raw when the protocols differ', () => {
+    const body = prepareRequest(
+      {
+        model: 'm',
+        messages: [{ role: 'user', content: 'hi' }],
+        raw: { model: 'orig', messages: [], seed: 7 },
+        rawProtocol: 'gemini',
+      },
+      'chat',
+    );
+    assert.equal('seed' in body, false);
+    assert.deepEqual(body.messages, [{ role: 'user', content: 'hi' }]);
   });
 });
