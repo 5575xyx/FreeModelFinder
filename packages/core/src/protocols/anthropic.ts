@@ -169,36 +169,43 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
 
 export function chatResponseToAnthropic(res: ChatResponse) {
   const content: Array<Record<string, unknown>> = [];
+  if (res.reasoning) {
+    content.push({ type: 'text', text: res.reasoning });
+  }
+  if (res.content) {
+    content.push({ type: 'text', text: res.content });
+  }
   if (res.tool_calls && res.tool_calls.length > 0) {
+    let callIndex = 0;
     for (const call of res.tool_calls) {
       let input: unknown = {};
       const rawArgs = call.function.arguments;
       if (rawArgs) {
         try {
-          input = JSON.parse(rawArgs) || {};
+          const parsed: unknown = JSON.parse(rawArgs);
+          input = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
         } catch {
           input = {};
         }
       }
       content.push({
         type: 'tool_use',
-        id: call.id ?? `call_${Math.random().toString(36).slice(2, 10)}`,
+        id: call.id ?? `call_${callIndex}`,
         name: call.function.name,
         input,
       });
+      callIndex += 1;
     }
-  } else {
-    content.push({ type: 'text', text: res.content });
   }
-  if (res.reasoning) {
-    content.unshift({ type: 'text', text: res.reasoning });
+  if (content.length === 0) {
+    content.push({ type: 'text', text: '' });
   }
 
   const stop_reason =
-    res.finish_reason === 'length'
-      ? 'max_tokens'
-      : res.finish_reason === 'tool_calls'
-        ? 'tool_use'
+    res.tool_calls && res.tool_calls.length > 0
+      ? 'tool_use'
+      : res.finish_reason === 'length'
+        ? 'max_tokens'
         : res.finish_reason === 'stop'
           ? 'end_turn'
           : res.finish_reason;

@@ -303,4 +303,34 @@ describe('anthropic outbound tool_use', () => {
     const block = payload.content[0] as Record<string, unknown>;
     assert.deepEqual(block.input, {});
   });
+
+  it('normalizes array/scalar arguments to an object', () => {
+    const payload = chatResponseToAnthropic({
+      id: 'msg_3',
+      model: 'm',
+      created: 1,
+      content: '',
+      finish_reason: 'tool_calls',
+      tool_calls: [
+        { id: 'c1', type: 'function', function: { name: 'f', arguments: '[1,2]' } },
+        { id: 'c2', type: 'function', function: { name: 'g', arguments: '42' } },
+      ],
+    }) as { content: Array<Record<string, unknown>>; stop_reason: string };
+    assert.deepEqual((payload.content[0] as Record<string, unknown>).input, {});
+    assert.deepEqual((payload.content[1] as Record<string, unknown>).input, {});
+    assert.equal(payload.stop_reason, 'tool_use');
+  });
+
+  it('keeps assistant text alongside tool_use blocks', () => {
+    const payload = chatResponseToAnthropic({
+      id: 'msg_4',
+      model: 'm',
+      created: 1,
+      content: 'let me check',
+      finish_reason: 'tool_calls',
+      tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } }],
+    }) as { content: Array<Record<string, unknown>> };
+    assert.deepEqual(payload.content[0], { type: 'text', text: 'let me check' });
+    assert.equal((payload.content[1] as Record<string, unknown>).type, 'tool_use');
+  });
 });
