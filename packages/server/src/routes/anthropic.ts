@@ -143,20 +143,62 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
         content_block: { type: 'text', text: '' },
       });
 
+      let blockIndex = 0;
+      let blockKind: 'text' | 'tool_use' = 'text';
+      let sawToolCalls = false;
+
       try {
         for await (const chunk of provider.stream(dispatchReq)) {
+          if (chunk.tool_calls && chunk.tool_calls.length > 0) {
+            sawToolCalls = true;
+            for (const call of chunk.tool_calls) {
+              if (blockKind !== 'tool_use') {
+                write('content_block_stop', { type: 'content_block_stop', index: blockIndex });
+                blockIndex += 1;
+                blockKind = 'tool_use';
+                write('content_block_start', {
+                  type: 'content_block_start',
+                  index: blockIndex,
+                  content_block: {
+                    type: 'tool_use',
+                    id: call.id ?? `call_${blockIndex}`,
+                    name: call.function?.name ?? '',
+                    input: {},
+                  },
+                });
+              }
+              if (call.function?.arguments) {
+                write('content_block_delta', {
+                  type: 'content_block_delta',
+                  index: blockIndex,
+                  delta: { type: 'input_json_delta', partial_json: call.function.arguments },
+                });
+              }
+            }
+            continue;
+          }
           if (chunk.delta) {
+            if (blockKind !== 'text') {
+              write('content_block_stop', { type: 'content_block_stop', index: blockIndex });
+              blockIndex += 1;
+              blockKind = 'text';
+              write('content_block_start', {
+                type: 'content_block_start',
+                index: blockIndex,
+                content_block: { type: 'text', text: '' },
+              });
+            }
             write('content_block_delta', {
               type: 'content_block_delta',
-              index: 0,
+              index: blockIndex,
               delta: { type: 'text_delta', text: chunk.delta },
             });
           }
         }
-        write('content_block_stop', { type: 'content_block_stop', index: 0 });
+        write('content_block_stop', { type: 'content_block_stop', index: blockIndex });
         write('message_delta', {
           type: 'message_delta',
-          delta: { stop_reason: 'end_turn' },
+          delta: { stop_reason: sawToolCalls ? 'tool_use' : 'end_turn' },
           usage: { output_tokens: 0 },
         });
         const back = await router.maybeSwitchBack(chatReq.model);
