@@ -6,6 +6,7 @@ import {
   type CatalogSnapshot,
   type PricingDecider,
   type ZenModelMetadata,
+  type ZenRoute,
   type ZenTier,
 } from './types.js';
 
@@ -187,5 +188,90 @@ export class ZenCatalog {
     if (this.unsupported[tier].has(model)) return false;
     if (this.nativeProtocols[tier].has(model)) return true;
     return this.zen.size === 0 && this.go.size === 0;
+  }
+
+  route(model: string, hasZenKeys: boolean, hasGoKeys: boolean, hasAnonymous: boolean): ZenRoute {
+    const keyTiers = this.keyTierOrder(model, hasZenKeys, hasGoKeys);
+    const decision = this.anonymousDecision(model);
+    const advertised =
+      this.zen.size === 0 && this.go.size === 0 ? true : this.zen.has(model) || this.go.has(model);
+    if (
+      hasAnonymous &&
+      decision.allowed &&
+      advertised &&
+      (this.overrides.has(model) || !this.unsupported.zen.has(model))
+    ) {
+      const protocols = this.protocolsFor(model, keyTiers, true);
+      return {
+        id: model,
+        tier: 'zen',
+        protocol: protocols.zen ?? CHAT,
+        protocols,
+        anonymous: true,
+        keyTiers,
+      };
+    }
+    if (keyTiers.length > 0) {
+      const protocols = this.protocolsFor(model, keyTiers, false);
+      const primary = keyTiers[0] as ZenTier;
+      return {
+        id: model,
+        tier: primary,
+        protocol: protocols[primary] ?? CHAT,
+        protocols,
+        anonymous: false,
+        keyTiers,
+      };
+    }
+    throw new Error(`model "${model}" is not available in the configured Zen or Go pools`);
+  }
+
+  routeForTier(model: string, tier: ZenTier, hasZenKeys: boolean, hasGoKeys: boolean): ZenRoute {
+    const hasKeys = tier === 'go' ? hasGoKeys : hasZenKeys;
+    if (!hasKeys) throw new Error(`no ${tier} key is configured`);
+    const advertised =
+      this.zen.size === 0 && this.go.size === 0
+        ? true
+        : tier === 'go'
+          ? this.go.has(model)
+          : this.zen.has(model);
+    if (!advertised) {
+      throw new Error(`model "${model}" is not available in the selected ${tier} key tier`);
+    }
+    if (!this.tierSupported(model, tier)) {
+      throw new Error(`model "${model}" uses an upstream protocol unavailable on ${tier}`);
+    }
+    const protocol = this.protocolFor(model, tier);
+    return {
+      id: model,
+      tier,
+      protocol,
+      protocols: { [tier]: protocol },
+      anonymous: false,
+      keyTiers: [tier],
+    };
+  }
+
+  private keyTierOrder(model: string, hasZenKeys: boolean, hasGoKeys: boolean): ZenTier[] {
+    const pending = this.zen.size === 0 && this.go.size === 0;
+    const available = (tier: ZenTier): boolean => {
+      if (tier === 'zen') {
+        return hasZenKeys && (pending || this.zen.has(model)) && this.tierSupported(model, 'zen');
+      }
+      return hasGoKeys && (pending || this.go.has(model)) && this.tierSupported(model, 'go');
+    };
+    const order: ZenTier[] = this.prefer === 'go' ? ['go', 'zen'] : ['zen', 'go'];
+    return order.filter(available);
+  }
+
+  private protocolsFor(
+    model: string,
+    keyTiers: ZenTier[],
+    includeZen: boolean,
+  ): Partial<Record<ZenTier, ZenNativeProtocol>> {
+    const protocols: Partial<Record<ZenTier, ZenNativeProtocol>> = {};
+    if (includeZen) protocols.zen = this.protocolFor(model, 'zen');
+    for (const tier of keyTiers) protocols[tier] = this.protocolFor(model, tier);
+    return protocols;
   }
 }

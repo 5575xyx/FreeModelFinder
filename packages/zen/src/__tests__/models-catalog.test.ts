@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ZenCatalog } from '../models/catalog.js';
+import type { PricingDecider } from '../models/types.js';
 
 function catalog(): ZenCatalog {
   const c = new ZenCatalog('go', {});
@@ -91,5 +92,107 @@ describe('zen catalog state', () => {
     const snap = c.snapshot();
     assert.equal(snap.exposed, 3);
     assert.equal(snap.cacheSource, 'live');
+  });
+});
+
+function freeStore(free: string[]): PricingDecider {
+  return {
+    decide: (model: string) =>
+      free.includes(model)
+        ? {
+            allowed: true,
+            source: 'metadata_free',
+            known: true,
+            deprecated: false,
+            inputCost: 0,
+            outputCost: 0,
+          }
+        : {
+            allowed: false,
+            source: 'metadata_paid',
+            known: true,
+            deprecated: false,
+            inputCost: 1,
+            outputCost: 1,
+          },
+  };
+}
+
+describe('zen catalog routing', () => {
+  it('routes a free model through the anonymous Zen lane', () => {
+    const c = catalog();
+    c.setPricing(freeStore(['m-free']));
+    const route = c.route('m-free', true, true, true);
+    assert.equal(route.anonymous, true);
+    assert.equal(route.tier, 'zen');
+    assert.equal(route.protocol, 'chat');
+    assert.deepEqual(route.keyTiers, ['zen']);
+  });
+
+  it('routes a paid model through the preferred key tier', () => {
+    const c = catalog();
+    c.setPricing(freeStore([]));
+    const route = c.route('shared', true, true, true);
+    assert.equal(route.anonymous, false);
+    assert.equal(route.tier, 'go');
+    assert.equal(route.protocol, 'chat');
+  });
+
+  it('keeps per-tier protocols for cross-tier re-encoding', () => {
+    const c = catalog();
+    c.setPricing(freeStore([]));
+    const route = c.route('shared', true, true, false);
+    assert.equal(route.protocols.zen, 'anthropic');
+    assert.equal(route.protocols.go, 'chat');
+  });
+
+  it('only builds a key route for tiers that can serve the model', () => {
+    const c = catalog();
+    c.setPricing(freeStore([]));
+    const route = c.route('go-only', true, true, false);
+    assert.deepEqual(route.keyTiers, ['go']);
+    assert.equal(route.tier, 'go');
+  });
+
+  it('throws when no tier can serve the model', () => {
+    const c = catalog();
+    c.setPricing(freeStore([]));
+    assert.throws(() => c.route('missing', true, true, false));
+  });
+
+  it('does not enter the anonymous lane when disabled', () => {
+    const c = catalog();
+    c.setPricing(freeStore(['m-free']));
+    const route = c.route('m-free', true, true, false);
+    assert.equal(route.anonymous, false);
+  });
+
+  it('honors a protocol override', () => {
+    const c = new ZenCatalog('go', { 'm-free': 'responses' });
+    c.replace({
+      zen: ['m-free'],
+      go: [],
+      native: { zen: { 'm-free': 'chat' }, go: {} },
+      unsupported: { zen: {}, go: {} },
+      metadata: { zen: {}, go: {} },
+    });
+    c.setPricing(freeStore(['m-free']));
+    assert.equal(c.route('m-free', true, false, true).protocol, 'responses');
+  });
+
+  it('routeForTier pins a single tier', () => {
+    const c = catalog();
+    c.setPricing(freeStore([]));
+    const route = c.routeForTier('shared', 'zen', true, true);
+    assert.equal(route.anonymous, false);
+    assert.equal(route.tier, 'zen');
+    assert.deepEqual(route.keyTiers, ['zen']);
+    assert.equal(route.protocol, 'anthropic');
+  });
+
+  it('routeForTier rejects tiers without keys', () => {
+    const c = catalog();
+    c.setPricing(freeStore([]));
+    assert.throws(() => c.routeForTier('shared', 'zen', false, true));
   });
 });
