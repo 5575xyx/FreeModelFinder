@@ -208,8 +208,9 @@ function dedupeById(models: ClineCatalogModel[]): ClineCatalogModel[] {
   const seen = new Set<string>();
   const merged: ClineCatalogModel[] = [];
   for (const model of models) {
-    if (seen.has(model.id)) continue;
-    seen.add(model.id);
+    const key = model.id.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
     merged.push(model);
   }
   return merged;

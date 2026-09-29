@@ -195,6 +195,23 @@ describe('cline catalog', () => {
     assert.equal(models, null);
   });
 
+  it('strips one redundant cline: prefix from upstream ids', async () => {
+    const models = await listClineCatalogModels({
+      fetchImpl: sequenceFetch([
+        {
+          free: [
+            { id: 'cline:z-ai/glm-5.3-flash', name: 'GLM' },
+            { id: 'cline:cline-free/deepseek-v4.1-flash' },
+          ],
+        },
+      ]).fetchImpl,
+    });
+    assert.deepEqual(models, [
+      { id: 'z-ai/glm-5.3-flash', name: 'GLM' },
+      { id: 'cline-free/deepseek-v4.1-flash' },
+    ]);
+  });
+
   it('treats a non-2xx response as a failed refresh', async () => {
     let upstream: Response | undefined;
     const fetchImpl = (async () => {

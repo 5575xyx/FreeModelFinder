@@ -735,6 +735,57 @@ describe('ProviderRegistry cline credential seams', () => {
     );
   });
 
+  it('routes canonical cline ids without a double prefix', () => {
+    const registry = new ProviderRegistry(
+      clineConfig(true),
+      undefined,
+      undefined,
+      stubRuntime(true).runtime,
+    );
+
+    const canonical = registry.resolveModel('cline:cline-free/deepseek-v4.1-flash');
+    assert.equal(canonical.provider.id, 'cline');
+    assert.equal(canonical.modelId, 'cline-free/deepseek-v4.1-flash');
+
+    const doubled = registry.resolveModel('cline:cline:z-ai/glm-5.3-flash');
+    assert.equal(doubled.provider.id, 'cline');
+    assert.equal(doubled.modelId, 'z-ai/glm-5.3-flash');
+
+    assert.equal(composeModelId('cline', 'cline:z-ai/glm-5.3-flash'), 'cline:z-ai/glm-5.3-flash');
+    assert.equal(composeModelId('cline', 'z-ai/glm-5.3-flash'), 'cline:z-ai/glm-5.3-flash');
+    assert.equal(bareModelId('cline', 'cline:z-ai/glm-5.3-flash'), 'z-ai/glm-5.3-flash');
+    assert.equal(
+      bareModelId('cline', 'cline-free/deepseek-v4.1-flash'),
+      'cline-free/deepseek-v4.1-flash',
+    );
+    assert.equal(bareModelId('custom', 'cpa:Qwen3.8-27B'), 'cpa:Qwen3.8-27B');
+  });
+
+  it('keeps bare deepseek ids on the sensenova heuristic and never on cline', () => {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        cline: { enabled: true, credentials: { apiKey: '' } },
+        sensenova: { enabled: true, credentials: { apiKey: 'k' } },
+      }),
+      undefined,
+      undefined,
+      stubRuntime(true).runtime,
+    );
+    const resolved = registry.resolveModel('deepseek/deepseek-v4-flash');
+    assert.equal(resolved.provider.id, 'sensenova');
+    assert.equal(resolved.modelId, 'deepseek/deepseek-v4-flash');
+
+    const clineOnly = new ProviderRegistry(
+      clineConfig(true),
+      undefined,
+      undefined,
+      stubRuntime(true).runtime,
+    );
+    assert.throws(() => clineOnly.resolveModel('deepseek/deepseek-v4-flash'), /not enabled/);
+  });
+});
+
+describe('ProviderRegistry cline dynamicModels switch', () => {
   it('injects dynamicModels from provider settings into the cline provider context', async () => {
     __resetCatalogCacheForTests();
     const off = new ProviderRegistry(
@@ -783,56 +834,8 @@ describe('ProviderRegistry cline credential seams', () => {
       );
     } finally {
       globalThis.fetch = originalFetch;
+      __resetCatalogCacheForTests();
     }
-  });
-
-  it('routes canonical cline ids without a double prefix', () => {
-    const registry = new ProviderRegistry(
-      clineConfig(true),
-      undefined,
-      undefined,
-      stubRuntime(true).runtime,
-    );
-
-    const canonical = registry.resolveModel('cline:cline-free/deepseek-v4.1-flash');
-    assert.equal(canonical.provider.id, 'cline');
-    assert.equal(canonical.modelId, 'cline-free/deepseek-v4.1-flash');
-
-    const doubled = registry.resolveModel('cline:cline:z-ai/glm-5.3-flash');
-    assert.equal(doubled.provider.id, 'cline');
-    assert.equal(doubled.modelId, 'z-ai/glm-5.3-flash');
-
-    assert.equal(composeModelId('cline', 'cline:z-ai/glm-5.3-flash'), 'cline:z-ai/glm-5.3-flash');
-    assert.equal(composeModelId('cline', 'z-ai/glm-5.3-flash'), 'cline:z-ai/glm-5.3-flash');
-    assert.equal(bareModelId('cline', 'cline:z-ai/glm-5.3-flash'), 'z-ai/glm-5.3-flash');
-    assert.equal(
-      bareModelId('cline', 'cline-free/deepseek-v4.1-flash'),
-      'cline-free/deepseek-v4.1-flash',
-    );
-    assert.equal(bareModelId('custom', 'cpa:Qwen3.8-27B'), 'cpa:Qwen3.8-27B');
-  });
-
-  it('keeps bare deepseek ids on the sensenova heuristic and never on cline', () => {
-    const registry = new ProviderRegistry(
-      configWithProviders({
-        cline: { enabled: true, credentials: { apiKey: '' } },
-        sensenova: { enabled: true, credentials: { apiKey: 'k' } },
-      }),
-      undefined,
-      undefined,
-      stubRuntime(true).runtime,
-    );
-    const resolved = registry.resolveModel('deepseek/deepseek-v4-flash');
-    assert.equal(resolved.provider.id, 'sensenova');
-    assert.equal(resolved.modelId, 'deepseek/deepseek-v4-flash');
-
-    const clineOnly = new ProviderRegistry(
-      clineConfig(true),
-      undefined,
-      undefined,
-      stubRuntime(true).runtime,
-    );
-    assert.throws(() => clineOnly.resolveModel('deepseek/deepseek-v4-flash'), /not enabled/);
   });
 });
 

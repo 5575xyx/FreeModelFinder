@@ -1039,7 +1039,7 @@ describe('ClineProvider chat and stream fixtures', () => {
     assert.match(usage[0]?.lastError ?? '', /connection reset/);
   });
 
-  it('returns the built-in catalog without touching the network', async () => {
+  it('falls back to the built-in catalog when the upstream catalog is unavailable', async () => {
     const runtime = newRuntime();
     const { fetchImpl } = harness(() => {
       throw new Error('network must not be used');
@@ -1117,6 +1117,24 @@ describe('ClineProvider dynamic model catalog', () => {
     assert.equal(overlap?.contextWindow, 131_072);
     assert.equal(overlap?.free, true);
     assert.equal(overlap?.provider, 'cline');
+  });
+
+  it('dedupes built-in ids case-insensitively so dynamic metadata wins', async () => {
+    const runtime = newRuntime();
+    const { fetchImpl } = harness(() =>
+      json({
+        free: [{ id: 'CLINE-FREE/DeepSeek-V4.1-Flash', name: 'DeepSeek Flash (upstream)' }],
+      }),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const models = await provider.listModels();
+    const overlaps = models.filter(
+      (model) => model.id.toLowerCase() === 'cline:cline-free/deepseek-v4.1-flash',
+    );
+    assert.equal(models.length, builtinIds.length);
+    assert.equal(overlaps.length, 1);
+    assert.equal(overlaps[0]?.displayName, 'DeepSeek Flash (upstream)');
   });
 
   it('keeps every built-in model when the upstream free group drops them', async () => {

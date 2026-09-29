@@ -54,7 +54,8 @@ function normalizeFreeGroup(payload: unknown): ClineCatalogModel[] {
   const models: ClineCatalogModel[] = [];
   for (const entry of free) {
     const record = asRecord(entry);
-    const id = record && typeof record.id === 'string' ? record.id.trim() : '';
+    const rawId = record && typeof record.id === 'string' ? record.id.trim() : '';
+    const id = rawId.startsWith('cline:') ? rawId.slice('cline:'.length).trim() : rawId;
     if (!record || !id) {
       throw new Error('cline catalog: free entry without id');
     }
