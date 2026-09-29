@@ -1,8 +1,19 @@
-import type { ChatMessage, ChatRequest } from '../types.js';
+import type { ChatMessage, ChatRequest, ToolCall, ToolDefinition } from '../types.js';
+
+export interface AnthropicTool {
+  name: string;
+  description?: string;
+  input_schema?: Record<string, unknown>;
+}
 
 interface AnthropicBlock {
   type: string;
   text?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  tool_use_id?: string;
+  content?: string | AnthropicBlock[];
   source?: { type?: string; media_type?: string; url?: string; data?: string };
 }
 
@@ -18,6 +29,7 @@ export interface AnthropicMessagesRequest {
   top_p?: number;
   stream?: boolean;
   stop_sequences?: string[];
+  tools?: AnthropicTool[];
 }
 
 function contentToString(content: AnthropicMessagesRequest['messages'][number]['content']): string {
@@ -57,6 +69,44 @@ function anthropicContentToParts(
   return sawImage ? parts : undefined;
 }
 
+function blocksToToolCalls(blocks: AnthropicBlock[]): ToolCall[] | undefined {
+  const calls: ToolCall[] = [];
+  for (const b of blocks) {
+    if (b.type !== 'tool_use') continue;
+    calls.push({
+      ...(b.id ? { id: b.id } : {}),
+      type: 'function',
+      function: {
+        name: b.name ?? '',
+        arguments: b.input === undefined ? '{}' : JSON.stringify(b.input),
+      },
+    });
+  }
+  return calls.length > 0 ? calls : undefined;
+}
+
+function blockText(block: AnthropicBlock): string {
+  if (typeof block.content === 'string') return block.content;
+  if (Array.isArray(block.content)) {
+    return block.content
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text ?? '')
+      .join('');
+  }
+  return '';
+}
+
+function anthropicToolsToDefinitions(tools: AnthropicTool[]): ToolDefinition[] {
+  return tools.map((t) => ({
+    type: 'function' as const,
+    function: {
+      name: t.name,
+      ...(t.description ? { description: t.description } : {}),
+      ...(t.input_schema ? { parameters: t.input_schema } : {}),
+    },
+  }));
+}
+
 export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatRequest {
   const messages: ChatMessage[] = [];
   if (req.system) {
@@ -65,12 +115,36 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
     messages.push({ role: 'system', content: sys });
   }
   for (const m of req.messages) {
-    messages.push({
+    if (typeof m.content === 'string') {
+      messages.push({ role: m.role, content: m.content });
+      continue;
+    }
+
+    const toolCalls = blocksToToolCalls(m.content);
+    const results = m.content.filter((b) => b.type === 'tool_result');
+    const parts = anthropicContentToParts(m.content);
+
+    if (results.length > 0) {
+      for (const r of results) {
+        messages.push({
+          role: 'tool',
+          content: blockText(r),
+          tool_call_id: r.tool_use_id ?? '',
+        });
+      }
+      continue;
+    }
+
+    const text = contentToString(m.content);
+    const entry: ChatMessage = {
       role: m.role,
-      content: contentToString(m.content),
-      contentParts: anthropicContentToParts(m.content),
-    });
+      content: text,
+      contentParts: parts,
+    };
+    if (toolCalls) entry.tool_calls = toolCalls;
+    messages.push(entry);
   }
+
   return {
     model: req.model,
     messages,
@@ -79,6 +153,9 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
     max_tokens: req.max_tokens,
     stream: req.stream ?? false,
     stop: req.stop_sequences,
+    ...(req.tools && req.tools.length > 0 ? { tools: anthropicToolsToDefinitions(req.tools) } : {}),
+    raw: req,
+    rawProtocol: 'anthropic',
   };
 }
 

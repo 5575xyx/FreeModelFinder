@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { anthropicToChatRequest, type AnthropicMessagesRequest } from '../protocols/anthropic.js';
 import {
   chatResponseToOpenAI,
   openAIToChatRequest,
@@ -168,5 +169,54 @@ describe('toOpenAIMessages tool fields', () => {
     });
     assert.equal((out[1] as { tool_call_id?: string }).tool_call_id, 'call_1');
     assert.equal((out[1] as { name?: string }).name, 'f');
+  });
+});
+
+describe('anthropic inbound tools', () => {
+  it('maps tools, tool_use blocks and raw', () => {
+    const body = {
+      model: 'm',
+      messages: [
+        { role: 'user', content: 'weather?' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'checking' },
+            { type: 'tool_use', id: 'toolu_1', name: 'get_weather', input: { city: 'SH' } },
+          ],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'sunny' }],
+        },
+      ],
+      tools: [{ name: 'get_weather', description: 'd', input_schema: { type: 'object' } }],
+      max_tokens: 64,
+      metadata: { user_id: 'u1' },
+    } as unknown as AnthropicMessagesRequest;
+
+    const out = anthropicToChatRequest(body);
+    assert.equal(out.tools?.[0]?.function.name, 'get_weather');
+    assert.deepEqual(out.raw, body);
+    assert.equal(out.rawProtocol, 'anthropic');
+    const assistant = out.messages.find((m) => m.role === 'assistant');
+    assert.equal(assistant?.tool_calls?.[0]?.id, 'toolu_1');
+    assert.equal(assistant?.tool_calls?.[0]?.function.name, 'get_weather');
+    assert.equal(assistant?.tool_calls?.[0]?.function.arguments, '{"city":"SH"}');
+    const toolMsg = out.messages.find((m) => m.role === 'tool');
+    assert.equal(toolMsg?.tool_call_id, 'toolu_1');
+    assert.equal(toolMsg?.content, 'sunny');
+  });
+
+  it('captures raw and rawProtocol without tools', () => {
+    const body = {
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+    } as unknown as AnthropicMessagesRequest;
+    const out = anthropicToChatRequest(body);
+    assert.equal(out.tools, undefined);
+    assert.deepEqual(out.raw, body);
+    assert.equal(out.rawProtocol, 'anthropic');
   });
 });
