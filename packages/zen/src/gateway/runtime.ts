@@ -82,6 +82,7 @@ export interface ZenGatewaySnapshot {
 
 export interface ZenGateway {
   listRoutes(hasZenKeys: boolean, hasGoKeys: boolean, hasAnonymous: boolean): ZenRoute[];
+  isFreeModel(model: string): boolean;
   snapshot(): ZenGatewaySnapshot;
   chat(request: ZenRequest): Promise<ZenChatResponse>;
   stream(request: ZenRequest): AsyncIterable<ZenStreamChunk>;
@@ -342,6 +343,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
 
   return {
     listRoutes,
+    isFreeModel: (model: string) => catalog.isFreeModel(model),
     snapshot,
     chat,
     stream,

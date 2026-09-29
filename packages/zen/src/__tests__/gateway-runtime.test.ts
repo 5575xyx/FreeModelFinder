@@ -167,6 +167,14 @@ describe('zen gateway runtime', () => {
     assert.equal(paid.anonymous, false);
   });
 
+  it('exposes catalog free-model eligibility through isFreeModel', async () => {
+    const gateway = makeGateway(new FakeClient(() => inboundJson(200, CHAT_BODY)));
+    await gateway.refresh();
+
+    assert.equal(gateway.isFreeModel('free-model'), true);
+    assert.equal(gateway.isFreeModel('paid-model'), false);
+  });
+
   it('serves chat through the anonymous channel and backfills raw', async () => {
     const client = new FakeClient(() => inboundJson(200, CHAT_BODY));
     const gateway = makeGateway(client);

@@ -119,6 +119,14 @@ describe('zen (opencode) provider', () => {
     assert.equal(models.find((model) => model.id === 'opencode:paid-model')?.free, false);
   });
 
+  it('throws when the catalog is unavailable so the registry can fall back', async () => {
+    const provider = new ZenProvider({
+      credentials: { apiKey: '', extra: { anonymous: true } },
+      fetchImpl: (async () => new Response('unavailable', { status: 503 })) as typeof fetch,
+    });
+    await assert.rejects(provider.listModels(), /opencode model catalog unavailable/);
+  });
+
   it('returns a ChatResponse from chat()', async () => {
     const client = new FakeClient(() => inboundJson(200, CHAT_BODY));
     const provider = new ZenProvider({

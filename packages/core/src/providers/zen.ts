@@ -91,45 +91,17 @@ export class ZenProvider extends BaseProvider {
     await gateway.refresh().catch(() => undefined);
     this.refreshed = true;
     const { hasZen, hasGo, hasAnonymous } = this.routeFlags();
-    let routes: ZenRoute[];
-    try {
-      routes = gateway.listRoutes(hasZen, hasGo, hasAnonymous);
-    } catch {
-      return [];
+    const routes = gateway.listRoutes(hasZen, hasGo, hasAnonymous);
+    if (routes.length === 0) {
+      throw new Error('opencode model catalog unavailable');
     }
-    const free = this.freeRouteIds(gateway, hasZen, hasGo);
-    return routes.map((route): ModelInfo => {
-      const isFree = free === undefined ? /free/i.test(route.id) : free.has(route.id);
-      return {
-        id: `opencode:${route.id}`,
-        provider: 'opencode',
-        displayName: route.id,
-        free: isFree,
-        capabilities: ['text'],
-      };
-    });
-  }
-
-  /**
-   * The gateway exposes anonymous-eligibility only through `listRoutes`, which
-   * reports `anonymous: true` exactly when the catalog deems a model free
-   * (name contains "free" or models.dev lists zero input/output cost). Listing
-   * with the anonymous flag forced reveals that free set without a zen change.
-   */
-  private freeRouteIds(
-    gateway: ZenGateway,
-    hasZen: boolean,
-    hasGo: boolean,
-  ): Set<string> | undefined {
-    try {
-      const free = new Set<string>();
-      for (const route of gateway.listRoutes(hasZen, hasGo, true)) {
-        if (route.anonymous) free.add(route.id);
-      }
-      return free;
-    } catch {
-      return undefined;
-    }
+    return routes.map((route: ZenRoute): ModelInfo => ({
+      id: `opencode:${route.id}`,
+      provider: 'opencode',
+      displayName: route.id,
+      free: gateway.isFreeModel(route.id),
+      capabilities: ['text'],
+    }));
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {
