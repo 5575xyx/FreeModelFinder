@@ -224,10 +224,31 @@ describe('zen anthropic body encoding boundaries', () => {
     ]);
   });
 
-  it('pads a contentless message so content is never empty', () => {
-    const body = toAnthropicBody({ model: 'm', messages: [{ role: 'user', content: '' }] });
-    const messages = body.messages as Array<{ content: Array<Record<string, unknown>> }>;
-    assert.deepEqual(messages[0]?.content, [{ type: 'text', text: '' }]);
+  it('skips a message whose content is empty', () => {
+    const body = toAnthropicBody({
+      model: 'm',
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'user', content: '' },
+      ],
+      max_tokens: 16,
+    });
+    const messages = body.messages as Array<{
+      role: string;
+      content: Array<Record<string, unknown>>;
+    }>;
+    assert.equal(messages.length, 1);
+    assert.deepEqual(messages[0]?.content, [{ type: 'text', text: 'hi' }]);
+  });
+
+  it('wraps a string stop sequence into an array', () => {
+    const body = toAnthropicBody({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      stop: 'END',
+      max_tokens: 8,
+    });
+    assert.deepEqual(body.stop_sequences, ['END']);
   });
 
   it('falls back to an empty object schema when a tool omits parameters', () => {

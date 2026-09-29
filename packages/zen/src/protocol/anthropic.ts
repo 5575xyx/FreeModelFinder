@@ -70,9 +70,6 @@ function messageToBlocks(message: ZenChatMessage): AnthropicBlock[] {
       });
     });
   }
-  if (blocks.length === 0) {
-    blocks.push({ type: 'text', text: '' });
-  }
   return blocks;
 }
 
@@ -94,6 +91,7 @@ export function toAnthropicBody(request: ZenRequest): Record<string, unknown> {
     }
     const role = message.role === 'assistant' ? 'assistant' : 'user';
     const blocks = messageToBlocks(message);
+    if (blocks.length === 0) continue;
     const last = messages[messages.length - 1];
     if (last && last.role === role) {
       last.content.push(...blocks);
@@ -110,7 +108,9 @@ export function toAnthropicBody(request: ZenRequest): Record<string, unknown> {
   if (system.length > 0) body['system'] = system;
   if (request.temperature !== undefined) body['temperature'] = request.temperature;
   if (request.top_p !== undefined) body['top_p'] = request.top_p;
-  if (request.stop !== undefined) body['stop_sequences'] = request.stop;
+  if (request.stop !== undefined) {
+    body['stop_sequences'] = Array.isArray(request.stop) ? request.stop : [request.stop];
+  }
   if (request.stream !== undefined) body['stream'] = request.stream;
   if (request.tools && request.tools.length > 0) body['tools'] = encodeTools(request.tools);
   return body;
