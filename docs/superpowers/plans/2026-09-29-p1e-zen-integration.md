@@ -247,3 +247,23 @@ Expected: 全绿。对本次改动文件跑 `pnpm exec prettier --check`。
 1. **Spec 覆盖**：spec「必改接入点」表 22 项由 H1/H3/H4/H5/H6 覆盖；「不移植清单」已遵守；`extra` 加密阻塞项由 H7；P1-D 交接 11 项由 H2（接口级）+ 本计划各任务；其余（key↔代理重绑、流式 raw 保真、signature 承载等）在报告中逐条标注为「已修 / 显式有损 / 延后」。
 2. **占位符扫描**：H1/H2/H7 给出具体行为规格；H3–H6 为接入点清单（非算法实现），逐文件给出。
 3. **类型一致性**：core provider 依赖 zen 的结构等价类型；`ProviderId` 加 `'opencode'` 后全类型链自动跟随。
+
+## 交付状态与剩余 follow-up
+
+**已交付**：core `opencode` provider 与构建接线、I-1（磁盘缓存实读）/I-2（超时与取消）、server `hasKey` 分派、auto-router/onboarding、UI 面板与匿名通道、CLI/audit/文档、Docker/verify-release/CLI 构建、`extra` 加密（proxies + goKeys）、响应侧同协议 `raw` 零损透传（非流式）。全量：`build:runtime`/`typecheck` 5 包/lint 0 警告/zen 195/core 417/server 181/cli 14/ui 108 全绿；新增/改动文件 prettier 通过。
+
+**已知延后项（后续 follow-up，非本期阻断）**：
+
+| #   | 项                                                                                                                                | 说明                                                                           |
+| --- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 1   | 客户端取消贯通                                                                                                                    | core `ChatRequest` 无 `signal`，server 未传 AbortSignal；仅 zen 内部总超时生效 |
+| 2   | 会话/请求 id 从客户头派生                                                                                                         | 当前随机生成，会话亲和/prompt cache 未生效                                     |
+| 3   | 模型发现走代理池                                                                                                                  | `refresh` 用全局 fetch，地区受限环境目录刷新易失败                             |
+| 4   | key↔代理重绑定                                                                                                                    | 缺失 `RebindProxy`/`RestoreProxy`；key 游标不跳过不健康代理                    |
+| 5   | 代理健康复查调度                                                                                                                  | 15 分钟 Cloudflare trace 复查未落地；超时未置 unhealthy                        |
+| 6   | 非 2xx 错误体透传                                                                                                                 | 未回传上游 `{error:{type,message}}`/`Retry-After`                              |
+| 7   | 流式 `raw` 字节级保真                                                                                                             | 当前为解析后的 `{event,data}`；非流式已实现                                    |
+| 8   | Anthropic `thinking.signature` 承载                                                                                               | 跨协议重放有损                                                                 |
+| 9   | `snapshot`/`Diagnostic` 准确性                                                                                                    | `exposed`/`staleAfter`/`lastRefresh` 待补                                      |
+| 10  | pricing `FirstString` 空串语义、`name_free` 回退 source                                                                           | 诊断字段差异                                                                   |
+| 11  | `docs/API.md`、`provider-contracts.test.ts` 登记、`scripts/zen-smoke.mjs`、`DEFAULT_CONFIG.providers.opencode`、server 端到端测试 | 文档/测试完备性                                                                |
