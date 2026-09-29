@@ -195,4 +195,29 @@ describe('zen catalog routing', () => {
     c.setPricing(freeStore([]));
     assert.throws(() => c.routeForTier('shared', 'zen', false, true));
   });
+
+  it('takes the anonymous Zen lane even when the model is advertised only on Go', () => {
+    const c = catalog();
+    c.setPricing(freeStore(['go-only']));
+    const route = c.route('go-only', true, true, true);
+    assert.equal(route.anonymous, true);
+    assert.equal(route.tier, 'zen');
+    assert.deepEqual(route.keyTiers, ['go']);
+  });
+
+  it('follows the prefer order for key tiers', () => {
+    const c = new ZenCatalog('zen', {});
+    c.replace({
+      zen: ['shared'],
+      go: ['shared'],
+      native: { zen: { shared: 'chat' }, go: { shared: 'chat' } },
+      unsupported: { zen: {}, go: {} },
+      metadata: { zen: {}, go: {} },
+    });
+    c.setPricing(freeStore([]));
+    const route = c.route('shared', true, true, false);
+    assert.equal(route.anonymous, false);
+    assert.equal(route.tier, 'zen');
+    assert.deepEqual(route.keyTiers, ['zen', 'go']);
+  });
 });
