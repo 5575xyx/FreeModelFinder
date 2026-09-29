@@ -109,6 +109,9 @@ export function openAIToChatRequest(req: OpenAIChatCompletionRequest): ChatReque
 }
 
 export function chatResponseToOpenAI(res: ChatResponse) {
+  const message: Record<string, unknown> = { role: 'assistant', content: res.content };
+  if (res.tool_calls && res.tool_calls.length > 0) message.tool_calls = res.tool_calls;
+  if (res.reasoning) message.reasoning = res.reasoning;
   return {
     id: res.id,
     object: 'chat.completion',
@@ -117,7 +120,7 @@ export function chatResponseToOpenAI(res: ChatResponse) {
     choices: [
       {
         index: 0,
-        message: { role: 'assistant', content: res.content },
+        message,
         finish_reason: res.finish_reason ?? 'stop',
       },
     ],
@@ -126,6 +129,13 @@ export function chatResponseToOpenAI(res: ChatResponse) {
 }
 
 export function streamChunkToOpenAI(chunk: StreamChunk) {
+  const delta: Record<string, unknown> = {};
+  if (chunk.delta) {
+    delta.role = 'assistant';
+    delta.content = chunk.delta;
+  }
+  if (chunk.tool_calls && chunk.tool_calls.length > 0) delta.tool_calls = chunk.tool_calls;
+  if (chunk.reasoning) delta.reasoning = chunk.reasoning;
   return {
     id: chunk.id,
     object: 'chat.completion.chunk',
@@ -134,7 +144,7 @@ export function streamChunkToOpenAI(chunk: StreamChunk) {
     choices: [
       {
         index: 0,
-        delta: chunk.delta ? { role: 'assistant', content: chunk.delta } : {},
+        delta,
         finish_reason: chunk.finish_reason ?? null,
       },
     ],

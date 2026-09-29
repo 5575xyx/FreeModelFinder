@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { openAIToChatRequest, type OpenAIChatCompletionRequest } from '../protocols/openai.js';
-import { ChatRequestSchema } from '../types.js';
+import {
+  chatResponseToOpenAI,
+  openAIToChatRequest,
+  streamChunkToOpenAI,
+  type OpenAIChatCompletionRequest,
+} from '../protocols/openai.js';
+import { ChatRequestSchema, type ChatResponse, type StreamChunk } from '../types.js';
 
 describe('tools typing', () => {
   it('parses a request carrying tools and raw', () => {
@@ -70,5 +75,77 @@ describe('openai inbound tools', () => {
       ],
     } as unknown as OpenAIChatCompletionRequest);
     assert.equal(out.messages[0]?.tool_calls?.[0]?.id, 'call_1');
+  });
+
+  it('maps reasoning_content with precedence and reasoning fallback', () => {
+    const withContent = openAIToChatRequest({
+      model: 'm',
+      messages: [
+        { role: 'assistant', content: 'x', reasoning_content: 'rc', reasoning: 'r' },
+        { role: 'assistant', content: 'y', reasoning: 'only-r' },
+      ],
+    } as unknown as OpenAIChatCompletionRequest);
+    assert.equal(withContent.messages[0]?.reasoning, 'rc');
+    assert.equal(withContent.messages[1]?.reasoning, 'only-r');
+  });
+});
+
+describe('openai outbound tool_calls', () => {
+  it('serializes tool_calls and tool_calls finish reason', () => {
+    const res: ChatResponse = {
+      id: 'x',
+      model: 'm',
+      created: 1,
+      content: '',
+      finish_reason: 'tool_calls',
+      tool_calls: [
+        { id: 'call_1', type: 'function', function: { name: 'f', arguments: '{"q":1}' } },
+      ],
+    };
+    const payload = chatResponseToOpenAI(res) as {
+      choices: Array<{ message: Record<string, unknown>; finish_reason: string }>;
+    };
+    assert.equal(payload.choices[0]?.finish_reason, 'tool_calls');
+    assert.deepEqual(payload.choices[0]?.message.tool_calls, res.tool_calls);
+  });
+});
+
+describe('openai stream tool deltas', () => {
+  it('emits tool_calls deltas on the chunk', () => {
+    const chunk: StreamChunk = {
+      id: 'x',
+      model: 'm',
+      created: 1,
+      delta: '',
+      finish_reason: 'tool_calls',
+      tool_calls: [{ index: 0, id: 'call_1', function: { name: 'f', arguments: '' } }],
+    };
+    const payload = streamChunkToOpenAI(chunk) as {
+      choices: Array<{ delta: Record<string, unknown>; finish_reason: string | null }>;
+    };
+    assert.equal(payload.choices[0]?.finish_reason, 'tool_calls');
+    assert.deepEqual(payload.choices[0]?.delta.tool_calls, chunk.tool_calls);
+  });
+
+  it('does not add tool_calls key when absent', () => {
+    const payload = streamChunkToOpenAI({
+      id: 'x',
+      model: 'm',
+      created: 1,
+      delta: 'hi',
+      finish_reason: 'stop',
+    }) as { choices: Array<{ delta: Record<string, unknown> }> };
+    assert.equal('tool_calls' in (payload.choices[0]?.delta ?? {}), false);
+  });
+
+  it('carries reasoning on the chunk alongside content delta', () => {
+    const payload = streamChunkToOpenAI({
+      id: 'x',
+      model: 'm',
+      created: 1,
+      delta: '',
+      reasoning: 'thinking…',
+    }) as { choices: Array<{ delta: Record<string, unknown> }> };
+    assert.equal(payload.choices[0]?.delta.reasoning, 'thinking…');
   });
 });
