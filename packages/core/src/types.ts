@@ -114,6 +114,8 @@ export interface ChatResponse {
   finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
   tool_calls?: ToolCall[];
   reasoning?: string;
+  raw?: unknown;
+  rawProtocol?: 'openai' | 'anthropic' | 'gemini';
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
@@ -130,6 +132,8 @@ export interface StreamChunk {
   finish_reason?: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
   tool_calls?: ToolCallDelta[];
   reasoning?: string;
+  raw?: unknown;
+  rawProtocol?: 'openai' | 'anthropic' | 'gemini';
 }
 
 export interface ModelInfo {

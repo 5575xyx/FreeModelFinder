@@ -433,3 +433,31 @@ describe('gemini outbound functionCall', () => {
     assert.deepEqual(payload.candidates[0]?.content.parts, [{ text: 'hello' }]);
   });
 });
+
+describe('response raw carrier', () => {
+  it('does not leak ChatResponse.raw into the OpenAI wire payload', () => {
+    const payload = chatResponseToOpenAI({
+      id: 'x',
+      model: 'm',
+      created: 1,
+      content: 'hi',
+      finish_reason: 'stop',
+      raw: { secretUpstreamField: 1 },
+      rawProtocol: 'openai',
+    }) as Record<string, unknown>;
+    assert.equal('raw' in payload, false);
+    assert.equal(JSON.stringify(payload).includes('secretUpstreamField'), false);
+  });
+
+  it('does not leak StreamChunk.raw into the OpenAI stream delta', () => {
+    const payload = streamChunkToOpenAI({
+      id: 'x',
+      model: 'm',
+      created: 1,
+      delta: 'hi',
+      raw: { secretUpstreamField: 1 },
+      rawProtocol: 'openai',
+    }) as Record<string, unknown>;
+    assert.equal(JSON.stringify(payload).includes('secretUpstreamField'), false);
+  });
+});
