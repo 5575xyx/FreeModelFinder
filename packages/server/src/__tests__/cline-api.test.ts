@@ -20,6 +20,7 @@ const REGISTER_URL = 'https://api.cline.bot/api/v1/auth/register';
 
 const COLD_ACCOUNT_ID = 'acc-cold';
 const LIST_ACCOUNT_ID = 'acc-list';
+const REDACT_ACCOUNT_ID = 'acc-redact';
 
 type Scenario =
   'approve' | 'expired' | 'denied' | 'start-fails' | 'zero-ttl' | 'no-email' | 'legacy';
@@ -684,5 +685,86 @@ describe('cline hasKey seam', () => {
   it('keeps the apiKey based hasKey behaviour of other providers', async () => {
     assert.equal(await hasKey('openrouter'), true);
     assert.equal(await hasKey('gemini'), false);
+  });
+});
+
+describe('config credential redaction', () => {
+  let app: FastifyInstance;
+
+  before(async () => {
+    await resetAccounts();
+    await seedAccount(REDACT_ACCOUNT_ID);
+    const config = testConfig();
+    ({ app } = await createServer({
+      registry: new ProviderRegistry({
+        ...config,
+        credentials: {
+          cline: {
+            accounts: [
+              {
+                id: REDACT_ACCOUNT_ID,
+                label: 'ada@example.com',
+                status: 'active',
+                addedAt: Date.now() - 5_000,
+                payload: {
+                  refreshToken: 'rt-registry-value',
+                  originToken: 'ot-registry-value',
+                },
+              },
+            ],
+          },
+        },
+      }),
+      watchIntervalMs: 60 * 60 * 1000,
+    }));
+  });
+
+  after(async () => {
+    await app.close();
+    await resetAccounts();
+  });
+
+  function assertNoCredentialEcho(response: { body: string }): void {
+    assert.ok(!response.body.includes('refreshToken'), response.body);
+    assert.ok(!response.body.includes('originToken'), response.body);
+    assert.ok(!response.body.includes('"credentials"'), response.body);
+    assert.ok(!response.body.includes('rt-secret-value'), response.body);
+    assert.ok(!response.body.includes('rt-registry-value'), response.body);
+    assert.ok(!response.body.includes('ot-registry-value'), response.body);
+    assert.ok(!response.body.includes('openrouter-key'), response.body);
+  }
+
+  it('keeps the credentials payload out of GET /api/config', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.providers.cline.hasKey, true);
+    assert.equal(body.providers.openrouter.hasKey, true);
+    assert.equal(body.custom.sources.length, 0);
+    assertNoCredentialEcho(response);
+  });
+
+  it('keeps the credentials payload out of the management write response', async () => {
+    const written = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: { provider: 'cline', enabled: true },
+    });
+    assert.equal(written.statusCode, 200);
+    assertNoCredentialEcho(written);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().providers.cline.hasKey, true);
+    assertNoCredentialEcho(response);
   });
 });
