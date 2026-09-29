@@ -171,6 +171,18 @@ describe('zen convertResponse raw passthrough', () => {
     assert.equal(res.rawProtocol, 'anthropic');
   });
 
+  it('forwards a same-protocol error body as raw instead of throwing', () => {
+    const errorBody = { error: { type: 'FreeTierError', message: 'nope' } };
+    const res = convertResponse(errorBody, 'anthropic', 'anthropic');
+    assert.equal(res.raw, errorBody);
+    assert.equal(res.rawProtocol, 'anthropic');
+    assert.equal(res.content, '');
+  });
+
+  it('still throws on a cross-protocol error body', () => {
+    assert.throws(() => convertResponse({ error: { message: 'boom' } }, 'chat', 'gemini'), /boom/);
+  });
+
   it('throws for an upstream protocol not yet implemented', () => {
     assert.throws(() => convertResponse({}, 'responses', 'openai'));
   });

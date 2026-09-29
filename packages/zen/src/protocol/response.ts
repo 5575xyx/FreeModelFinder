@@ -210,24 +210,40 @@ const CLIENT_TO_PROTOCOL: Partial<Record<ZenClientProtocol, ZenProtocol>> = {
   anthropic: 'anthropic',
 };
 
+function parseByProtocol(body: unknown, upstream: ZenProtocol): ZenChatResponse {
+  switch (upstream) {
+    case 'anthropic':
+      return parseAnthropicResponse(body);
+    case 'responses':
+      throw new Error('unsupported upstream protocol: responses');
+    default:
+      return parseChatResponse(body);
+  }
+}
+
+function emptyResponse(): ZenChatResponse {
+  return {
+    id: `zen-${Date.now()}`,
+    model: '',
+    created: Math.floor(Date.now() / 1000),
+    content: '',
+    finish_reason: null,
+  };
+}
+
 export function convertResponse(
   body: unknown,
   upstream: ZenProtocol,
   client: ZenClientProtocol,
 ): ZenChatResponse {
-  let parsed: ZenChatResponse;
-  switch (upstream) {
-    case 'anthropic':
-      parsed = parseAnthropicResponse(body);
-      break;
-    case 'chat':
-      parsed = parseChatResponse(body);
-      break;
-    default:
-      throw new Error(`unsupported upstream protocol: ${upstream}`);
-  }
   if (CLIENT_TO_PROTOCOL[client] === upstream) {
+    let parsed: ZenChatResponse;
+    try {
+      parsed = parseByProtocol(body, upstream);
+    } catch {
+      parsed = emptyResponse();
+    }
     return { ...parsed, raw: body, rawProtocol: client };
   }
-  return parsed;
+  return parseByProtocol(body, upstream);
 }
