@@ -149,3 +149,24 @@ describe('openai stream tool deltas', () => {
     assert.equal(payload.choices[0]?.delta.reasoning, 'thinking…');
   });
 });
+
+describe('toOpenAIMessages tool fields', () => {
+  it('keeps tool_call_id, name and assistant tool_calls', async () => {
+    const { toOpenAIMessages } = await import('../providers/openai-messages.js');
+    const out = toOpenAIMessages([
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'f', arguments: '{}' } }],
+      },
+      { role: 'tool', content: 'result', tool_call_id: 'call_1', name: 'f' },
+    ]);
+    assert.deepEqual(out[0], {
+      role: 'assistant',
+      content: '',
+      tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'f', arguments: '{}' } }],
+    });
+    assert.equal((out[1] as { tool_call_id?: string }).tool_call_id, 'call_1');
+    assert.equal((out[1] as { name?: string }).name, 'f');
+  });
+});
