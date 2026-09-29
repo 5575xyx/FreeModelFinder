@@ -35,6 +35,9 @@ jobs:
       AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
       AGNES_INTL_API_KEY: ${{ secrets.AGNES_INTL_API_KEY }}
       QIANFAN_API_KEY: ${{ secrets.QIANFAN_API_KEY }}
+      # OpenCode Zen 未配置密钥时会回退匿名通道（Bearer public）。
+      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+      OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
     steps:
       - uses: actions/checkout@v6
         with:

@@ -79,7 +79,9 @@ fmf serve --open
 
 ## 4. Provider、模型与“免费”的含义
 
-内置 Provider 包括 OpenRouter、Google Gemini、智谱 AI、SiliconFlow、ModelScope、NVIDIA NIM、GitHub Models、Cohere、Hugging Face、SenseNova 与百度千帆 Qianfan。当前可用模型是实时目录与内置免费规则共同决定的，因此会随账号、地区和上游更新而变化。
+内置 Provider 包括 OpenRouter、Google Gemini、智谱 AI、SiliconFlow、ModelScope、NVIDIA NIM、GitHub Models、Cohere、Hugging Face、SenseNova、百度千帆 Qianfan 与 OpenCode Zen。当前可用模型是实时目录与内置免费规则共同决定的，因此会随账号、地区和上游更新而变化。
+
+OpenCode Zen 比较特殊：它内置**匿名通道**，无需任何 API Key 就能使用免费模型；也可以分别配置 Zen Key 与 Go Key 来提升额度。它覆盖 Zen 与 Zen Go 两个上游 tier，可在设置中选择优先使用哪一个，并支持为上游请求配置 HTTP/HTTPS/SOCKS5 代理。相关环境变量见下文。
 
 项目每日发布的[免费模型清单](../FREE_MODELS.md)会说明每个 Provider 的免费判定依据、模型数、变化和风险。这里有三个容易混淆的点：
 
@@ -122,7 +124,7 @@ nvidia:openai/gpt-oss-20b
 - 添加、编辑和删除自定义 OpenAI-compatible 来源；
 - 复制 OpenAI Base URL、模型列表和 `curl` 示例。
 
-首次向导只会报告支持的环境变量是否存在，绝不会把原始值传回浏览器或未经确认自动导入。支持的变量包括 `OPENROUTER_API_KEY`、`GEMINI_API_KEY` / `GOOGLE_API_KEY`、`SILICONFLOW_API_KEY`、`ZHIPUAI_API_KEY`、`QIANFAN_API_KEY`、`NVIDIA_API_KEY`、`GH_TOKEN` / `GITHUB_TOKEN` 等。
+首次向导只会报告支持的环境变量是否存在，绝不会把原始值传回浏览器或未经确认自动导入。支持的变量包括 `OPENROUTER_API_KEY`、`GEMINI_API_KEY` / `GOOGLE_API_KEY`、`SILICONFLOW_API_KEY`、`ZHIPUAI_API_KEY`、`QIANFAN_API_KEY`、`NVIDIA_API_KEY`、`GH_TOKEN` / `GITHUB_TOKEN`、`OPENCODE_API_KEY` / `OPENCODE_ZEN_API_KEY` 等。其中 OpenCode Zen 也可不配置任何变量，直接在设置中开启匿名通道；Go Key 与代理列表需在设置页单独保存。
 
 ## 6. 自动路由：何时切换、如何选择
 

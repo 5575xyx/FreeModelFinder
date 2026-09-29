@@ -38,7 +38,7 @@
   },
   "scripts": {
     "build": "pnpm run build:dependencies && tsup && node scripts/copy-assets.mjs",
-    "build:dependencies": "pnpm --filter @freemodelfinder/ui build && pnpm --filter @freemodelfinder/core build && pnpm --filter @freemodelfinder/server build",
+    "build:dependencies": "pnpm --filter @freemodelfinder/ui build && pnpm --filter @freemodelfinder/zen build && pnpm --filter @freemodelfinder/core build && pnpm --filter @freemodelfinder/server build",
     "dev": "tsx src/index.ts",
     "test": "node --import tsx --test src/__tests__/*.test.ts",
     "test:coverage": "c8 --all --include='src/**/*.ts' --exclude='src/__tests__/**' --check-coverage --lines=80 node --import tsx --test src/__tests__/*.test.ts",

@@ -27,6 +27,7 @@ const KNOWN_PROVIDERS: Array<{ id: ProviderId; label: string; hint: string }> = 
     label: 'Baidu Qianfan',
     hint: 'https://console.bce.baidu.com/qianfan/ais/console/apiKey',
   },
+  { id: 'opencode', label: 'OpenCode Zen', hint: 'https://opencode.ai/zen' },
 ];
 
 export function keyCommand(dependencies: Partial<KeyCommandDependencies> = {}): Command {

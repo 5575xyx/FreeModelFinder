@@ -145,6 +145,16 @@ const PROVIDER_META = [
       '官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）',
     risk: '免费层 20 RPM；图像和视频模型有额外限制',
   },
+  {
+    id: 'opencode',
+    display: 'OpenCode Zen',
+    envKeys: ['OPENCODE_API_KEY', 'OPENCODE_ZEN_API_KEY'],
+    anonymous: true,
+    freeType: '实时零价模型（匿名通道）',
+    freeBasis:
+      '实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public）',
+    risk: '匿名通道与免费层有速率和并发限制；部分免费模型只在 Go tier 提供；上游目录与定价可能随时变化',
+  },
 ];
 
 function readEnvKey(candidates) {
@@ -160,8 +170,11 @@ function buildConfig() {
   const missing = [];
   for (const meta of PROVIDER_META) {
     const key = readEnvKey(meta.envKeys);
-    if (key) {
-      providers[meta.id] = { enabled: true, credentials: { apiKey: key } };
+    const credentials = {};
+    if (key) credentials.apiKey = key;
+    if (meta.anonymous) credentials.extra = { anonymous: true };
+    if (key || meta.anonymous) {
+      providers[meta.id] = { enabled: true, credentials };
     } else {
       providers[meta.id] = { enabled: false };
       missing.push({ id: meta.id, envKeys: meta.envKeys });

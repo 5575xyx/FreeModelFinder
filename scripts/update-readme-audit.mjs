@@ -32,6 +32,7 @@ const FREE_TYPE_BY_ID = {
   kilo: '聚合免费模型',
   agnes: '官方免费模型',
   'agnes-intl': '官方免费模型',
+  opencode: '实时零价模型（匿名通道）',
 };
 
 if (!existsSync(SNAPSHOT_PATH)) {

@@ -8,6 +8,7 @@ const manifestPaths = [
   'packages/server/package.json',
   'packages/cli/package.json',
   'packages/ui/package.json',
+  'packages/zen/package.json',
   'apps/desktop/package.json',
 ];
 const manifests = await Promise.all(
@@ -24,7 +25,7 @@ if (manifests[0].name !== '@freemodelfinder/repo' || manifests[0].private !== tr
 if (manifests[3].name !== 'freemodelfinder' || manifests[3].private === true) {
   throw new Error('packages/cli must be the only public package');
 }
-for (const manifest of [manifests[1], manifests[2], manifests[4], manifests[5]]) {
+for (const manifest of [manifests[1], manifests[2], manifests[4], manifests[5], manifests[6]]) {
   if (manifest.private !== true) throw new Error(`${manifest.name} must remain private`);
 }
 for (const path of ['LICENSE', 'README.md', 'CHANGELOG.md', 'SECURITY.md']) {

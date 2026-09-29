@@ -14,6 +14,7 @@ COPY packages/cli/package.json packages/cli/
 COPY packages/core/package.json packages/core/
 COPY packages/server/package.json packages/server/
 COPY packages/ui/package.json packages/ui/
+COPY packages/zen/package.json packages/zen/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
@@ -24,8 +25,10 @@ COPY --from=deps /app/packages/cli/node_modules ./packages/cli/node_modules
 COPY --from=deps /app/packages/core/node_modules ./packages/core/node_modules
 COPY --from=deps /app/packages/server/node_modules ./packages/server/node_modules
 COPY --from=deps /app/packages/ui/node_modules ./packages/ui/node_modules
+COPY --from=deps /app/packages/zen/node_modules ./packages/zen/node_modules
 COPY . .
 RUN pnpm --filter @freemodelfinder/ui build \
+    && pnpm --filter @freemodelfinder/zen build \
     && pnpm --filter @freemodelfinder/core build \
     && pnpm --filter @freemodelfinder/server build \
     && pnpm --filter freemodelfinder build
