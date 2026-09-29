@@ -365,6 +365,7 @@ describe('openai-compatible reasoning field', () => {
     await provider.chat({
       model: 'm',
       messages: [],
+      stream: false,
       tools: [{ type: 'function', function: { name: 'f' } }],
       raw: { secret: 1 },
       rawProtocol: 'openai',
