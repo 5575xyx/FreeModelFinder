@@ -310,6 +310,21 @@ git commit -m "feat(zen): P1-D 模块导出"
 
 - **P1-E**：core 薄壳 provider（映射 core `ChatRequest`↔`ZenRequest`、`ZenChatResponse`↔`ChatResponse`）、registry/auto-router/配额接线、server `hasKey`、UI 面板/i18n、CLI、audit、Dockerfile、`verify-release`、环境变量与文档；消费 `raw`/`rawProtocol`。
 
+## P1-E 交接清单（终审汇总，必须逐条处理或显式记为有损）
+
+**接口级缺陷（建议 P1-D 补丁或 P1-E 首批）：**
+
+1. `loadCache()` 生产路径不可达（`start()` 只 `refreshOnce()`；接口未暴露）→ 冷启动缓存回退与 stale 降级失效。
+2. 无取消/超时入口：`ZenRequest` 无 `signal`；`retry.timeoutSeconds`/`attemptTimeoutSeconds`/`connectTimeoutSeconds` 未接入 → 上游挂起会无限等待，G3 的 `ctx` 闸门在真实调用中不可达。
+3. 模型发现绕过代理池（`refresh` 用全局 `fetchImpl`）→ 地区受限环境目录刷新失败；同时承接「`fetchModels` 返回状态码 + 代理健康联动」。
+4. key↔代理重绑定缺失（`RebindProxy`/`RestoreProxy`）且 key 游标不跳过不健康代理 → 死代理上的 key 会被反复选中。
+5. 代理健康复查未定时调度（spec 的 15 分钟 Cloudflare trace 复查）；`isProxyFailure` 把超时（AbortError）判为非失败，导致超时代理永不置 unhealthy。
+6. 非 2xx 未回传上游错误体/`error.type`/`Retry-After`（Go `copyErrorResponse`）。
+
+**功能补齐：** 7. request/session id 从客户头派生（当前 `makeRequestIds` 仅随机），以保留会话亲和。8. 流式 `raw` 字节级保真（当前为解析后的 `{event,data}`）。9. `snapshot()`/`Diagnostic`/`staleAfter`/`lastRefresh`/`exposed` 准确性。10. Anthropic `thinking.signature` 承载（跨协议重放可能被拒；否则显式声明有损）。11. pricing 空串 id 的 `FirstString` 语义、`name_free` 回退 source。
+
+**P1-E 自身范围**：core provider 壳、registry/auto-router/quota、server `hasKey`、UI/i18n、CLI、audit、Dockerfile、`verify-release`（含 `packages/zen` 入清单）、环境变量与文档、**`extra` 敏感字段加密阻塞项**（`packages/core/src/config/store.ts:207/303`）、以及 core 依赖 zen 的打包接线（`packages/core/package.json` + `core/tsup.config.ts` 的 `noExternal` 已预留）。
+
 ## 自查记录
 
 1. **Spec 覆盖**：spec「代理池」（G1）、「模型发现与定价」的刷新与缓存（G2）、「路由与通道状态机」「错误处理」（G3）、「包结构」的 runtime 装配（G4）。
