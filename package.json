@@ -10,7 +10,7 @@
   "scripts": {
     "build": "pnpm --filter freemodelfinder build",
     "build:packages": "pnpm -r --filter=./packages/* build",
-    "build:runtime": "pnpm --filter @freemodelfinder/core build && pnpm --filter @freemodelfinder/server build",
+    "build:runtime": "pnpm --filter @freemodelfinder/zen build && pnpm --filter @freemodelfinder/core build && pnpm --filter @freemodelfinder/server build",
     "dev:server": "pnpm --filter @freemodelfinder/server dev",
     "dev:ui": "pnpm --filter @freemodelfinder/ui dev",
     "dev:cli": "pnpm --filter freemodelfinder dev",
@@ -21,7 +21,7 @@
     "test": "pnpm run test:docker && pnpm run build:runtime && pnpm -r --filter=./packages/* run test",
     "test:docker": "node --test scripts/docker.test.mjs",
     "test:docker:integration": "node --test scripts/docker.test.mjs",
-    "test:coverage": "pnpm run build:runtime && pnpm --filter @freemodelfinder/core test:coverage && pnpm --filter @freemodelfinder/server test:coverage && pnpm --filter freemodelfinder test:coverage && pnpm --filter @freemodelfinder/ui test:coverage",
+    "test:coverage": "pnpm run build:runtime && pnpm --filter @freemodelfinder/zen test:coverage && pnpm --filter @freemodelfinder/core test:coverage && pnpm --filter @freemodelfinder/server test:coverage && pnpm --filter freemodelfinder test:coverage && pnpm --filter @freemodelfinder/ui test:coverage",
     "audit:prod": "node scripts/audit-package.mjs",
     "audit:free-models": "node scripts/audit-free-models.mjs",
     "audit:readme": "node scripts/update-readme-audit.mjs",
