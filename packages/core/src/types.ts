@@ -18,6 +18,7 @@ export const ProviderIdSchema = z.enum([
   'agnes-intl',
   'custom',
   'cline',
+  'opencode',
 ]);
 export type ProviderId = z.infer<typeof ProviderIdSchema>;
 

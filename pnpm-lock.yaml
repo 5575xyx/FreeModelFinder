@@ -116,6 +116,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@freemodelfinder/zen':
+        specifier: workspace:*
+        version: link:../zen
       zod:
         specifier: ^3.23.4
         version: 3.25.76

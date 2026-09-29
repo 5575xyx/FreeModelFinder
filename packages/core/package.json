@@ -23,6 +23,7 @@
     "test:coverage": "node --experimental-test-coverage --test-coverage-include='src/**/*.ts' --test-coverage-exclude='src/**/__tests__/**' --test-coverage-lines=85 --test-coverage-branches=74 --import tsx --test src/__tests__/*.test.ts src/config/__tests__/*.test.ts src/credentials/__tests__/*.test.ts src/router/__tests__/*.test.ts src/providers/__tests__/*.test.ts src/registry/__tests__/*.test.ts"
   },
   "dependencies": {
+    "@freemodelfinder/zen": "workspace:*",
     "zod": "^3.23.4"
   },
   "devDependencies": {

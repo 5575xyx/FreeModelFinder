@@ -19,6 +19,7 @@ import {
   AgnesProvider,
   AgnesIntlProvider,
   ClineProvider,
+  ZenProvider,
 } from './providers/index.js';
 import type { ProviderContext } from './providers/base.js';
 import { QuotaTracker } from './quota.js';
@@ -58,6 +59,7 @@ const PROVIDER_CTORS: Record<
   'agnes-intl': AgnesIntlProvider,
   custom: CustomProvider,
   cline: ClineProvider,
+  opencode: ZenProvider,
 };
 
 const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
