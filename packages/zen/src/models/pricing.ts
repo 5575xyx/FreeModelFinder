@@ -30,9 +30,16 @@ function numberAt(record: Record<string, unknown> | undefined, key: string): num
 
 function isDeprecated(model: Record<string, unknown>): boolean {
   if (model['deprecated'] === true) return true;
-  const status = String(model['status'] ?? model['lifecycle'] ?? '').toLowerCase();
+  const status = firstNonEmptyString(model['status'], model['lifecycle']).toLowerCase();
   if (status === 'deprecated' || status === 'retired' || status === 'disabled') return true;
   return model['deprecated_at'] != null || model['retirement_date'] != null;
+}
+
+function firstNonEmptyString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return '';
 }
 
 function providerRank(key: string): number {
@@ -47,7 +54,8 @@ export function decodeModelsDev(data: unknown): Record<string, ZenPrice> {
   if (!providers) throw new Error('models.dev payload is not an object');
   const keys = Object.keys(providers).sort((a, b) => {
     const rank = providerRank(a) - providerRank(b);
-    return rank !== 0 ? rank : a.localeCompare(b);
+    if (rank !== 0) return rank;
+    return a < b ? -1 : a > b ? 1 : 0;
   });
   for (const key of keys) {
     const rank = providerRank(key);
@@ -55,7 +63,7 @@ export function decodeModelsDev(data: unknown): Record<string, ZenPrice> {
     const provider = asRecord(providers[key]);
     if (!provider) continue;
     if (rank === 1) {
-      const identity = String(provider['id'] ?? provider['name'] ?? '').toLowerCase();
+      const identity = firstNonEmptyString(provider['id'], provider['name']).toLowerCase();
       if (!identity.includes('opencode')) continue;
     }
     const models = asRecord(provider['models']);
