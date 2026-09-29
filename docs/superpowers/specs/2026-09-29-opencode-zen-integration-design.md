@@ -178,6 +178,19 @@ opencode2api 的两条保真规则（`internal/protocol/request.go:17` `PrepareR
 - auto-router、配额、调用日志、`onUsage` 只读结构化字段，全部照常工作；
 - `raw` 只在「入站协议 == 目标 tier 原生协议」时启用；不满足则丢弃 `raw` 走结构化路径。
 
+### 响应侧 `raw` 载体（P1-C 前置决策）
+
+P0 只补了请求侧 `raw`；要让图中「同协议 raw 直接回流」成立，响应侧也需要载体。**P1-C 前置任务**（先于协议转换）在 `packages/core/src/types.ts` 扩展：
+
+- `ChatResponse.raw?: unknown` 与 `ChatResponse.rawProtocol?: 'openai' | 'anthropic' | 'gemini'`；
+- `StreamChunk.raw?: unknown` 与 `StreamChunk.rawProtocol?: 'openai' | 'anthropic' | 'gemini'`（流式场景下 `raw` 承载上游原始 SSE 数据行）。
+
+约束与消费方式：
+
+- 均为 optional，其他 provider 不填即现状；
+- zen 的协议层在「上游协议 == 客户端入站协议」时填充 `raw`/`rawProtocol`；跨协议时按结构化结果填充（`raw` 留空）；
+- **消费方是 P1-E 的 core 出站序列化**（`chatResponseToOpenAI` / `chatResponseToAnthropic` / `chatResponseToGemini` 与三条 SSE 路由）：当 `raw` 存在且 `rawProtocol` 与客户端入站协议一致时，直接回传 `raw`；否则按结构化字段序列化。P1-E 之前，`raw` 只被填充、不被消费，属安全增量。
+
 ### 模块与 Go 源文件对应
 
 | opencode2api 源文件                                                             | 行数 | 落到 `packages/zen/src/`                       |
