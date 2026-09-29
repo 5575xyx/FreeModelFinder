@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import { isZenProtocol } from '../protocol/types.js';
 import { toChatBody } from '../protocol/chat.js';
 import { toAnthropicBody, DEFAULT_ANTHROPIC_MAX_TOKENS } from '../protocol/anthropic.js';
+import { toResponsesBody } from '../protocol/responses.js';
 
 describe('zen protocol types', () => {
   it('accepts the three native protocols', () => {
@@ -287,5 +288,43 @@ describe('zen anthropic body encoding boundaries', () => {
     assert.equal(body.top_p, 0.9);
     assert.deepEqual(body.stop_sequences, ['END']);
     assert.equal(body.stream, true);
+  });
+});
+
+describe('zen responses body encoding', () => {
+  it('encodes instructions, input items and tools', () => {
+    const body = toResponsesBody({
+      model: 'm',
+      messages: [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'hi' },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            { id: 'call_1', type: 'function', function: { name: 'f', arguments: '{"q":1}' } },
+          ],
+        },
+        { role: 'tool', content: 'sunny', tool_call_id: 'call_1' },
+      ],
+      tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object' } } }],
+      stream: true,
+    });
+    assert.equal(body.model, 'm');
+    assert.equal(body.stream, true);
+    assert.equal(body.instructions, 'sys');
+    const input = body.input as Array<Record<string, unknown>>;
+    assert.equal(input[0]?.role, 'user');
+    assert.deepEqual(body.tools, [{ type: 'function', name: 'f', parameters: { type: 'object' } }]);
+  });
+
+  it('maps a tool result to a function_call_output item', () => {
+    const body = toResponsesBody({
+      model: 'm',
+      messages: [{ role: 'tool', content: 'sunny', tool_call_id: 'call_1' }],
+    });
+    const input = body.input as Array<Record<string, unknown>>;
+    assert.equal(input[0]?.type, 'function_call_output');
+    assert.equal(input[0]?.call_id, 'call_1');
   });
 });
