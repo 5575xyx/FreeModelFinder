@@ -195,10 +195,123 @@ export function parseAnthropicResponse(body: unknown): ZenChatResponse {
   return {
     id: str(payload['id']) ?? `zen-${Date.now()}`,
     model: str(payload['model']) ?? '',
-    created:
-      num(payload['created']) ?? num(payload['created_at']) ?? Math.floor(Date.now() / 1000),
+    created: num(payload['created']) ?? num(payload['created_at']) ?? Math.floor(Date.now() / 1000),
     content: textParts.join(''),
     finish_reason: anthropicFinishReason(stop),
+    ...(tool_calls.length > 0 ? { tool_calls } : {}),
+    ...(reasoning ? { reasoning } : {}),
+    ...(usage ? { usage } : {}),
+  };
+}
+
+function firstNonZero(...values: Array<number | undefined>): number | undefined {
+  for (const value of values) {
+    if (value !== undefined && value !== 0) return value;
+  }
+  return undefined;
+}
+
+function firstString(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    if (value !== undefined && value !== '') return value;
+  }
+  return undefined;
+}
+
+function parseResponsesUsage(value: unknown): ZenUsage | undefined {
+  const usage = asRecord(value);
+  if (!usage) return undefined;
+  const input = firstNonZero(num(usage['prompt_tokens']), num(usage['input_tokens'])) ?? 0;
+  const output = firstNonZero(num(usage['completion_tokens']), num(usage['output_tokens'])) ?? 0;
+  const total = num(usage['total_tokens']) || input + output;
+  const out: ZenUsage = {
+    prompt_tokens: input,
+    completion_tokens: output,
+    total_tokens: total,
+  };
+  const cached = firstNonZero(
+    num(asRecord(usage['prompt_tokens_details'])?.['cached_tokens']),
+    num(asRecord(usage['input_tokens_details'])?.['cached_tokens']),
+  );
+  if (cached !== undefined) out.prompt_tokens_details = { cached_tokens: cached };
+  return out;
+}
+
+function decodeResponsesReasoning(item: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const summary = item['summary'];
+  if (Array.isArray(summary)) {
+    for (const raw of summary) {
+      parts.push(str(asRecord(raw)?.['text']) ?? '');
+    }
+  }
+  const content = item['content'];
+  if (content !== undefined && content !== null) {
+    const blocks = Array.isArray(content) ? content : [content];
+    for (const raw of blocks) {
+      parts.push(str(asRecord(raw)?.['text']) ?? '');
+    }
+  }
+  return parts.join('');
+}
+
+function responsesIncompleteReason(value: unknown): ZenChatResponse['finish_reason'] {
+  return str(value) === 'content_filter' ? 'content_filter' : 'length';
+}
+
+export function parseResponsesResponse(body: unknown): ZenChatResponse {
+  const payload = asRecord(body) ?? {};
+  const output = Array.isArray(payload['output']) ? (payload['output'] as unknown[]) : [];
+  const textParts: string[] = [];
+  const reasoningParts: string[] = [];
+  const tool_calls: ZenToolCall[] = [];
+  for (const raw of output) {
+    const item = asRecord(raw);
+    if (!item) throw new Error('Responses output item must be an object');
+    switch (str(item['type'])) {
+      case 'reasoning':
+        reasoningParts.push(decodeResponsesReasoning(item));
+        break;
+      case 'message':
+        textParts.push(decodeContent(item['content']));
+        break;
+      case 'function_call': {
+        const id = firstString(str(item['call_id']), str(item['id']));
+        tool_calls.push({
+          ...(id !== undefined ? { id } : {}),
+          type: 'function',
+          function: {
+            name: str(item['name']) ?? '',
+            arguments: str(item['arguments']) ?? '',
+          },
+        });
+        break;
+      }
+      default:
+        throw new Error(
+          `Responses response has unsupported output item type ${JSON.stringify(str(item['type']))}`,
+        );
+    }
+  }
+
+  let finish_reason: ZenChatResponse['finish_reason'] = 'stop';
+  if (tool_calls.length > 0) finish_reason = 'tool_calls';
+  const status = str(payload['status']);
+  if (status === 'incomplete') {
+    finish_reason = responsesIncompleteReason(asRecord(payload['incomplete_details'])?.['reason']);
+  } else if (status === 'failed') {
+    const error = asRecord(payload['error']);
+    throw new Error(str(error?.['message']) ?? 'upstream Responses request failed');
+  }
+
+  const usage = payload['usage'] !== undefined ? parseResponsesUsage(payload['usage']) : undefined;
+  const reasoning = reasoningParts.join('');
+  return {
+    id: str(payload['id']) ?? `zen-${Date.now()}`,
+    model: str(payload['model']) ?? '',
+    created: num(payload['created']) ?? num(payload['created_at']) ?? Math.floor(Date.now() / 1000),
+    content: textParts.join(''),
+    finish_reason,
     ...(tool_calls.length > 0 ? { tool_calls } : {}),
     ...(reasoning ? { reasoning } : {}),
     ...(usage ? { usage } : {}),
@@ -215,7 +328,7 @@ function parseByProtocol(body: unknown, upstream: ZenProtocol): ZenChatResponse 
     case 'anthropic':
       return parseAnthropicResponse(body);
     case 'responses':
-      throw new Error('unsupported upstream protocol: responses');
+      return parseResponsesResponse(body);
     default:
       return parseChatResponse(body);
   }

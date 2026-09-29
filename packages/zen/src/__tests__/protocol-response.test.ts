@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { convertResponse, parseAnthropicResponse, parseChatResponse } from '../protocol/response.js';
+import {
+  convertResponse,
+  parseAnthropicResponse,
+  parseChatResponse,
+  parseResponsesResponse,
+} from '../protocol/response.js';
 
 describe('zen chat response parsing', () => {
   it('parses content, tool_calls, reasoning and usage', () => {
@@ -183,7 +188,44 @@ describe('zen convertResponse raw passthrough', () => {
     assert.throws(() => convertResponse({ error: { message: 'boom' } }, 'chat', 'gemini'), /boom/);
   });
 
-  it('throws for an upstream protocol not yet implemented', () => {
-    assert.throws(() => convertResponse({}, 'responses', 'openai'));
+  it('parses a responses upstream through convertResponse', () => {
+    const body = {
+      id: 'resp_1',
+      model: 'm',
+      output: [{ type: 'message', content: [{ type: 'output_text', text: 'hi' }] }],
+      status: 'completed',
+    };
+    const res = convertResponse(body, 'responses', 'openai');
+    assert.equal(res.content, 'hi');
+  });
+});
+
+describe('zen responses response parsing', () => {
+  it('reads output_text, function_call and usage', () => {
+    const res = parseResponsesResponse({
+      id: 'resp_1',
+      model: 'm',
+      output: [
+        { type: 'message', content: [{ type: 'output_text', text: 'hi' }] },
+        { type: 'function_call', call_id: 'call_1', name: 'f', arguments: '{"q":1}' },
+      ],
+      status: 'completed',
+      usage: { input_tokens: 3, output_tokens: 4 },
+    });
+    assert.equal(res.content, 'hi');
+    assert.equal(res.finish_reason, 'tool_calls');
+    assert.equal(res.tool_calls?.[0]?.id, 'call_1');
+    assert.equal(res.usage?.prompt_tokens, 3);
+    assert.equal(res.usage?.completion_tokens, 4);
+  });
+
+  it('maps an incomplete status to length', () => {
+    const res = parseResponsesResponse({
+      id: 'resp_1',
+      output: [{ type: 'message', content: [{ type: 'output_text', text: 'partial' }] }],
+      status: 'incomplete',
+      incomplete_details: { reason: 'max_output_tokens' },
+    });
+    assert.equal(res.finish_reason, 'length');
   });
 });
