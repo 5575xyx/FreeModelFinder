@@ -194,19 +194,21 @@ async function dispatchWithAutoRoute(
   // Walk the pool only when the CLIENT asked for auto (modality rewrites such
   // as vision/tier picks must not turn a concrete model into an auto request)
   // and no modality-specific dispatch owns the request.
-  const allowPoolWalk =
-    scope.poolWalk && (scope.requestedModel === 'auto' || scope.requestedModel === 'default');
+  const isAutoRequest = scope.requestedModel === 'auto' || scope.requestedModel === 'default';
+  const allowPoolWalk = scope.poolWalk && isAutoRequest;
   const seq = newFailoverSeq();
   let stickyHit = false;
   let routePool: string[] = [];
-  const routeOpts = {
-    inputTokens: estimateInputTokens(chatReq),
-    sessionKey: sessionKeyOf(chatReq.messages),
-    onPick: (info: { sticky: boolean; pool: string[] }) => {
-      stickyHit = info.sticky;
-      routePool = info.pool;
-    },
-  };
+  const routeOpts = isAutoRequest
+    ? {
+        inputTokens: estimateInputTokens(chatReq),
+        sessionKey: sessionKeyOf(chatReq.messages),
+        onPick: (info: { sticky: boolean; pool: string[] }) => {
+          stickyHit = info.sticky;
+          routePool = info.pool;
+        },
+      }
+    : undefined;
 
   // 1. Pre-flight: honor existing cooldowns before we even try upstream.
   const pre = await router.preflight(chatReq.model);
@@ -259,7 +261,7 @@ async function dispatchWithAutoRoute(
           router.notify(notice);
           notices.push(notice);
           chatReq.model = composeModelId(next.provider, next.id);
-          router.setSticky(routeOpts.sessionKey, next.provider, next.id);
+          if (routeOpts) router.setSticky(routeOpts.sessionKey, next.provider, next.id);
           continue;
         }
         // Pin the last attempted key before leaving: the handler catch records
@@ -794,12 +796,15 @@ export function registerOpenAIRoutes(
             (payload as Record<string, unknown>).fmf_route_notices = notices;
           }
           if (body.model === 'auto') {
-            (payload as Record<string, unknown>).fmf_auto_route = {
+            const autoRoute: Record<string, unknown> = {
               picked: finalModel,
               strategy: reg.getAutoRouter().getStrategy(),
-              sticky,
-              pool,
             };
+            if (pool.length > 0) {
+              autoRoute.sticky = sticky;
+              autoRoute.pool = pool;
+            }
+            (payload as Record<string, unknown>).fmf_auto_route = autoRoute;
           }
           const finalUsage = usage ?? response.usage;
           record(req, t0, {
@@ -858,16 +863,19 @@ export function registerOpenAIRoutes(
         : { 'access-control-allow-origin': '*' };
 
       const router = reg.getAutoRouter();
+      const routeIsAuto = requestedModel === 'auto' || requestedModel === 'default';
       let stickyHit = false;
       let routePool: string[] = [];
-      const routeOpts = {
-        inputTokens: estimateInputTokens(chatReq),
-        sessionKey: sessionKeyOf(chatReq.messages),
-        onPick: (info: { sticky: boolean; pool: string[] }) => {
-          stickyHit = info.sticky;
-          routePool = info.pool;
-        },
-      };
+      const routeOpts = routeIsAuto
+        ? {
+            inputTokens: estimateInputTokens(chatReq),
+            sessionKey: sessionKeyOf(chatReq.messages),
+            onPick: (info: { sticky: boolean; pool: string[] }) => {
+              stickyHit = info.sticky;
+              routePool = info.pool;
+            },
+          }
+        : undefined;
       const originalRequested = chatReq.model;
       const preNotices: SwitchNotice[] = [];
       const pre = await router.preflight(chatReq.model);
@@ -928,12 +936,15 @@ export function registerOpenAIRoutes(
                   wroteChunk = true;
                   const payload = streamChunkToOpenAI(chunk);
                   if (body.model === 'auto') {
-                    (payload as Record<string, unknown>).fmf_auto_route = {
+                    const autoRoute: Record<string, unknown> = {
                       picked: `${provider.id}:${realModelId}`,
                       strategy: router.getStrategy(),
-                      sticky: stickyHit,
-                      pool: routePool,
                     };
+                    if (routePool.length > 0) {
+                      autoRoute.sticky = stickyHit;
+                      autoRoute.pool = routePool;
+                    }
+                    (payload as Record<string, unknown>).fmf_auto_route = autoRoute;
                   }
                   reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
                 }
@@ -987,7 +998,6 @@ export function registerOpenAIRoutes(
             const failedKey = `${provider.id}:${realModelId}`;
             // Gate on the model the CLIENT asked for: a modality rewrite
             // (vision/tier/image/video) must not unlock the generic pool walk.
-            const isAutoReq = requestedModel === 'auto' || requestedModel === 'default';
             const mark = () => {
               if (failure.kind === 'unavailable') {
                 router.markModelUnavailable(realModelId, provider.id, failure.message);
@@ -1000,7 +1010,7 @@ export function registerOpenAIRoutes(
 
             let reportErr: unknown = err;
             if (
-              isAutoReq &&
+              routeIsAuto &&
               visionCandidates.length === 0 &&
               router.isEnabled() &&
               !wroteChunk &&
@@ -1015,7 +1025,7 @@ export function registerOpenAIRoutes(
                   `data: ${JSON.stringify({ fmf_route_notice: notice, id: 'fmf', object: 'chat.completion.chunk', choices: [] })}\n\n`,
                 );
                 chatReq.model = composeModelId(next.provider, next.id);
-                router.setSticky(routeOpts.sessionKey, next.provider, next.id);
+                if (routeOpts) router.setSticky(routeOpts.sessionKey, next.provider, next.id);
                 try {
                   const resolved = reg.resolveModel(chatReq.model, routeOpts);
                   provider = resolved.provider;

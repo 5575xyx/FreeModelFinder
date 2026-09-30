@@ -175,12 +175,9 @@ describe('auto sticky routing and preflight', () => {
 
   it('still fails over on context_length_exceeded when the precheck cannot see it', async () => {
     const { app, seenModels } = await appWithPool({
-      models: [
-        { id: 'blind-8k', contextWindow: undefined },
-        { id: 'healthy', contextWindow: 200_000 },
-      ],
+      models: [{ id: 'gpt-5-blind' }, { id: 'healthy', contextWindow: 200_000 }],
       failures: {
-        'blind-8k':
+        'gpt-5-blind':
           'custom stream failed 400: {"error":{"message":"input exceeds the context limit; set truncation to auto to permit history truncation","type":"invalid_request_error","param":"","code":"context_length_exceeded"}}',
       },
     });
@@ -190,6 +187,6 @@ describe('auto sticky routing and preflight', () => {
       payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }] },
     });
     assert.equal(res.statusCode, 200);
-    assert.ok(seenModels().includes('healthy'));
+    assert.deepEqual(seenModels(), ['gpt-5-blind', 'healthy']);
   });
 });
