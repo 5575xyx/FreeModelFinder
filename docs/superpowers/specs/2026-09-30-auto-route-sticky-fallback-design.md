@@ -127,7 +127,8 @@ TTL = 5 分钟（对齐 OpenRouter 的 provider 缓存 TTL）
 ```
 estimateInputTokens(request) =
     ceil((messages 文本总字符 + JSON.stringify(tools ?? []).length) / 3)
-  messages 文本 = 各条 content（string）+ contentParts 中 text 分片 + tool_calls 的 name/arguments
+  messages 文本 = 各条 content（string）+ contentParts 中 text 分片 + tool_calls 的 arguments
+  （不含 tool_calls 的 name —— 测试硬规格钉 200，差 1 token 无影响；非 text 部件如 image_url 计 0）
   （Cline 同款保守系数 CHARS_PER_TOKEN = 3；`ChatRequest.tools` 为可选字段，缺省时只计 messages）
 
 命中 §2-1-c 时：该候选被剔除，**不产生任何上游调用**
@@ -210,5 +211,8 @@ estimateInputTokens(request) =
   影响仅是它们共享同一主选，无正确性问题；TTL 5 分钟后自然解绑。
 - **风险 3**：预检的字符/3 估算对中文偏乐观（中文 1 字 ≈ 1 token 而非 1/3）。
   缓解：预检只是**剔除明显装不下的候选**，且保留 B1 的 400 兜底；估算偏差不会造成请求失败。
+- **风险 4**：含图消息的文本会被计两遍 —— `content` 已含归一化文本，`contentParts` 又含同批 text 分片。
+  这是本公式字面要求 +「宁可略高」的允许方向，属**已知保守偏差**，不要当 bug 修；
+  真要消除需改动协议归一化逻辑，风险远大于收益。
 - **回退**：粘性表与预检过滤各自独立开关点（`pickAutoModel` 内两个 if 分支），
   紧急情况下删除粘性分支即回到「链 + 每次重算」，行为仍优于现状 round-robin。
