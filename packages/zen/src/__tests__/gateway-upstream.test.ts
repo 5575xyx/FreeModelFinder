@@ -456,4 +456,38 @@ describe('zen proxy health checks', () => {
     assert.equal(second.used, 1);
     assert.equal(client.requests.length, 2);
   });
+
+  it('surfaces the upstream status and body on the streamed path', async () => {
+    const single = parseProxyList(['direct'], '');
+    const client = new FakeClient(() => response(429, '{"error":{"message":"rate limited"}}'));
+    const pool = new ZenAnonymousPool(single, client, { cooldownBaseMs: 60_000 });
+    const options = makeOptions(client, { anonymousPool: pool });
+
+    await assert.rejects(
+      () => doUpstreamStream(options, anonymousRoute(), { ...request, stream: true }, ids),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /429/);
+        assert.match(error.message, /rate limited/);
+        assert.doesNotMatch(error.message, /upstream request failed/);
+        return true;
+      },
+    );
+  });
+
+  it('surfaces the upstream status and body on the streamed key path', async () => {
+    const client = new FakeClient(() => response(503, '{"error":{"message":"upstream busy"}}'));
+    const options = makeOptions(client);
+
+    await assert.rejects(
+      () => doUpstreamStream(options, zenKeyRoute(), { ...request, stream: true }, ids),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /503/);
+        assert.match(error.message, /upstream busy/);
+        assert.doesNotMatch(error.message, /upstream request failed/);
+        return true;
+      },
+    );
+  });
 });

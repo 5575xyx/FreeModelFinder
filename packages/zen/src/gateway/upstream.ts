@@ -832,7 +832,13 @@ export async function doUpstreamStream(
       attempts: result.attempts,
     };
   }
-  if (result.response) drain(result.response);
+  // A non-2xx phase result carries the response with no error, so the status and
+  // body must be surfaced here instead of the generic message. Mirrors the
+  // non-streaming branch in gateway runtime chat(): the drained body is gone.
+  if (result.response) {
+    const text = await readLimitedBody(result.response);
+    throw new Error(`upstream returned HTTP ${result.response.status}: ${text}`);
+  }
   throw result.error ?? new Error('upstream request failed');
 }
 
