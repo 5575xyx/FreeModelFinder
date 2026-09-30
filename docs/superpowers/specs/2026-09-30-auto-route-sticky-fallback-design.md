@@ -47,7 +47,7 @@ parseModelProfile(id) -> { tier, generation }
 判定顺序（第一个命中即止）：
   1. 缩小标记（tiny 档）:  tiny | \b(?:1|2|3)b\b
   2. 缩小标记（minor 档）: small | nano | \b(?:7|8|9|10)b\b
-  3. 缩小标记（small 档）: mini | flash | haiku | lite | air | mixtral | command-r
+  3. 缩小标记（small 档）: \bmini\b | flash | haiku | \blite\b | mixtral | command-r
                            | \b(?:13|14|20)b\b
   4. 扩大标记（flagship）: opus | gpt-5 | gpt-4o | deepseek-r1 | deepseek-v3
                            | glm-4\.5 | qwen-max | gemini-2\.5-pro | claude-3\.5
@@ -55,6 +55,9 @@ parseModelProfile(id) -> { tier, generation }
   5. 扩大标记（large）:    gpt-4 | glm-4 | gemini-2\.0 | deepseek-v2 | qwen-plus
                            | sonnet | \b(?:30|32|34|40)b\b
   6. 全部未命中 → standard
+     注一: \b 必需 —— gemini 自下标 2 起含子串 mini，无边界会把 gemini-2.5-pro 判成 small。
+     注二: 参数桶之外的超大参数量（120b / 140b / 235b / 480b 等）同样落 standard(50)，
+           要进 flagship 必须另有显式标志（gpt-5 / deepseek-v3 / qwen-max 等）。
 
 tier → capability 分数：
   flagship 95 | large 80 | small 65 | minor 45 | tiny 30 | standard 50
