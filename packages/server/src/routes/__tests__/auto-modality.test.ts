@@ -317,7 +317,7 @@ const capabilityImageModel: ModelInfo = {
 };
 
 describe('auto modality HTTP routing', () => {
-  it('reports fmf_auto_route on auto text picks and round-robins across the scored pool', async () => {
+  it('reports fmf_auto_route on auto text picks and keeps the same model per session', async () => {
     await withApp(
       {
         autoRoute: {
@@ -378,7 +378,7 @@ describe('auto modality HTTP routing', () => {
           pool: ['custom:fixture-model', 'custom:second-text-model'],
           sticky: true,
         });
-        assert.notEqual(r1.model, r2.model, 'two consecutive auto picks should differ');
+        assert.equal(r1.model, r2.model, 'sticky keeps the same model for the same session');
         const resStream = await app.inject({
           method: 'POST',
           url: '/v1/chat/completions',

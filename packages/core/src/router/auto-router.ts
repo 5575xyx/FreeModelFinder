@@ -464,8 +464,17 @@ export class AutoRouter {
       return true;
     });
     return candidates
-      .map((m) => ({ m, s: scoreModel(m, settings.strategy, this.getProfile(m.id)) }))
-      .sort((a, b) => b.s - a.s || a.m.id.localeCompare(b.m.id))
+      .map((m) => ({
+        m,
+        s: scoreModel(m, settings.strategy, this.getProfile(m.id)),
+        g: parseModelProfile(m.id).generation,
+      }))
+      .sort(
+        (a, b) =>
+          b.s - a.s ||
+          (b.g ?? Number.NEGATIVE_INFINITY) - (a.g ?? Number.NEGATIVE_INFINITY) ||
+          a.m.id.localeCompare(b.m.id),
+      )
       .map((x) => x.m);
   }
 

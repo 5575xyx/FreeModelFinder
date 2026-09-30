@@ -228,7 +228,7 @@ describe('model-unavailable auto failover', () => {
       /tried 2 models: 2 unavailable, 0 rate-limited, 0 upstream errors/,
     );
     assert.equal(body.error.type, 'model_unavailable');
-    assert.deepEqual(seenModels(), ['deepseek-v3.1-dead', 'deepseek-v3.2-dead']);
+    assert.deepEqual(seenModels(), ['deepseek-v3.2-dead', 'deepseek-v3.1-dead']);
   });
 
   it('propagates the error on stream when every candidate is unavailable', async () => {
@@ -249,7 +249,7 @@ describe('model-unavailable auto failover', () => {
     assert.match(res.body, /tried 2 models: 2 unavailable, 0 rate-limited, 0 upstream errors/);
     assert.match(res.body, /attempted: .*deepseek/, 'exhaustion message lists attempted models');
     assert.doesNotMatch(res.body, /healthy reply/);
-    assert.deepEqual(seenModels(), ['deepseek-v3.1-dead', 'deepseek-v3.2-dead']);
+    assert.deepEqual(seenModels(), ['deepseek-v3.2-dead', 'deepseek-v3.1-dead']);
     const events = parseSseData(res.body);
     const envelope = events.find((e) => e.error);
     assert.ok(envelope?.error, 'stream carries an error envelope');
@@ -286,7 +286,13 @@ describe('full-pool failover semantics', () => {
       payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: false },
     });
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(seenModels(), [...dead, 'alive-mini']);
+    assert.deepEqual(seenModels(), [
+      'deepseek-v3.3-dead',
+      'deepseek-v3.2-dead',
+      'deepseek-v3.1-dead',
+      'deepseek-v3.0-dead',
+      'alive-mini',
+    ]);
   });
 
   it('marks but does not switch for an explicitly requested model', async () => {
@@ -334,7 +340,7 @@ describe('full-pool failover semantics', () => {
       payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: false },
     });
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(seenModels(), ['deepseek-v3.0-dead', 'deepseek-v3.1-dead', 'alive-mini']);
+    assert.deepEqual(seenModels(), ['deepseek-v3.1-dead', 'deepseek-v3.0-dead', 'alive-mini']);
     const body = res.json() as { fmf_route_notices?: unknown[] };
     assert.equal(body.fmf_route_notices?.length, 2, 'each switch emits a notice');
     const notices =
@@ -375,28 +381,22 @@ describe('full-pool failover semantics', () => {
     assert.deepEqual(seenModels(), ['deepseek-v3.1-dead'], 'param errors must not walk the pool');
   });
 
-  it('does not consume a pool pick while recording a non-walked auto failure', async () => {
+  it('does not attempt another model while recording a non-walked auto failure', async () => {
     const { app, seenModels } = await appWithPool({
       models: ['deepseek-v3.1-dead', 'alive-mini'],
       failures: { 'deepseek-v3.1-dead': PARAM_400 },
     });
     resetAutoPoolCursor();
-    const first = await app.inject({
+    const res = await app.inject({
       method: 'POST',
       url: '/v1/chat/completions',
       payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: false },
     });
-    assert.equal(first.statusCode, 400);
-    const second = await app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }], stream: false },
-    });
-    assert.equal(second.statusCode, 200);
+    assert.equal(res.statusCode, 400);
     assert.deepEqual(
       seenModels(),
-      ['deepseek-v3.1-dead', 'alive-mini'],
-      'error recording must not resolve `auto` and re-roll the pool cursor',
+      ['deepseek-v3.1-dead'],
+      'error recording must not resolve `auto` again and attempt another model',
     );
   });
 
@@ -445,7 +445,7 @@ describe('stream full-pool failover', () => {
     });
     assert.equal(res.statusCode, 200);
     assert.match(res.body, /healthy reply/);
-    assert.deepEqual(seenModels(), ['deepseek-v3.0-dead', 'deepseek-v3.1-dead', 'alive-mini']);
+    assert.deepEqual(seenModels(), ['deepseek-v3.1-dead', 'deepseek-v3.0-dead', 'alive-mini']);
     assert.equal(res.body.match(/fmf_route_notice/g)?.length, 2, 'two switch notices on the wire');
     const firstNotice = parseSseData(res.body).find((e) => e.fmf_route_notice)?.fmf_route_notice;
     assert.equal(
