@@ -187,6 +187,21 @@ export interface AutoRouterOptions {
   onNotice?: (notice: SwitchNotice) => void;
 }
 
+const STICKY_TTL_MS = 5 * 60 * 1000;
+const STICKY_CAPACITY = 1000;
+
+interface StickyEntry {
+  provider: ProviderId;
+  modelId: string;
+  expiresAt: number;
+}
+
+const stickyStore = new Map<string, StickyEntry>();
+
+export function resetStickyStore(): void {
+  stickyStore.clear();
+}
+
 export class AutoRouter {
   private cooldowns = new Map<string, RateLimitState>();
   private providerCooldowns = new Map<ProviderId, ProviderCooldownState>();
@@ -348,6 +363,35 @@ export class AutoRouter {
 
   resetPreference(): void {
     this.originalPreference = null;
+  }
+
+  getSticky(sessionKey: string): { provider: ProviderId; modelId: string } | null {
+    const entry = stickyStore.get(sessionKey);
+    if (!entry) return null;
+    if (entry.expiresAt <= Date.now()) {
+      stickyStore.delete(sessionKey);
+      return null;
+    }
+    return { provider: entry.provider, modelId: entry.modelId };
+  }
+
+  setSticky(
+    sessionKey: string,
+    provider: ProviderId,
+    modelId: string,
+    ttlMs = STICKY_TTL_MS,
+  ): void {
+    stickyStore.delete(sessionKey);
+    stickyStore.set(sessionKey, { provider, modelId, expiresAt: Date.now() + ttlMs });
+    while (stickyStore.size > STICKY_CAPACITY) {
+      const oldest = stickyStore.keys().next().value;
+      if (oldest === undefined) break;
+      stickyStore.delete(oldest);
+    }
+  }
+
+  clearSticky(sessionKey: string): boolean {
+    return stickyStore.delete(sessionKey);
   }
 
   private gc(): void {

@@ -24,7 +24,12 @@ import {
 import type { ProviderContext } from './providers/base.js';
 import { QuotaTracker } from './quota.js';
 import { emitUsageCapture } from './call-logger.js';
-import { AutoRouter, parseRateLimitError, scoreModel } from './router/auto-router.js';
+import {
+  AutoRouter,
+  parseRateLimitError,
+  resetStickyStore,
+  scoreModel,
+} from './router/auto-router.js';
 import { retryOnQueueFull, type RetryOnQueueFullOptions } from './queue-retry.js';
 import { composeModelId, bareModelId } from './model-id.js';
 import type {
@@ -68,6 +73,7 @@ let autoPoolCursor = 0;
 
 export function resetAutoPoolCursor(): void {
   autoPoolCursor = 0;
+  resetStickyStore();
 }
 
 export interface RegistryOptions {
