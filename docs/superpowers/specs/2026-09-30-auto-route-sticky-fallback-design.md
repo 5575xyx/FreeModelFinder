@@ -109,6 +109,8 @@ sessionKey = hash(首条 user 消息的 role + content)
   纳入会导致同会话指纹漂移。
   （协议无 session_id 字段；同一会话多轮时首条 user 消息不变 → 指纹稳定；
     不同会话首条不同 → 自然隔离）
+  回退语义：无任何 user 消息时取 `messages[0]`（role + content 一并入指纹）；
+    连 messages 也为空则返回常量 `'empty'`。畸形请求才走到这里，影响可忽略。
 
 pickAutoModel(request):
   1. 取 sessionKey → 查粘性表 { provider, modelId, expiresAt }
@@ -120,6 +122,11 @@ pickAutoModel(request):
 TTL = 5 分钟（对齐 OpenRouter 的 provider 缓存 TTL）
 容量上限 = 1000 条，超出按插入序淘汰最旧条目（FIFO，不做访问刷新）
 进程级内存表，不持久化 —— 重启丢失可接受（fail-open）
+
+粘性表刻意做成 `auto-router.ts` 文件级单例（与 `autoPoolCursor` 同级），
+语义上比 `cooldowns` 实例字段更"长命"：设置页保存配置会 `new ProviderRegistry()`，
+粘性表**跨实例存活**，换取会话在配置热重载后仍连续。陈旧条目无害 ——
+命中后必过 §2 链成员校验（不在当前链即删除重算），不会粘到已失效模型。
 ```
 
 ### §4 上下文预检（增强 B1，反应式 → 预检式）
