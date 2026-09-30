@@ -369,8 +369,8 @@ describe('toOpenAIMessages tool fields', () => {
       { role: 'tool', content: 'a', tool_call_id: '' },
       { role: 'tool', content: 'b' },
     ]);
-    assert.equal('tool_call_id' in (out[0] as Record<string, unknown>), false);
-    assert.equal('tool_call_id' in (out[1] as Record<string, unknown>), false);
+    assert.equal('tool_call_id' in (out[0] ?? {}), false);
+    assert.equal('tool_call_id' in (out[1] ?? {}), false);
   });
 });
 
