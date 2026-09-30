@@ -5,14 +5,14 @@ export interface ModelProfile {
   generation: number | null;
 }
 
-export const TIER_SCORES: Record<ModelTier, number> = {
+export const TIER_SCORES: Record<ModelTier, number> = Object.freeze({
   flagship: 95,
   large: 80,
   standard: 50,
   small: 65,
   minor: 45,
   tiny: 30,
-};
+});
 
 const TINY_PATTERNS = [/tiny/i, /\b(?:1|2|3)b\b/i];
 
@@ -66,16 +66,17 @@ function hasMatch(patterns: RegExp[], id: string): boolean {
 }
 
 export function parseModelProfile(id: string): ModelProfile {
+  const normalized = id.replace(/_/g, '-');
   let tier: ModelTier = 'standard';
-  if (hasMatch(TINY_PATTERNS, id)) tier = 'tiny';
-  else if (hasMatch(MINOR_PATTERNS, id)) tier = 'minor';
-  else if (hasMatch(SMALL_PATTERNS, id)) tier = 'small';
-  else if (hasMatch(FLAGSHIP_PATTERNS, id)) tier = 'flagship';
-  else if (hasMatch(LARGE_PATTERNS, id)) tier = 'large';
+  if (hasMatch(TINY_PATTERNS, normalized)) tier = 'tiny';
+  else if (hasMatch(MINOR_PATTERNS, normalized)) tier = 'minor';
+  else if (hasMatch(SMALL_PATTERNS, normalized)) tier = 'small';
+  else if (hasMatch(FLAGSHIP_PATTERNS, normalized)) tier = 'flagship';
+  else if (hasMatch(LARGE_PATTERNS, normalized)) tier = 'large';
 
   let generation: number | null = null;
   for (const p of GENERATION_PATTERNS) {
-    const m = id.match(p);
+    const m = normalized.match(p);
     if (m?.[1]) {
       generation = Number.parseFloat(m[1]);
       break;

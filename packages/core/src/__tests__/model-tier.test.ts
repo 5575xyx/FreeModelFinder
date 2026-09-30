@@ -10,6 +10,8 @@ describe('parseModelProfile', () => {
     assert.equal(parseModelProfile('claude-3.5-haiku').tier, 'small');
     assert.equal(parseModelProfile('inclusionai/ling-3.0-flash-sante:free').tier, 'small');
     assert.equal(parseModelProfile('gemini-2.0-flash').tier, 'small');
+    assert.equal(parseModelProfile('qwen-lite').tier, 'small');
+    assert.equal(parseModelProfile('gpt_4o_mini').tier, 'small');
   });
 
   it('tiny markers rank below small', () => {
@@ -22,6 +24,7 @@ describe('parseModelProfile', () => {
     assert.equal(parseModelProfile('llama-3.1-8b-instruct').tier, 'minor');
     assert.equal(parseModelProfile('qwen2.5-small').tier, 'minor');
     assert.equal(parseModelProfile('some-nano-model').tier, 'minor');
+    assert.equal(parseModelProfile('ministral-7b').tier, 'minor');
   });
 
   it('flagship markers still apply when no size marker present', () => {
