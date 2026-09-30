@@ -307,7 +307,7 @@ describe('provider empty-catalog contracts', () => {
 });
 
 class ReasoningProbeProvider extends OpenAICompatibleProvider {
-  readonly id: ProviderId = 'custom';
+  readonly id: ProviderId = 'ollama';
   readonly displayName = 'Probe';
   protected baseUrl(): string {
     return 'https://upstream.example/v1';
@@ -457,6 +457,46 @@ describe('openai-compatible tool_calls', () => {
     assert.equal(res.finish_reason, 'tool_calls');
   });
 
+  it('normalizes a non-standard finish_reason to stop or null', async () => {
+    const provider = new ReasoningProbeProvider({
+      credentials: { apiKey: 'k' },
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify({
+            id: 'c',
+            model: 'm',
+            created: 1,
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: 'ok' },
+                finish_reason: 'eos',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )) as typeof fetch,
+    });
+    const res = await provider.chat({ model: 'm', messages: [], stream: false });
+    assert.equal(res.finish_reason, 'stop');
+
+    const streamProvider = new ReasoningProbeProvider({
+      credentials: { apiKey: 'k' },
+      fetchImpl: (async () =>
+        new Response(
+          [
+            'data: {"id":"c","model":"m","created":1,"choices":[{"index":0,"delta":{"content":"x"},"finish_reason":"eos"}]}',
+            '',
+            'data: [DONE]',
+            '',
+          ].join('\n'),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        )) as typeof fetch,
+    });
+    const chunks = await collect(streamProvider.stream({ model: 'm', messages: [], stream: true }));
+    assert.equal(chunks[0]?.finish_reason, null);
+  });
+
   it('emits tool_call deltas including tool-only frames', async () => {
     const provider = new ReasoningProbeProvider({
       credentials: { apiKey: 'k' },
@@ -537,5 +577,60 @@ describe('custom provider tool_calls', () => {
     assert.deepEqual(chunks[1]?.tool_calls, [
       { index: 0, type: 'function', function: { arguments: '{"city":"SH"}' } },
     ]);
+    assert.equal(chunks[1]?.finish_reason, 'tool_calls');
+  });
+});
+
+const REASONING_ONLY_RESPONSE = {
+  id: 'r1',
+  model: 'm',
+  created: 1,
+  choices: [
+    {
+      index: 0,
+      message: { role: 'assistant', content: '', reasoning: 'think' },
+      finish_reason: 'stop',
+    },
+  ],
+};
+
+function reasoningOnlyFetch(): typeof fetch {
+  return (async () =>
+    new Response(JSON.stringify(REASONING_ONLY_RESPONSE), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })) as typeof fetch;
+}
+
+describe('custom provider reasoning parity', () => {
+  it('does not surface reasoning on chat while the base class does', async () => {
+    const base = new ReasoningProbeProvider({
+      credentials: { apiKey: 'k' },
+      fetchImpl: reasoningOnlyFetch(),
+    });
+    const baseRes = await base.chat({ model: 'm', messages: [], stream: false });
+    assert.equal(baseRes.content, 'think');
+    assert.equal(baseRes.reasoning, 'think');
+
+    const custom = new CustomProvider({
+      credentials: {
+        apiKey: '',
+        extra: {
+          sources: [
+            {
+              id: 'fx',
+              label: 'Fx',
+              baseUrl: 'https://fx.invalid/v1',
+              apiKey: 'k',
+              models: [{ id: 'm' }],
+            },
+          ],
+        },
+      },
+      fetchImpl: reasoningOnlyFetch(),
+    });
+    const customRes = await custom.chat({ model: 'fx:m', messages: [], stream: false });
+    assert.equal(customRes.content, 'think');
+    assert.equal('reasoning' in customRes, false);
   });
 });

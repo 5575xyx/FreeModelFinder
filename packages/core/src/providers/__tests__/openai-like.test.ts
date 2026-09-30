@@ -278,6 +278,25 @@ describe('parseUsage', () => {
     );
   });
 
+  it('keeps only whitelisted keys and drops unknown usage fields', () => {
+    assert.deepEqual(
+      parseUsage({
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        total_tokens: 15,
+        prompt_tokens_details: { cached_tokens: 4, audio_tokens: 9 },
+        completion_tokens_details: { reasoning_tokens: 3 },
+        unknown_field: 1,
+      }),
+      {
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        total_tokens: 15,
+        prompt_tokens_details: { cached_tokens: 4 },
+      },
+    );
+  });
+
   it('drops non-numeric fields', () => {
     assert.deepEqual(parseUsage({ prompt_tokens: '10', completion_tokens: 2 }), {
       completion_tokens: 2,
