@@ -268,23 +268,26 @@ function OpenCodeZenExtras({
             <span className="block text-[11px]">{t('settings.opencode.anonymous.hint')}</span>
           </span>
         </label>
-        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          {t('settings.opencode.prefer')}
-          <select
-            className="rounded-md border border-input bg-surface px-2 py-1 text-xs text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
-            value={prefer}
-            disabled={busy !== null}
-            aria-label={t('settings.opencode.prefer')}
-            onChange={(e) => {
-              const next = e.target.value;
-              setPrefer(next);
-              void run('prefer', () => postExtra({ prefer: next }));
-            }}
-          >
-            <option value="go">{t('settings.opencode.prefer.go')}</option>
-            <option value="zen">{t('settings.opencode.prefer.zen')}</option>
-          </select>
-        </label>
+        <div className="flex flex-col items-end gap-1">
+          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            {t('settings.opencode.prefer')}
+            <select
+              className="rounded-md border border-input bg-surface px-2 py-1 text-xs text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+              value={prefer}
+              disabled={busy !== null}
+              aria-label={t('settings.opencode.prefer')}
+              onChange={(e) => {
+                const next = e.target.value;
+                setPrefer(next);
+                void run('prefer', () => postExtra({ prefer: next }));
+              }}
+            >
+              <option value="go">{t('settings.opencode.prefer.go')}</option>
+              <option value="zen">{t('settings.opencode.prefer.zen')}</option>
+            </select>
+          </label>
+          <p className="text-[11px] text-muted-foreground">{t('settings.opencode.prefer.hint')}</p>
+        </div>
       </div>
 
       <div className="space-y-1.5">

@@ -458,6 +458,7 @@ export const zh: Dict = {
   'settings.opencode.prefer': '优先 Key 池',
   'settings.opencode.prefer.go': 'Go Key 优先',
   'settings.opencode.prefer.zen': 'Zen Key 优先',
+  'settings.opencode.prefer.hint': '仅决定 Key 池的回退顺序；勾选匿名通道时始终优先走匿名。',
   'settings.opencode.zenKeys': 'Zen Keys',
   'settings.opencode.zenKeys.hint': '保存后写入 apiKeys，用于 Zen 直连额度',
   'settings.opencode.goKeys': 'Go Keys',
@@ -1024,6 +1025,8 @@ export const en: Dict = {
   'settings.opencode.prefer': 'Preferred key pool',
   'settings.opencode.prefer.go': 'Prefer Go keys',
   'settings.opencode.prefer.zen': 'Prefer Zen keys',
+  'settings.opencode.prefer.hint':
+    'Only orders the key-pool fallback; the anonymous channel is always tried first when enabled.',
   'settings.opencode.zenKeys': 'Zen keys',
   'settings.opencode.zenKeys.hint': 'Saved into apiKeys for the Zen direct quota',
   'settings.opencode.goKeys': 'Go keys',

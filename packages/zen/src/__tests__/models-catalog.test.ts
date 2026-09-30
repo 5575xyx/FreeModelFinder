@@ -220,4 +220,27 @@ describe('zen catalog routing', () => {
     assert.equal(route.tier, 'zen');
     assert.deepEqual(route.keyTiers, ['zen', 'go']);
   });
+
+  it('prefers the anonymous lane regardless of the key-pool prefer order', () => {
+    const withKeys = (prefer: 'go' | 'zen') => {
+      const c = new ZenCatalog(prefer, {});
+      c.replace({
+        zen: ['m-free'],
+        go: ['m-free'],
+        native: { zen: { 'm-free': 'chat' }, go: { 'm-free': 'chat' } },
+        unsupported: { zen: {}, go: {} },
+        metadata: { zen: {}, go: {} },
+      });
+      c.setPricing(freeStore(['m-free']));
+      return c.route('m-free', true, true, true);
+    };
+    const go = withKeys('go');
+    assert.equal(go.anonymous, true);
+    assert.equal(go.tier, 'zen');
+    assert.deepEqual(go.keyTiers, ['go', 'zen']);
+    const zen = withKeys('zen');
+    assert.equal(zen.anonymous, true);
+    assert.equal(zen.tier, 'zen');
+    assert.deepEqual(zen.keyTiers, ['zen', 'go']);
+  });
 });
