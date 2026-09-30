@@ -41,6 +41,7 @@
 
 ```
 parseModelProfile(id) -> { tier, generation }
+  归一化: 先 id.replace(/_/g, '-')，下述全部匹配与 generation 解析都用归一后的值
   tier: 'flagship' | 'large' | 'standard' | 'small' | 'minor' | 'tiny'
   generation: 数值代际，解析不到为 null
 
