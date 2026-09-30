@@ -376,3 +376,166 @@ describe('openai-compatible reasoning field', () => {
     assert.deepEqual(body.tools, [{ type: 'function', function: { name: 'f' } }]);
   });
 });
+
+const TOOL_CHAT_RESPONSE = {
+  id: 'tool-1',
+  model: 'm',
+  created: 1,
+  choices: [
+    {
+      index: 0,
+      message: {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'get_weather', arguments: '{"city":"SH"}' },
+          },
+        ],
+      },
+      finish_reason: 'tool_calls',
+    },
+  ],
+  usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+};
+
+const TOOL_SSE = [
+  'data: {"id":"c1","model":"m","created":1,"choices":[{"index":0,"delta":{"role":"assistant","content":"","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}',
+  '',
+  'data: {"id":"c1","model":"m","created":1,"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"city\\":\\"SH\\"}"}}]},"finish_reason":"tool_calls"}]}',
+  '',
+  'data: [DONE]',
+  '',
+].join('\n');
+
+describe('openai-compatible tool_calls', () => {
+  it('fills tool_calls and maps finish_reason on chat', async () => {
+    const provider = new ReasoningProbeProvider({
+      credentials: { apiKey: 'k' },
+      fetchImpl: (async () =>
+        new Response(JSON.stringify(TOOL_CHAT_RESPONSE), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })) as typeof fetch,
+    });
+    const res = await provider.chat({ model: 'm', messages: [], stream: false });
+    assert.equal(res.content, '');
+    assert.equal(res.finish_reason, 'tool_calls');
+    assert.deepEqual(res.tool_calls, [
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'get_weather', arguments: '{"city":"SH"}' },
+      },
+    ]);
+    assert.equal(res.usage?.total_tokens, 3);
+  });
+
+  it('maps a legacy function_call finish reason to tool_calls', async () => {
+    const provider = new ReasoningProbeProvider({
+      credentials: { apiKey: 'k' },
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify({
+            id: 'c',
+            model: 'm',
+            created: 1,
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: 'ok' },
+                finish_reason: 'function_call',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )) as typeof fetch,
+    });
+    const res = await provider.chat({ model: 'm', messages: [], stream: false });
+    assert.equal(res.finish_reason, 'tool_calls');
+  });
+
+  it('emits tool_call deltas including tool-only frames', async () => {
+    const provider = new ReasoningProbeProvider({
+      credentials: { apiKey: 'k' },
+      fetchImpl: (async () =>
+        new Response(TOOL_SSE, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        })) as typeof fetch,
+    });
+    const chunks = await collect(provider.stream({ model: 'm', messages: [], stream: true }));
+    assert.equal(chunks.length, 2);
+    assert.equal(chunks[0]?.delta, '');
+    assert.deepEqual(chunks[0]?.tool_calls, [
+      {
+        index: 0,
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'get_weather', arguments: '' },
+      },
+    ]);
+    assert.equal(chunks[1]?.delta, '');
+    assert.deepEqual(chunks[1]?.tool_calls, [
+      { index: 0, type: 'function', function: { arguments: '{"city":"SH"}' } },
+    ]);
+    assert.equal(chunks[1]?.finish_reason, 'tool_calls');
+  });
+});
+
+describe('custom provider tool_calls', () => {
+  const credentials = {
+    apiKey: '',
+    extra: {
+      sources: [
+        {
+          id: 'fx',
+          label: 'Fx',
+          baseUrl: 'https://fx.invalid/v1',
+          apiKey: 'k',
+          models: [{ id: 'm' }],
+        },
+      ],
+    },
+  };
+  const toolFetch = (payload: unknown): typeof fetch =>
+    (async (_input: string | URL | Request, init?: RequestInit) => {
+      const stream = String(init?.body ?? '').includes('"stream":true');
+      return new Response(stream ? TOOL_SSE : JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': stream ? 'text/event-stream' : 'application/json' },
+      });
+    }) as typeof fetch;
+
+  it('fills tool_calls on chat and stream', async () => {
+    const provider = new CustomProvider({ credentials, fetchImpl: toolFetch(TOOL_CHAT_RESPONSE) });
+    const res = await provider.chat({ model: 'fx:m', messages: [], stream: false });
+    assert.equal(res.content, '');
+    assert.equal(res.finish_reason, 'tool_calls');
+    assert.deepEqual(res.tool_calls, [
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'get_weather', arguments: '{"city":"SH"}' },
+      },
+    ]);
+
+    const chunks = await collect(provider.stream({ model: 'fx:m', messages: [], stream: true }));
+    assert.equal(chunks.length, 2);
+    assert.equal(chunks[0]?.delta, '');
+    assert.deepEqual(chunks[0]?.tool_calls, [
+      {
+        index: 0,
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'get_weather', arguments: '' },
+      },
+    ]);
+    assert.equal(chunks[1]?.delta, '');
+    assert.deepEqual(chunks[1]?.tool_calls, [
+      { index: 0, type: 'function', function: { arguments: '{"city":"SH"}' } },
+    ]);
+  });
+});

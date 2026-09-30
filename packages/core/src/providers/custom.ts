@@ -8,6 +8,12 @@ import type {
   StreamChunk,
 } from '../types.js';
 import { BaseProvider } from './base.js';
+import {
+  mapFinishReason,
+  parseOpenAIDelta,
+  parseOpenAIMessage,
+  parseUsage,
+} from './openai-like.js';
 import { toOpenAIMessages, toUpstreamChatFields } from './openai-messages.js';
 
 interface OpenAILikeChoice {
@@ -17,12 +23,14 @@ interface OpenAILikeChoice {
     content: string | null;
     reasoning_content?: string | null;
     reasoning?: string | null;
+    tool_calls?: unknown;
   };
   delta?: {
     role?: string;
     content?: string;
     reasoning_content?: string;
     reasoning?: string;
+    tool_calls?: unknown;
   };
   finish_reason?: string | null;
 }
@@ -172,19 +180,15 @@ export class CustomProvider extends BaseProvider {
     const data = (await res.json()) as OpenAILikeResponse;
     this.observeUsage(req.model, data.usage);
     const choice = data.choices[0];
-    const msg = choice?.message;
-    const primary = typeof msg?.content === 'string' ? msg.content : '';
-    const reasoning =
-      (typeof msg?.reasoning_content === 'string' ? msg.reasoning_content : '') ||
-      (typeof msg?.reasoning === 'string' ? msg.reasoning : '');
-    const content = primary || reasoning;
+    const parsed = parseOpenAIMessage(choice?.message);
     return {
       id: data.id,
       model: req.model,
       created: data.created,
-      content,
-      finish_reason: (choice?.finish_reason ?? 'stop') as ChatResponse['finish_reason'],
-      usage: data.usage,
+      content: parsed.content || parsed.reasoning || '',
+      finish_reason: mapFinishReason(choice?.finish_reason) ?? 'stop',
+      ...(parsed.tool_calls ? { tool_calls: parsed.tool_calls } : {}),
+      usage: parseUsage(data.usage),
     };
   }
 
@@ -229,16 +233,14 @@ export class CustomProvider extends BaseProvider {
           const json = JSON.parse(payload) as OpenAILikeResponse;
           if (json.usage) this.observeUsage(req.model, json.usage);
           const choice = json.choices[0];
-          const primaryDelta = choice?.delta?.content ?? '';
-          const reasoningDelta =
-            (choice?.delta?.reasoning_content ?? '') || (choice?.delta?.reasoning ?? '');
-          const delta = primaryDelta || reasoningDelta;
+          const parsed = parseOpenAIDelta(choice?.delta);
           yield {
             id: json.id,
             model: req.model,
             created: json.created,
-            delta,
-            finish_reason: (choice?.finish_reason ?? null) as StreamChunk['finish_reason'],
+            delta: parsed.content || parsed.reasoning || '',
+            finish_reason: mapFinishReason(choice?.finish_reason),
+            ...(parsed.tool_calls ? { tool_calls: parsed.tool_calls } : {}),
           };
         } catch {
           // ignore malformed line

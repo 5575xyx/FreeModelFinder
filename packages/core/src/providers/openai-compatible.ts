@@ -1,5 +1,11 @@
 import type { ChatRequest, ChatResponse, ModelInfo, ProviderId, StreamChunk } from '../types.js';
 import { BaseProvider } from './base.js';
+import {
+  mapFinishReason,
+  parseOpenAIDelta,
+  parseOpenAIMessage,
+  parseUsage,
+} from './openai-like.js';
 import { toOpenAIMessages, toUpstreamChatFields } from './openai-messages.js';
 
 interface OpenAILikeChoice {
@@ -9,12 +15,14 @@ interface OpenAILikeChoice {
     content: string | null;
     reasoning_content?: string | null;
     reasoning?: string | null;
+    tool_calls?: unknown;
   };
   delta?: {
     role?: string;
     content?: string;
     reasoning_content?: string;
     reasoning?: string;
+    tool_calls?: unknown;
   };
   finish_reason?: string | null;
 }
@@ -69,20 +77,17 @@ export abstract class OpenAICompatibleProvider extends BaseProvider {
     const data = (await res.json()) as OpenAILikeResponse;
     this.observeUsage(req.model, data.usage);
     const choice = data.choices[0];
-    const msg = choice?.message;
-    const primary = typeof msg?.content === 'string' ? msg.content : '';
-    const reasoning =
-      (typeof msg?.reasoning_content === 'string' ? msg.reasoning_content : '') ||
-      (typeof msg?.reasoning === 'string' ? msg.reasoning : '');
-    const content = primary || reasoning;
+    const parsed = parseOpenAIMessage(choice?.message);
+    const content = parsed.content || parsed.reasoning || '';
     return {
       id: data.id,
       model: data.model,
       created: data.created,
       content,
-      finish_reason: (choice?.finish_reason ?? 'stop') as ChatResponse['finish_reason'],
-      ...(reasoning && !primary ? { reasoning } : {}),
-      usage: data.usage,
+      finish_reason: mapFinishReason(choice?.finish_reason) ?? 'stop',
+      ...(parsed.reasoning && !parsed.content ? { reasoning: parsed.reasoning } : {}),
+      ...(parsed.tool_calls ? { tool_calls: parsed.tool_calls } : {}),
+      usage: parseUsage(data.usage),
     };
   }
 
@@ -124,16 +129,15 @@ export abstract class OpenAICompatibleProvider extends BaseProvider {
           const json = JSON.parse(payload) as OpenAILikeResponse;
           if (json.usage) this.observeUsage(req.model, json.usage);
           const choice = json.choices[0];
-          const primaryDelta = choice?.delta?.content ?? '';
-          const reasoningDelta =
-            (choice?.delta?.reasoning_content ?? '') || (choice?.delta?.reasoning ?? '');
+          const parsed = parseOpenAIDelta(choice?.delta);
           yield {
             id: json.id,
             model: json.model,
             created: json.created,
-            delta: primaryDelta || reasoningDelta,
-            finish_reason: (choice?.finish_reason ?? null) as StreamChunk['finish_reason'],
-            ...(reasoningDelta && !primaryDelta ? { reasoning: reasoningDelta } : {}),
+            delta: parsed.content || parsed.reasoning || '',
+            finish_reason: mapFinishReason(choice?.finish_reason),
+            ...(parsed.reasoning && !parsed.content ? { reasoning: parsed.reasoning } : {}),
+            ...(parsed.tool_calls ? { tool_calls: parsed.tool_calls } : {}),
           };
         } catch {
           // ignore malformed line
