@@ -154,8 +154,8 @@ estimateInputTokens(request) =
 
 ### §5 可观测
 
-`fmf_auto_route` 附加字段扩展为 `{ pool: [...], picked, strategy, sticky: boolean }`，
-`sticky: true` 表示本次命中粘性表未重算链。切换通知 `SwitchNotice` 结构不变。
+`fmf_auto_route` 在既有 `{ picked, strategy }` 上，**仅当本次确实走了文本打分池（`pool` 非空）时**新增 `pool`（候选链）与 `sticky`（是否命中粘性）。
+`sticky: true` 表示本次命中粘性表未重算链。模态重写（vision/image/text-tier）不经文本池，故保持 `{ picked, strategy }`、不附 `pool`/`sticky`，避免空数组被误读为「无候选」。切换通知 `SwitchNotice` 结构不变。
 
 ## 不做的事（YAGNI）
 

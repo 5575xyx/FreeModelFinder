@@ -267,7 +267,7 @@ const PARAM_400 =
   'custom stream failed 400: {"error":{"message":"temperature must be between 0 and 2","type":"invalid_request_error"}}';
 
 describe('full-pool failover semantics', () => {
-  it('walks past the whole Top-3 down to a lower-ranked healthy model', async () => {
+  it('falls over from the top-ranked model down the whole pool to a healthy one', async () => {
     const dead = [
       'deepseek-v3.0-dead',
       'deepseek-v3.1-dead',
