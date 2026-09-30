@@ -2,16 +2,16 @@ import type { ChatRequest, ChatMessage } from './types.js';
 
 const CHARS_PER_TOKEN = 3;
 
-function partText(parts: ChatMessage['contentParts']): number {
+function partChars(parts: ChatMessage['contentParts']): number {
   let chars = 0;
   for (const p of parts ?? []) {
-    if ('text' in p) chars += p.text.length;
+    if (p.type === 'text') chars += p.text.length;
   }
   return chars;
 }
 
 function messageChars(m: ChatMessage): number {
-  let chars = m.content.length + partText(m.contentParts);
+  let chars = m.content.length + partChars(m.contentParts);
   for (const call of m.tool_calls ?? []) {
     chars += (call.function.arguments ?? '').length;
   }

@@ -9,12 +9,11 @@ describe('estimateInputTokens', () => {
   });
 
   it('includes tool definitions', () => {
-    const a = estimateInputTokens({ messages: [{ role: 'user', content: 'hi' }] });
     const b = estimateInputTokens({
       messages: [{ role: 'user', content: 'hi' }],
       tools: [{ type: 'function', function: { name: 'f', parameters: { a: 1 } } }],
     });
-    assert.ok(b > a);
+    assert.equal(b, 23);
   });
 
   it('includes contentParts text and tool_calls payloads', () => {
@@ -43,8 +42,21 @@ describe('estimateInputTokens', () => {
     assert.equal(withCalls, 200);
   });
 
-  it('rounds up and never returns a negative', () => {
+  it('rounds up and handles empty messages', () => {
     assert.equal(estimateInputTokens({ messages: [{ role: 'user', content: 'x' }] }), 1);
     assert.equal(estimateInputTokens({ messages: [] }), 0);
+  });
+
+  it('ignores image parts', () => {
+    const n = estimateInputTokens({
+      messages: [
+        {
+          role: 'user',
+          content: '',
+          contentParts: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }],
+        },
+      ],
+    });
+    assert.equal(n, 0);
   });
 });
