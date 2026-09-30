@@ -447,7 +447,7 @@ export class AutoRouter {
    * Full scored ranking of every candidate currently eligible for auto
    * routing (cooldown/removed models excluded). Used by the gateway to
    * walk the ENTIRE pool on failover instead of stopping at Top-3.
-   * Ties break by model id so ordering matches pickFromScoredPool.
+   * Ties break by model id.
    */
   async rankCandidates(): Promise<ModelInfo[]> {
     const settings = this.opts.getSettings();

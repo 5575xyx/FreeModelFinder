@@ -114,8 +114,8 @@ sessionKey = hash(首条 user 消息的 role + content)
 
 pickAutoModel(request):
   1. 取 sessionKey → 查粘性表 { provider, modelId, expiresAt }
-     - 命中、未过期、且该模型仍满足 §2 的全部硬过滤 → 直接返回，不重算链
-     - 命中但已不健康（冷却/剔除/窗口不够）→ 删除该条，继续步骤 2
+     - 命中、未过期、且**仍在当前候选链内**（§2 构建的链）→ 直接返回，不重算链
+     - 命中但已不健康或**跌出候选链**（冷却/剔除/窗口不够/超出同厂 2 席或前 5）→ 删除该条，继续步骤 2
   2. 未命中 → 构建 fallback 链 → 链首为主选 → 写入粘性表
   3. fallback 成功后 → 用成功的模型更新该 session 的粘性表
 

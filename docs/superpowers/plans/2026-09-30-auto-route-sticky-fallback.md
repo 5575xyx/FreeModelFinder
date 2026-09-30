@@ -1152,3 +1152,18 @@ Expected: 工作树干净；本计划产生约 6–7 个 commit；**不 push**�
    - 测试面：model-tier、score-model、registry 改写、server e2e 全覆盖 ✅
 2. **Placeholder scan** — 无 TBD/TODO；Task 6 Step 1 与 Task 5 Step 1 各有一处「若现有 helper 形状不同则按现有写法调整、断言不变」，属环境适配而非空缺，已给出回退写法。
 3. **Type consistency** — `resolveModel(modelId, opts?)` 返回 `{provider, modelId, sticky?}` 在 Task 5 定义、Task 6 消费一致；`onPick(info)` 的 `{sticky, pool}` 两侧字段名一致；`buildFallbackChain(inputTokens?: number)` 的调用方式已在 Task 5 Step 1 注明两种可能并给出等价写法。
+
+---
+
+## 执行期偏差记录（实现时对计划的必要修正）
+
+计划在执行中被逐任务审查，以下偏离均为**计划自身的 bug 或已批准设计的必然结果**，非实现自由发挥：
+
+1. **Task 1 · `air` 标记** — 计划的 SMALL 模式含 `/air/i`，与计划自带测试（`glm-4-air`→large）矛盾。经用户裁决：**从设计删除 air**（免费池无该模型）。同时 `/mini/i`、`/lite/i` 补词边界（修 `gemini` 含子串 `mini` 把 `gemini-2.5-pro` 判成 small 的真 bug）。
+2. **Task 1 · qwen/llama 代际正则** — 计划漏了 `(?:\.\d+)?`，补上（`qwen2.5-7b`→2.5）；llama 分隔符补 `[-_]?` 对齐 qwen。
+3. **Task 1 · 归一化与冻结** — `parseModelProfile` 入口加 `id.replace(/_/g,'-')`（`\b` 不跨下划线）；`TIER_SCORES` 加 `Object.freeze`。
+4. **Task 3 · `tool_calls` 只计 `arguments`** — 计划实现伪代码计 `name`+`arguments`，但计划测试断言 `200` 只能由 `arguments` 单独得出；以测试为硬规格，只计 `arguments`（差 1 token 无影响）。
+5. **Task 5 · B1 `skips cooling-down members` 用例改写** — 计划说「保留原样」，但该用例断言两次无 key 选型不同，是 round-robin 语义，已被本设计取代；改写为断言两次均为链首 `mid-14b`。
+6. **Task 5 · B2 无 key 返回省略 `sticky`** — 计划测试断言无 key 时 `sticky === undefined`，计划实现却返回 `false`；以测试为准，无 key 分支返回 `{provider, modelId}`（不含 `sticky`）。
+7. **Task 5 · B3 预检用例输入 `6000`→`8000`** — 计划算术错误：`6000 ≤ 8192×0.95` 时 `small-8k` 本不该被剔除；改 `8000` 才表达「窗口不足被剔除」。
+8. **Task 5 · B4 全剔空回退按 contextWindow 降序** — 计划实现全剔空后仍按 score 排序，与设计 §2-1-d「放宽到 contextWindow 最大的前几个」冲突；实现新增 `relaxed` 主键按窗口降序，非 relaxed 路径不变。
