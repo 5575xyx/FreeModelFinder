@@ -151,6 +151,15 @@ function deltaFrame(content: string, finish: string | null = null): Record<strin
   };
 }
 
+function toolFrame(toolCalls: unknown, finish: string | null = null): Record<string, unknown> {
+  return {
+    id: 'stream-1',
+    model: 'upstream-model',
+    created: 1,
+    choices: [{ index: 0, delta: { tool_calls: toolCalls }, finish_reason: finish }],
+  };
+}
+
 function sseResponse(
   frames: Array<Record<string, unknown>>,
   usage?: Record<string, number>,
@@ -953,6 +962,204 @@ describe('ClineProvider chat and stream fixtures', () => {
 
     const response = await provider.chat(req('z-ai/glm-5.3-flash'));
     assert.equal(response.content, 'thinking hard');
+  });
+
+  it('forwards tools to the upstream request body only when present', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { calls, fetchImpl } = harness(() => chatOk());
+    const provider = makeProvider(fetchImpl, runtime);
+
+    await provider.chat(req('z-ai/glm-5.3-flash'));
+    assert.equal('tools' in bodyOf(chatCalls(calls)[0]?.init), false);
+
+    const tools: ChatRequest['tools'] = [
+      {
+        type: 'function',
+        function: {
+          name: 'get_weather',
+          description: 'Get weather',
+          parameters: { type: 'object' },
+        },
+      },
+    ];
+    await provider.chat(req('z-ai/glm-5.3-flash', { tools }));
+    assert.deepEqual(bodyOf(chatCalls(calls)[1]?.init).tools, tools);
+  });
+
+  it('parses tool_calls and maps the finish reason from a JSON response', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { fetchImpl } = harness(() =>
+      json({
+        id: 'chat-1',
+        created: 1,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  type: 'function',
+                  function: { name: 'get_weather', arguments: '{"city":"SF"}' },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+      }),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const response = await provider.chat(req('z-ai/glm-5.3-flash'));
+    assert.equal(response.content, '');
+    assert.equal(response.finish_reason, 'tool_calls');
+    assert.equal(response.tool_calls?.length, 1);
+    assert.equal(response.tool_calls?.[0]?.id, 'call_1');
+    assert.equal(response.tool_calls?.[0]?.type, 'function');
+    assert.equal(response.tool_calls?.[0]?.function.name, 'get_weather');
+    assert.equal(response.tool_calls?.[0]?.function.arguments, '{"city":"SF"}');
+  });
+
+  it('maps an upstream function_call finish reason to tool_calls', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { fetchImpl } = harness(() =>
+      json({
+        id: 'chat-1',
+        created: 1,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [{ id: 'call_1', function: { name: 'get_weather', arguments: '{}' } }],
+            },
+            finish_reason: 'function_call',
+          },
+        ],
+      }),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const response = await provider.chat(req('z-ai/glm-5.3-flash'));
+    assert.equal(response.finish_reason, 'tool_calls');
+  });
+
+  it('coerces object tool_call arguments to a JSON string', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { fetchImpl } = harness(() =>
+      json({
+        id: 'chat-1',
+        created: 1,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [
+                { id: 'call_1', function: { name: 'get_weather', arguments: { city: 'SF' } } },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+      }),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const response = await provider.chat(req('z-ai/glm-5.3-flash'));
+    assert.equal(response.tool_calls?.[0]?.function.arguments, '{"city":"SF"}');
+  });
+
+  it('does not treat a tool-only SSE response as empty content', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { fetchImpl } = harness(() =>
+      sseResponse([
+        toolFrame([
+          {
+            index: 0,
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'get_weather', arguments: '' },
+          },
+        ]),
+        toolFrame(
+          [{ index: 0, type: 'function', function: { arguments: '{"city":"SF"}' } }],
+          'tool_calls',
+        ),
+      ]),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const response = await provider.chat(req('cline-free/deepseek-v4.1-flash'));
+    assert.equal(response.content, '');
+    assert.equal(response.finish_reason, 'tool_calls');
+    assert.equal(response.tool_calls?.length, 1);
+    assert.equal(response.tool_calls?.[0]?.id, 'call_1');
+    assert.equal(response.tool_calls?.[0]?.function.name, 'get_weather');
+    assert.equal(response.tool_calls?.[0]?.function.arguments, '{"city":"SF"}');
+  });
+
+  it('reassembles multiple streamed tool_call deltas by index', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { fetchImpl } = harness(() =>
+      sseResponse([
+        toolFrame([
+          { index: 0, id: 'call_1', type: 'function', function: { name: 'a', arguments: '{"x"' } },
+          { index: 1, id: 'call_2', type: 'function', function: { name: 'b', arguments: '{}' } },
+        ]),
+        toolFrame([{ index: 0, type: 'function', function: { arguments: ':1}' } }], 'tool_calls'),
+      ]),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const response = await provider.chat(req('cline-free/deepseek-v4.1-flash'));
+    assert.equal(response.tool_calls?.length, 2);
+    assert.equal(response.tool_calls?.[0]?.function.arguments, '{"x":1}');
+    assert.equal(response.tool_calls?.[1]?.function.name, 'b');
+  });
+
+  it('emits tool_call deltas on the streaming path without aggregating', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { fetchImpl } = harness(() =>
+      sseResponse([
+        toolFrame([
+          {
+            index: 0,
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'get_weather', arguments: '' },
+          },
+        ]),
+        toolFrame(
+          [{ index: 0, type: 'function', function: { arguments: '{"city":"SF"}' } }],
+          'tool_calls',
+        ),
+      ]),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const chunks: StreamChunk[] = [];
+    for await (const chunk of provider.stream(req('z-ai/glm-5.3-flash', { stream: true }))) {
+      chunks.push(chunk);
+    }
+    assert.equal(chunks.length, 2);
+    assert.equal(chunks[0]?.delta, '');
+    assert.equal(chunks[0]?.tool_calls?.[0]?.id, 'call_1');
+    assert.equal(chunks[0]?.tool_calls?.[0]?.function?.name, 'get_weather');
+    assert.equal(chunks[1]?.tool_calls?.[0]?.function?.arguments, '{"city":"SF"}');
+    assert.equal(chunks[1]?.finish_reason, 'tool_calls');
   });
 
   it('streams deltas with the same fingerprint headers and records usage', async () => {

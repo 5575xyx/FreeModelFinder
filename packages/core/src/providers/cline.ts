@@ -9,10 +9,13 @@ import type {
   ModelInfo,
   ProviderId,
   StreamChunk,
+  ToolCall,
+  ToolCallDelta,
 } from '../types.js';
 import { BaseProvider } from './base.js';
 import type { ClineCatalogModel } from './cline-catalog.js';
 import { listClineCatalogModels } from './cline-catalog.js';
+import { mapFinishReason, parseToolCallDeltas, parseToolCalls } from './openai-like.js';
 import { toOpenAIMessages } from './openai-messages.js';
 
 const REFRESH_URL = 'https://api.cline.bot/api/v1/auth/refresh';
@@ -47,8 +50,6 @@ const DURATION_RE = /(\d+)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b
 const RESETS_AT_RE = /"resets_at"\s*:\s*"([^"]+)"/;
 const FREE_LIMIT_MARKER = 'free limit reached on model';
 const RETRY_IN_MARKER = 'try again in ';
-
-const FINISH_REASONS = new Set(['stop', 'length', 'tool_calls', 'content_filter']);
 
 type FinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
 
@@ -90,6 +91,7 @@ interface SseFrame {
   created?: number;
   delta: string;
   finish?: FinishReason;
+  toolCalls?: ToolCallDelta[];
   usage?: ChatResponse['usage'];
 }
 
@@ -111,8 +113,35 @@ function unwrapUpstream(value: unknown): Record<string, unknown> | null {
   return record;
 }
 
-function finishReason(value: unknown): FinishReason {
-  return typeof value === 'string' && FINISH_REASONS.has(value) ? (value as FinishReason) : null;
+function normalizeToolArguments(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.map((raw) => {
+    const call = asRecord(raw);
+    const fn = asRecord(call?.function);
+    if (!call || !fn) return raw;
+    const args = fn.arguments;
+    if (args !== null && typeof args === 'object') {
+      return { ...call, function: { ...fn, arguments: JSON.stringify(args) } };
+    }
+    return raw;
+  });
+}
+
+function messageToolCallDeltas(
+  message: Record<string, unknown> | null,
+): ToolCallDelta[] | undefined {
+  if (!message) return undefined;
+  const calls = parseToolCalls(normalizeToolArguments(message.tool_calls));
+  if (!calls) return undefined;
+  return calls.map((call, index) => ({
+    index,
+    type: 'function',
+    ...(call.id === undefined ? {} : { id: call.id }),
+    function: {
+      name: call.function.name,
+      ...(call.function.arguments === undefined ? {} : { arguments: call.function.arguments }),
+    },
+  }));
 }
 
 function normalizeUsage(value: unknown): ChatResponse['usage'] {
@@ -182,20 +211,26 @@ function framesFromText(text: string): SseFrame[] {
     if (!Array.isArray(choices) || choices.length === 0) continue;
     const choice = asRecord(choices[0]);
     if (!choice) continue;
-    const delta = asRecord(choice.delta) ?? asRecord(choice.message) ?? {};
+    const delta = asRecord(choice.delta);
+    const message = asRecord(choice.message);
+    const source = delta ?? message ?? {};
     const content =
-      typeof delta.content === 'string' && delta.content
-        ? delta.content
-        : typeof delta.reasoning === 'string'
-          ? delta.reasoning
+      typeof source.content === 'string' && source.content
+        ? source.content
+        : typeof source.reasoning === 'string'
+          ? source.reasoning
           : '';
     const frame: SseFrame = { delta: content };
+    const toolCalls = delta
+      ? parseToolCallDeltas(delta.tool_calls)
+      : messageToolCallDeltas(message);
+    if (toolCalls) frame.toolCalls = toolCalls;
     if (typeof parsed === 'object' && parsed !== null) {
       const envelope = parsed as Record<string, unknown>;
       if (typeof envelope.id === 'string') frame.id = envelope.id;
       if (typeof envelope.created === 'number') frame.created = envelope.created;
     }
-    const finish = finishReason(choice.finish_reason);
+    const finish = mapFinishReason(choice.finish_reason);
     if (finish) frame.finish = finish;
     const usage = normalizeUsage(data.usage);
     if (usage) frame.usage = usage;
@@ -267,6 +302,7 @@ export class ClineProvider extends BaseProvider {
           created: frame.created ?? Math.floor(Date.now() / 1000),
           delta: frame.delta,
           finish_reason: frame.finish ?? null,
+          ...(frame.toolCalls ? { tool_calls: frame.toolCalls } : {}),
         };
       }
     } catch (error) {
@@ -496,6 +532,7 @@ export class ClineProvider extends BaseProvider {
       messages: toOpenAIMessages(req.messages),
     };
     if (sendStream) body.stream = true;
+    if (req.tools?.length) body.tools = req.tools;
     if (req.temperature !== undefined) body.temperature = req.temperature;
     if (req.top_p !== undefined) body.top_p = req.top_p;
     if (req.stop !== undefined) body.stop = req.stop;
@@ -545,7 +582,7 @@ export class ClineProvider extends BaseProvider {
       sendStream || contentType.includes('text/event-stream')
         ? await this.aggregateSSE(response, req.model, account.id)
         : await this.parseJSONResponse(response, req.model, account.id);
-    if (!chatResponse.content?.trim()) {
+    if (!chatResponse.content?.trim() && !chatResponse.tool_calls?.length) {
       throw new ClineError(`cline chat failed: upstream returned empty content for ${req.model}`, {
         kind: 'empty',
         accountId: account.id,
@@ -736,12 +773,14 @@ export class ClineProvider extends BaseProvider {
     const message = asRecord(choice.message) ?? {};
     const rawContent = typeof message.content === 'string' ? message.content.trim() : '';
     const reasoning = typeof message.reasoning === 'string' ? message.reasoning : '';
+    const toolCalls = parseToolCalls(normalizeToolArguments(message.tool_calls));
     return {
       id: typeof data.id === 'string' ? data.id : `cline-${Date.now()}`,
       model,
       created: typeof data.created === 'number' ? data.created : Math.floor(Date.now() / 1000),
       content: rawContent ? String(message.content) : reasoning,
-      finish_reason: finishReason(choice.finish_reason),
+      finish_reason: mapFinishReason(choice.finish_reason),
+      ...(toolCalls ? { tool_calls: toolCalls } : {}),
       usage: normalizeUsage(data.usage),
     };
   }
@@ -756,10 +795,31 @@ export class ClineProvider extends BaseProvider {
     let usage: ChatResponse['usage'];
     let id: string | undefined;
     let created: number | undefined;
+    const toolCalls: ToolCall[] = [];
+    const toolByIndex = new Map<number, ToolCall>();
     for await (const frame of this.parseSSE(response, accountId, model)) {
       if (!id && frame.id) id = frame.id;
       if (created === undefined && frame.created !== undefined) created = frame.created;
       content += frame.delta;
+      for (const delta of frame.toolCalls ?? []) {
+        let target = toolByIndex.get(delta.index);
+        if (!target) {
+          target = { type: 'function', function: { name: '' } };
+          toolByIndex.set(delta.index, target);
+          toolCalls.push(target);
+        }
+        if (target.id === undefined && delta.id !== undefined && delta.id !== '') {
+          target.id = delta.id;
+        }
+        const name = delta.function?.name;
+        if (target.function.name === '' && name !== undefined && name !== '') {
+          target.function.name = name;
+        }
+        const args = delta.function?.arguments;
+        if (args !== undefined) {
+          target.function.arguments = (target.function.arguments ?? '') + args;
+        }
+      }
       if (frame.finish) finish = frame.finish;
       if (frame.usage) usage = frame.usage;
     }
@@ -769,6 +829,7 @@ export class ClineProvider extends BaseProvider {
       created: created ?? Math.floor(Date.now() / 1000),
       content,
       finish_reason: finish,
+      ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
       ...(usage ? { usage } : {}),
     };
   }
