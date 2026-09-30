@@ -355,6 +355,8 @@ describe('auto modality HTTP routing', () => {
         assert.deepEqual(r1.fmf_auto_route, {
           picked: r1.model,
           strategy: 'capability',
+          pool: ['custom:fixture-model', 'custom:second-text-model'],
+          sticky: false,
         });
         const res2 = await app.inject({
           method: 'POST',
@@ -373,6 +375,8 @@ describe('auto modality HTTP routing', () => {
         assert.deepEqual(r2.fmf_auto_route, {
           picked: r2.model,
           strategy: 'capability',
+          pool: ['custom:fixture-model', 'custom:second-text-model'],
+          sticky: true,
         });
         assert.notEqual(r1.model, r2.model, 'two consecutive auto picks should differ');
         const resStream = await app.inject({

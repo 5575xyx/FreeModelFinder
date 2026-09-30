@@ -3,6 +3,7 @@ import {
   asModelList,
   chatResponseToOpenAI,
   composeModelId,
+  estimateInputTokens,
   extractMaxTokensLimit,
   isContextLengthExceededError,
   isMaxTokensTooLargeError,
@@ -11,6 +12,7 @@ import {
   parseModelUnavailableError,
   parseRateLimitError,
   scoreModel,
+  sessionKeyOf,
   streamChunkToOpenAI,
   usageCaptureStore,
   type AutoRouter,
@@ -183,6 +185,8 @@ async function dispatchWithAutoRoute(
   finalProviderId: string;
   response: ChatResponse;
   notices: SwitchNotice[];
+  sticky: boolean;
+  pool: string[];
 }> {
   const router = reg.getAutoRouter();
   const notices: SwitchNotice[] = [];
@@ -193,6 +197,16 @@ async function dispatchWithAutoRoute(
   const allowPoolWalk =
     scope.poolWalk && (scope.requestedModel === 'auto' || scope.requestedModel === 'default');
   const seq = newFailoverSeq();
+  let stickyHit = false;
+  let routePool: string[] = [];
+  const routeOpts = {
+    inputTokens: estimateInputTokens(chatReq),
+    sessionKey: sessionKeyOf(chatReq.messages),
+    onPick: (info: { sticky: boolean; pool: string[] }) => {
+      stickyHit = info.sticky;
+      routePool = info.pool;
+    },
+  };
 
   // 1. Pre-flight: honor existing cooldowns before we even try upstream.
   const pre = await router.preflight(chatReq.model);
@@ -207,7 +221,7 @@ async function dispatchWithAutoRoute(
   let attempt = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const resolved = reg.resolveModel(chatReq.model);
+    const resolved = reg.resolveModel(chatReq.model, routeOpts);
     const provider = resolved.provider;
     const realModelId = resolved.modelId;
     const dispatchReq: ChatRequest = { ...chatReq, model: realModelId };
@@ -221,6 +235,8 @@ async function dispatchWithAutoRoute(
         finalProviderId: provider.id,
         response: res,
         notices,
+        sticky: stickyHit,
+        pool: routePool,
       };
     } catch (err) {
       const failure = classifyFailure(err);
@@ -243,6 +259,7 @@ async function dispatchWithAutoRoute(
           router.notify(notice);
           notices.push(notice);
           chatReq.model = composeModelId(next.provider, next.id);
+          router.setSticky(routeOpts.sessionKey, next.provider, next.id);
           continue;
         }
         // Pin the last attempted key before leaving: the handler catch records
@@ -768,7 +785,7 @@ export function registerOpenAIRoutes(
           } else {
             result = await withMaxTokensRetry(chatReq, dispatchOnce);
           }
-          const { response, notices, finalModel } = result;
+          const { response, notices, finalModel, sticky, pool } = result;
           const payload = chatResponseToOpenAI(response) as Record<string, unknown> & {
             model?: string;
           };
@@ -780,6 +797,8 @@ export function registerOpenAIRoutes(
             (payload as Record<string, unknown>).fmf_auto_route = {
               picked: finalModel,
               strategy: reg.getAutoRouter().getStrategy(),
+              sticky,
+              pool,
             };
           }
           const finalUsage = usage ?? response.usage;
@@ -839,6 +858,16 @@ export function registerOpenAIRoutes(
         : { 'access-control-allow-origin': '*' };
 
       const router = reg.getAutoRouter();
+      let stickyHit = false;
+      let routePool: string[] = [];
+      const routeOpts = {
+        inputTokens: estimateInputTokens(chatReq),
+        sessionKey: sessionKeyOf(chatReq.messages),
+        onPick: (info: { sticky: boolean; pool: string[] }) => {
+          stickyHit = info.sticky;
+          routePool = info.pool;
+        },
+      };
       const originalRequested = chatReq.model;
       const preNotices: SwitchNotice[] = [];
       const pre = await router.preflight(chatReq.model);
@@ -850,7 +879,7 @@ export function registerOpenAIRoutes(
       let provider: { id: ProviderId; stream(req: ChatRequest): AsyncIterable<StreamChunk> };
       let realModelId: string;
       try {
-        const resolved = reg.resolveModel(chatReq.model);
+        const resolved = reg.resolveModel(chatReq.model, routeOpts);
         provider = resolved.provider;
         realModelId = resolved.modelId;
       } catch (err) {
@@ -902,6 +931,8 @@ export function registerOpenAIRoutes(
                     (payload as Record<string, unknown>).fmf_auto_route = {
                       picked: `${provider.id}:${realModelId}`,
                       strategy: router.getStrategy(),
+                      sticky: stickyHit,
+                      pool: routePool,
                     };
                   }
                   reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -943,7 +974,7 @@ export function registerOpenAIRoutes(
               visionIndex++;
               chatReq.model = visionCandidates[visionIndex]!;
               try {
-                const resolved = reg.resolveModel(chatReq.model);
+                const resolved = reg.resolveModel(chatReq.model, routeOpts);
                 provider = resolved.provider;
                 realModelId = resolved.modelId;
                 maxTokensRetried = false;
@@ -984,8 +1015,9 @@ export function registerOpenAIRoutes(
                   `data: ${JSON.stringify({ fmf_route_notice: notice, id: 'fmf', object: 'chat.completion.chunk', choices: [] })}\n\n`,
                 );
                 chatReq.model = composeModelId(next.provider, next.id);
+                router.setSticky(routeOpts.sessionKey, next.provider, next.id);
                 try {
-                  const resolved = reg.resolveModel(chatReq.model);
+                  const resolved = reg.resolveModel(chatReq.model, routeOpts);
                   provider = resolved.provider;
                   realModelId = resolved.modelId;
                   maxTokensRetried = false;
