@@ -47,9 +47,9 @@ function normalizeContent(c: OpenAIChatCompletionRequest['messages'][number]['co
     .join('');
 }
 
-function normalizeOpenAIToolCall(t: OpenAIToolCall): ToolCall {
+function normalizeOpenAIToolCall(t: OpenAIToolCall, id: string): ToolCall {
   return {
-    ...(t.id ? { id: t.id } : {}),
+    id,
     type: 'function',
     function: {
       name: t.function?.name ?? '',
@@ -80,16 +80,45 @@ function extractContentParts(
 }
 
 export function openAIToChatRequest(req: OpenAIChatCompletionRequest): ChatRequest {
+  const awaiting: Array<{ call: ToolCall; auto: boolean }> = [];
+  let autoIndex = 0;
   const messages: ChatMessage[] = req.messages.map((m) => {
     const contentParts = extractContentParts(m.content);
-    const tool_calls = m.tool_calls?.map(normalizeOpenAIToolCall);
     const reasoning = m.reasoning_content ?? m.reasoning;
+    let tool_calls: ToolCall[] | undefined;
+    if (m.tool_calls && m.tool_calls.length > 0) {
+      tool_calls = m.tool_calls.map((t) => {
+        const explicitId = t.id !== undefined && t.id !== '' ? t.id : undefined;
+        const id = explicitId ?? `call_${autoIndex}`;
+        if (explicitId === undefined) autoIndex += 1;
+        const call = normalizeOpenAIToolCall(t, id);
+        awaiting.push({ call, auto: explicitId === undefined });
+        return call;
+      });
+    }
+    let tool_call_id = m.tool_call_id;
+    if (m.role === 'tool') {
+      if (tool_call_id !== undefined && tool_call_id !== '') {
+        const matched = awaiting.findIndex((a) => a.call.id === tool_call_id);
+        if (matched >= 0) {
+          awaiting.splice(matched, 1);
+        } else {
+          const first = awaiting[0];
+          if (first?.auto) {
+            first.call.id = tool_call_id;
+            awaiting.shift();
+          }
+        }
+      } else {
+        tool_call_id = awaiting.shift()?.call.id;
+      }
+    }
     return {
       role: m.role,
       content: normalizeContent(m.content),
       contentParts,
       name: m.name,
-      tool_call_id: m.tool_call_id,
+      tool_call_id,
       ...(tool_calls && tool_calls.length > 0 ? { tool_calls } : {}),
       ...(reasoning ? { reasoning } : {}),
     };

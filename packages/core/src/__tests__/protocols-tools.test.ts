@@ -100,6 +100,98 @@ describe('openai inbound tools', () => {
   });
 });
 
+describe('openai inbound tool id pairing', () => {
+  it('derives a stable id for calls without id and pairs a matching tool result', () => {
+    const out = openAIToChatRequest({
+      model: 'm',
+      messages: [
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{ type: 'function', function: { name: 'f', arguments: '{}' } }],
+        },
+        { role: 'tool', content: 'r' },
+      ],
+    } as unknown as OpenAIChatCompletionRequest);
+    assert.equal(out.messages[0]?.tool_calls?.[0]?.id, 'call_0');
+    assert.equal(out.messages[1]?.tool_call_id, 'call_0');
+  });
+
+  it('numbers multiple derived ids in order', () => {
+    const out = openAIToChatRequest({
+      model: 'm',
+      messages: [
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            { type: 'function', function: { name: 'f', arguments: '{}' } },
+            { type: 'function', function: { name: 'g', arguments: '{}' } },
+          ],
+        },
+        { role: 'tool', content: 'r0' },
+        { role: 'tool', content: 'r1' },
+      ],
+    } as unknown as OpenAIChatCompletionRequest);
+    assert.equal(out.messages[0]?.tool_calls?.[0]?.id, 'call_0');
+    assert.equal(out.messages[0]?.tool_calls?.[1]?.id, 'call_1');
+    assert.equal(out.messages[1]?.tool_call_id, 'call_0');
+    assert.equal(out.messages[2]?.tool_call_id, 'call_1');
+  });
+
+  it('adopts the tool result id when the assistant call omitted its id', () => {
+    const out = openAIToChatRequest({
+      model: 'm',
+      messages: [
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{ type: 'function', function: { name: 'f', arguments: '{}' } }],
+        },
+        { role: 'tool', content: 'r', tool_call_id: 'upstream_1' },
+      ],
+    } as unknown as OpenAIChatCompletionRequest);
+    assert.equal(out.messages[0]?.tool_calls?.[0]?.id, 'upstream_1');
+    assert.equal(out.messages[1]?.tool_call_id, 'upstream_1');
+  });
+
+  it('treats an empty assistant id as missing without overwriting explicit ids', () => {
+    const out = openAIToChatRequest({
+      model: 'm',
+      messages: [
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            { id: '', type: 'function', function: { name: 'f', arguments: '{}' } },
+            { id: 'kept', type: 'function', function: { name: 'g', arguments: '{}' } },
+          ],
+        },
+        { role: 'tool', content: 'r0', tool_call_id: 'call_0' },
+        { role: 'tool', content: 'r1', tool_call_id: 'kept' },
+      ],
+    } as unknown as OpenAIChatCompletionRequest);
+    assert.equal(out.messages[0]?.tool_calls?.[0]?.id, 'call_0');
+    assert.equal(out.messages[0]?.tool_calls?.[1]?.id, 'kept');
+    assert.equal(out.messages[1]?.tool_call_id, 'call_0');
+    assert.equal(out.messages[2]?.tool_call_id, 'kept');
+  });
+
+  it('leaves non-tool requests free of tool fields', () => {
+    const out = openAIToChatRequest({
+      model: 'm',
+      messages: [
+        { role: 'system', content: 's' },
+        { role: 'user', content: 'hi' },
+      ],
+    } as unknown as OpenAIChatCompletionRequest);
+    assert.equal(out.messages.length, 2);
+    assert.equal(out.messages[0]?.tool_calls, undefined);
+    assert.equal(out.messages[1]?.tool_call_id, undefined);
+    assert.equal(out.messages[1]?.content, 'hi');
+  });
+});
+
 describe('openai outbound tool_calls', () => {
   it('serializes tool_calls and tool_calls finish reason', () => {
     const res: ChatResponse = {
@@ -178,6 +270,16 @@ describe('toOpenAIMessages tool fields', () => {
     });
     assert.equal((out[1] as { tool_call_id?: string }).tool_call_id, 'call_1');
     assert.equal((out[1] as { name?: string }).name, 'f');
+  });
+
+  it('omits an empty or undefined tool_call_id', async () => {
+    const { toOpenAIMessages } = await import('../providers/openai-messages.js');
+    const out = toOpenAIMessages([
+      { role: 'tool', content: 'a', tool_call_id: '' },
+      { role: 'tool', content: 'b' },
+    ]);
+    assert.equal('tool_call_id' in (out[0] as Record<string, unknown>), false);
+    assert.equal('tool_call_id' in (out[1] as Record<string, unknown>), false);
   });
 });
 
@@ -261,6 +363,85 @@ describe('anthropic inbound tools', () => {
       max_tokens: 16,
     } as unknown as AnthropicMessagesRequest);
     assert.equal(out.messages[0]?.tool_calls?.[0]?.function.arguments, '{}');
+  });
+});
+
+describe('anthropic inbound tool id pairing', () => {
+  it('derives matching ids for tool_use without id and its tool_result', () => {
+    const out = anthropicToChatRequest({
+      model: 'm',
+      messages: [
+        { role: 'assistant', content: [{ type: 'tool_use', name: 'f', input: { a: 1 } }] },
+        { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] },
+      ],
+      max_tokens: 16,
+    } as unknown as AnthropicMessagesRequest);
+    const assistant = out.messages.find((m) => m.role === 'assistant');
+    assert.equal(assistant?.tool_calls?.[0]?.id, 'call_0');
+    const toolMsg = out.messages.find((m) => m.role === 'tool');
+    assert.equal(toolMsg?.tool_call_id, 'call_0');
+  });
+
+  it('numbers multiple derived ids in order across messages', () => {
+    const out = anthropicToChatRequest({
+      model: 'm',
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', name: 'f', input: {} },
+            { type: 'tool_use', name: 'g', input: {} },
+          ],
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'tool_result', content: 'r0' },
+            { type: 'tool_result', content: 'r1' },
+          ],
+        },
+      ],
+      max_tokens: 16,
+    } as unknown as AnthropicMessagesRequest);
+    const assistant = out.messages.find((m) => m.role === 'assistant');
+    assert.equal(assistant?.tool_calls?.[0]?.id, 'call_0');
+    assert.equal(assistant?.tool_calls?.[1]?.id, 'call_1');
+    const toolMsgs = out.messages.filter((m) => m.role === 'tool');
+    assert.equal(toolMsgs[0]?.tool_call_id, 'call_0');
+    assert.equal(toolMsgs[1]?.tool_call_id, 'call_1');
+  });
+
+  it('adopts an explicit tool_result id when tool_use omitted its id', () => {
+    const out = anthropicToChatRequest({
+      model: 'm',
+      messages: [
+        { role: 'assistant', content: [{ type: 'tool_use', name: 'f', input: {} }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_9', content: 'ok' }] },
+      ],
+      max_tokens: 16,
+    } as unknown as AnthropicMessagesRequest);
+    const assistant = out.messages.find((m) => m.role === 'assistant');
+    assert.equal(assistant?.tool_calls?.[0]?.id, 'toolu_9');
+    const toolMsg = out.messages.find((m) => m.role === 'tool');
+    assert.equal(toolMsg?.tool_call_id, 'toolu_9');
+  });
+
+  it('keeps explicit tool_use ids untouched', () => {
+    const out = anthropicToChatRequest({
+      model: 'm',
+      messages: [
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'toolu_a', name: 'f', input: {} }],
+        },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_a', content: 'ok' }] },
+      ],
+      max_tokens: 16,
+    } as unknown as AnthropicMessagesRequest);
+    const assistant = out.messages.find((m) => m.role === 'assistant');
+    assert.equal(assistant?.tool_calls?.[0]?.id, 'toolu_a');
+    const toolMsg = out.messages.find((m) => m.role === 'tool');
+    assert.equal(toolMsg?.tool_call_id, 'toolu_a');
   });
 });
 

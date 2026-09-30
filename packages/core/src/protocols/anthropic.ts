@@ -69,20 +69,49 @@ function anthropicContentToParts(
   return sawImage ? parts : undefined;
 }
 
-function blocksToToolCalls(blocks: AnthropicBlock[]): ToolCall[] | undefined {
-  const calls: ToolCall[] = [];
+function blocksToToolCalls(
+  blocks: AnthropicBlock[],
+  nextId: () => string,
+): Array<{ call: ToolCall; auto: boolean }> {
+  const out: Array<{ call: ToolCall; auto: boolean }> = [];
   for (const b of blocks) {
     if (b.type !== 'tool_use') continue;
-    calls.push({
-      ...(b.id ? { id: b.id } : {}),
-      type: 'function',
-      function: {
-        name: b.name ?? '',
-        arguments: b.input === undefined || b.input === null ? '{}' : JSON.stringify(b.input),
+    const explicitId = b.id !== undefined && b.id !== '' ? b.id : undefined;
+    out.push({
+      auto: explicitId === undefined,
+      call: {
+        id: explicitId ?? nextId(),
+        type: 'function',
+        function: {
+          name: b.name ?? '',
+          arguments: b.input === undefined || b.input === null ? '{}' : JSON.stringify(b.input),
+        },
       },
     });
   }
-  return calls.length > 0 ? calls : undefined;
+  return out;
+}
+
+function takeToolResultId(
+  block: AnthropicBlock,
+  awaiting: Array<{ call: ToolCall; auto: boolean }>,
+): string | undefined {
+  const explicitId =
+    block.tool_use_id !== undefined && block.tool_use_id !== '' ? block.tool_use_id : undefined;
+  if (explicitId === undefined) {
+    return awaiting.shift()?.call.id;
+  }
+  const matched = awaiting.findIndex((a) => a.call.id === explicitId);
+  if (matched >= 0) {
+    awaiting.splice(matched, 1);
+  } else {
+    const first = awaiting[0];
+    if (first?.auto) {
+      first.call.id = explicitId;
+      awaiting.shift();
+    }
+  }
+  return explicitId;
 }
 
 function blockText(block: AnthropicBlock): string {
@@ -109,6 +138,8 @@ function anthropicToolsToDefinitions(tools: AnthropicTool[]): ToolDefinition[] {
 
 export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatRequest {
   const messages: ChatMessage[] = [];
+  const awaiting: Array<{ call: ToolCall; auto: boolean }> = [];
+  let autoIndex = 0;
   if (req.system) {
     const sys =
       typeof req.system === 'string' ? req.system : req.system.map((s) => s.text).join('\n\n');
@@ -120,7 +151,6 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
       continue;
     }
 
-    const toolCalls = blocksToToolCalls(m.content);
     const results = m.content.filter((b) => b.type === 'tool_result');
     const parts = anthropicContentToParts(m.content);
 
@@ -129,7 +159,7 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
         messages.push({
           role: 'tool',
           content: blockText(r),
-          tool_call_id: r.tool_use_id ?? '',
+          tool_call_id: takeToolResultId(r, awaiting),
         });
       }
       const rest = m.content.filter((b) => b.type !== 'tool_result');
@@ -143,13 +173,17 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
       continue;
     }
 
+    const resolved = blocksToToolCalls(m.content, () => `call_${autoIndex++}`);
     const text = contentToString(m.content);
     const entry: ChatMessage = {
       role: m.role,
       content: text,
       contentParts: parts,
     };
-    if (toolCalls) entry.tool_calls = toolCalls;
+    if (resolved.length > 0) {
+      entry.tool_calls = resolved.map((r) => r.call);
+      awaiting.push(...resolved);
+    }
     messages.push(entry);
   }
 
