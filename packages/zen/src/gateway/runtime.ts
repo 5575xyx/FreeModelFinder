@@ -26,11 +26,18 @@ import type {
   ZenStreamChunk,
 } from '../protocol/types.js';
 import { ZenAttemptMonitor } from './monitor.js';
-import { ZenAnonymousPool, ZenKeyPool } from './pool.js';
+import { setProxyHealthy } from './health.js';
+import { ZenAnonymousPool, ZenKeyPool, type ZenProxyTransport } from './pool.js';
 import { ZenRefresher, type ZenRefreshResult } from './refresh.js';
 import {
+  checkHealth,
+  checkProxy,
   doUpstream,
   doUpstreamStream,
+  isProxyFailure,
+  PROXY_HEALTH_CHECK_INTERVAL_MS,
+  PROXY_HEALTH_CHECK_TIMEOUT_MS,
+  PROXY_HEALTH_CHECK_URL,
   type ZenRequestIds,
   type ZenUpstreamLogger,
   type ZenUpstreamOptions,
@@ -236,6 +243,51 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     }),
   };
   const anonymousPool = new ZenAnonymousPool(proxies, httpClient, { cooldownBaseMs });
+
+  // Every pool owns its own transport objects, so the same proxy spec may appear
+  // more than once. The scheduled recheck and the per-request verification both
+  // operate on the concrete transports a request actually used.
+  const proxyTransports = (): ZenProxyTransport[] => {
+    const seen = new Set<ZenProxyTransport>();
+    for (const node of anonymousPool.nodes()) seen.add(node.proxy);
+    for (const pool of Object.values(pools)) {
+      for (const node of pool?.all() ?? []) seen.add(node.proxy);
+    }
+    return [...seen];
+  };
+
+  // Mirrors verifyProxyAfterError in internal/gateway/refresh.go:49-60: guard
+  // against concurrent checks with the transport's own flag, then run the
+  // neutral URL check detached from the failed request.
+  const verifyProxy = (proxy: ZenProxyTransport): void => {
+    if (proxy.checking) return;
+    proxy.checking = true;
+    void (async () => {
+      try {
+        const result = await checkProxy(
+          proxy,
+          PROXY_HEALTH_CHECK_URL,
+          PROXY_HEALTH_CHECK_TIMEOUT_MS,
+        );
+        if (result.error === undefined) {
+          setProxyHealthy(proxy.health, true);
+        } else if (isProxyFailure(result.error)) {
+          setProxyHealthy(proxy.health, false);
+        }
+      } finally {
+        proxy.checking = false;
+      }
+    })();
+  };
+
+  // Mirrors the periodic branch of StartProxyHealthChecks in
+  // internal/gateway/refresh.go:91-110. checkHealth already re-applies the
+  // result to each transport, so an unreachable proxy stays unhealthy and a
+  // reachable one is restored.
+  async function runProxyHealthChecks(): Promise<void> {
+    await checkHealth(proxyTransports(), PROXY_HEALTH_CHECK_URL, PROXY_HEALTH_CHECK_TIMEOUT_MS);
+  }
+
   const catalog = new ZenCatalog(config.prefer, config.models.protocols);
   const pricing = new ZenPricingStore();
   catalog.setPricing(pricing);
@@ -260,6 +312,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     isFreeModel: (model) => catalog.isFreeModel(model),
     logger,
     now,
+    verifyProxy,
   };
 
   const hasZenKeys = (): boolean => (pools.zen?.len() ?? 0) > 0;
@@ -365,13 +418,24 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     };
   }
 
+  let healthTimer: ReturnType<typeof setInterval> | undefined;
+
   async function start(): Promise<void> {
     await refresher.loadCache();
     refresher.start();
+    if (healthTimer === undefined) {
+      healthTimer = setInterval(() => {
+        void runProxyHealthChecks();
+      }, PROXY_HEALTH_CHECK_INTERVAL_MS);
+    }
   }
 
   function stop(): void {
     refresher.stop();
+    if (healthTimer !== undefined) {
+      clearInterval(healthTimer);
+      healthTimer = undefined;
+    }
     const closable = rawHttpClient as { close?: () => void };
     if (typeof closable.close === 'function') closable.close();
   }

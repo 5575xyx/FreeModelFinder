@@ -157,6 +157,14 @@ function makeGateway(client: ZenHttpClient): ZenGateway {
   });
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error('condition not met in time');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe('zen gateway runtime', () => {
   it('exposes the lifecycle API, monitor and merged snapshot', async () => {
     const gateway = makeGateway(new FakeClient(() => inboundJson(200, CHAT_BODY)));
@@ -360,6 +368,24 @@ describe('zen gateway runtime', () => {
       }),
       /abort/i,
     );
+    gateway.stop();
+  });
+
+  it('restores a proxy marked unhealthy by a transport failure through verifyProxy', async () => {
+    const client = new FakeClient((request) => {
+      if (request.method === 'GET') return inboundJson(200, { ok: true });
+      const error = new Error('connection refused');
+      (error as Error & { code?: string }).code = 'ECONNREFUSED';
+      throw error;
+    });
+    const gateway = makeGateway(client);
+    await gateway.refresh();
+    assert.equal(gateway.snapshot().proxies.healthy, 1);
+
+    await assert.rejects(
+      gateway.chat({ model: 'free-model', messages: [{ role: 'user', content: 'hi' }] }),
+    );
+    await waitFor(() => gateway.snapshot().proxies.healthy === 1);
     gateway.stop();
   });
 });

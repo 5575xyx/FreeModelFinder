@@ -18,6 +18,7 @@ export interface ZenProxyTransport {
   spec: ProxySpec;
   client: ZenHttpClient;
   health: ZenProxyHealth;
+  checking: boolean;
 }
 
 export interface ZenKeyNode extends ZenCooldownFields {
@@ -50,7 +51,7 @@ export function maskKey(key: string): string {
 }
 
 export function createZenProxyTransport(spec: ProxySpec, client: ZenHttpClient): ZenProxyTransport {
-  return { name: spec.label, spec, client, health: healthyProxy() };
+  return { name: spec.label, spec, client, health: healthyProxy(), checking: false };
 }
 
 function fnv1a64(value: string): bigint {

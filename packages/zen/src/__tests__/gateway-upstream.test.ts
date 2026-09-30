@@ -8,9 +8,12 @@ import { ZenAttemptMonitor } from '../gateway/monitor.js';
 import { ZenAnonymousPool, ZenKeyPool } from '../gateway/pool.js';
 import {
   checkHealth,
+  checkProxy,
+  doAnonymousUpstream,
   doUpstream,
   doUpstreamStream,
   isNonRetryableClientResponse,
+  type ZenProxyHealthCheckResult,
   type ZenUpstreamOptions,
 } from '../gateway/upstream.js';
 import type { ZenRoute } from '../models/types.js';
@@ -349,5 +352,72 @@ describe('zen proxy health checks', () => {
     assert.equal(proxyHealthy(proxy.health), true);
     assert.equal(client.requests.length, 1);
     assert.equal(client.requests[0]!.method, 'GET');
+  });
+
+  it('rechecks a specific proxy with checkProxy even while it reads healthy', async () => {
+    const client = new FakeClient(() => response(204, ''));
+    const options = makeOptions(client);
+    const proxy = options.anonymousPool!.nodes()[0]!.proxy;
+    assert.equal(proxyHealthy(proxy.health), true);
+    const result = await checkProxy(proxy, 'https://check.test/trace', 1_000);
+    assert.equal(result.error, undefined);
+    assert.equal(proxyHealthy(proxy.health), true);
+    assert.equal(client.requests.length, 1);
+    assert.equal(client.requests[0]!.method, 'GET');
+  });
+
+  it('marks a proxy unhealthy after a transport failure and restores it once verified', async () => {
+    const single = parseProxyList(['direct'], '');
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const client = new FakeClient(async (req) => {
+      if (req.method === 'GET') {
+        await gate;
+        return response(204, '');
+      }
+      const error = new Error('connection refused');
+      (error as Error & { code?: string }).code = 'ECONNREFUSED';
+      throw error;
+    });
+    let verify: Promise<ZenProxyHealthCheckResult> | undefined;
+    const options = makeOptions(client, {
+      pools: {
+        zen: new ZenKeyPool([], single, client, { cooldownBaseMs: 1_000, maxAttempts: 3 }),
+        go: new ZenKeyPool([], single, client, { cooldownBaseMs: 1_000, maxAttempts: 3 }),
+      },
+      anonymousPool: new ZenAnonymousPool(single, client),
+      verifyProxy: (proxy) => {
+        verify = checkProxy(proxy, 'https://check.test/trace', 1_000);
+      },
+    });
+    const proxy = options.anonymousPool!.nodes()[0]!.proxy;
+
+    const result = await doUpstream(options, anonymousRoute(), request, ids);
+
+    assert.equal(result.response, undefined);
+    assert.ok(result.error !== undefined);
+    assert.equal(proxyHealthy(proxy.health), false);
+    assert.ok(verify !== undefined);
+    release?.();
+    await verify;
+    assert.equal(proxyHealthy(proxy.health), true);
+  });
+
+  it('reports cooling or unhealthy proxies when no anonymous node is selectable', async () => {
+    const client = new FakeClient(() => response(200, '{}'));
+    const options = makeOptions(client);
+    for (const node of options.anonymousPool!.nodes()) {
+      setProxyHealthy(node.proxy.health, false);
+    }
+    const result = await doAnonymousUpstream(options, anonymousRoute(), request, ids, 0);
+    assert.equal(result.response, undefined);
+    assert.equal(result.used, 0);
+    assert.match(
+      String((result.error as Error).message),
+      /no available anonymous proxy \(all proxies are cooling or unhealthy\)/,
+    );
+    assert.equal(client.requests.length, 0);
   });
 });

@@ -22,6 +22,10 @@ import type {
 const ANONYMOUS_KEY = 'public';
 const BODY_LIMIT = 1 << 20;
 
+export const PROXY_HEALTH_CHECK_URL = 'https://cloudflare.com/cdn-cgi/trace';
+export const PROXY_HEALTH_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+export const PROXY_HEALTH_CHECK_TIMEOUT_MS = 10 * 1000;
+
 export interface ZenRequestIds {
   request: string;
   session: string;
@@ -46,6 +50,7 @@ export interface ZenUpstreamOptions {
   isFreeModel?: (model: string) => boolean;
   logger?: ZenUpstreamLogger;
   now?: () => number;
+  verifyProxy?: (proxy: ZenProxyTransport) => void;
 }
 
 export interface ZenUpstreamResult {
@@ -178,18 +183,31 @@ export function isProxyFailure(error: unknown): boolean {
   return false;
 }
 
-// Mirrors syncProxyResult in internal/gateway/refresh.go:20-47. Only a proxy
-// route failure flips health to unhealthy; any 2xx/3xx flips it healthy. The
-// neutral out-of-band URL recheck (verifyProxyAfterError) is exposed here as
-// checkHealth and is not scheduled from the request path in this port.
-function syncProxyResult(proxy: ZenProxyTransport, status: number, error: unknown): boolean {
+// Mirrors syncProxyResult in internal/gateway/refresh.go:23-47. Only a proxy
+// route failure flips health to unhealthy; any 2xx/3xx flips it healthy. Every
+// other error and every 4xx/5xx response triggers the neutral out-of-band URL
+// recheck (verifyProxyAfterError) without changing health on its own.
+function syncProxyResult(
+  options: ZenUpstreamOptions,
+  proxy: ZenProxyTransport,
+  status: number,
+  error: unknown,
+): boolean {
   if (isProxyFailure(error)) {
     setProxyHealthy(proxy.health, false);
+    options.verifyProxy?.(proxy);
     return true;
   }
   if (status >= 200 && status < 400) {
     setProxyHealthy(proxy.health, true);
     return false;
+  }
+  if (error !== undefined && error !== null) {
+    options.verifyProxy?.(proxy);
+    return false;
+  }
+  if (status >= 400 && status < 600) {
+    options.verifyProxy?.(proxy);
   }
   return false;
 }
@@ -322,7 +340,7 @@ function observeAnonymousResult(
   error: unknown,
 ): void {
   const status = response?.status ?? 0;
-  syncProxyResult(node.proxy, status, error);
+  syncProxyResult(options, node.proxy, status, error);
   if (error === undefined && isSuccess(status)) pool.markSuccess(node);
   else pool.markFailure(node, status, error, retryAfterMs(response, options));
 }
@@ -339,7 +357,7 @@ function observeKeyResult(
   error: unknown,
 ): void {
   const status = response?.status ?? 0;
-  const proxyFailed = syncProxyResult(proxy, status, error);
+  const proxyFailed = syncProxyResult(options, proxy, status, error);
   if ((error === undefined && isSuccess(status)) || isNonRetryableClientResponse(status, error)) {
     pool.markSuccess(node);
     return;
@@ -436,6 +454,13 @@ export async function doAnonymousUpstream(
   }
 
   if (lastResponse) return { response: lastResponse, used: attempts, error: undefined };
+  if (lastError === undefined && attempts === 0) {
+    return {
+      response: undefined,
+      used: 0,
+      error: new Error('no available anonymous proxy (all proxies are cooling or unhealthy)'),
+    };
+  }
   return {
     response: undefined,
     used: attempts,
@@ -750,6 +775,18 @@ export async function checkHealth(
 ): Promise<ZenProxyHealthCheckResult[]> {
   const pending = proxies.filter((proxy) => !proxyHealthy(proxy.health));
   return Promise.all(pending.map((proxy) => checkOneProxy(proxy, target, timeoutMs)));
+}
+
+// Mirrors checkClaimedProxy in internal/gateway/pool.go:214-238 for one proxy,
+// regardless of its current health. checkHealth only visits unhealthy proxies;
+// this entrypoint lets the per-request verification recheck the exact proxy that
+// just failed, and is also safe to call while it still reads as healthy.
+export function checkProxy(
+  proxy: ZenProxyTransport,
+  target: string,
+  timeoutMs: number,
+): Promise<ZenProxyHealthCheckResult> {
+  return checkOneProxy(proxy, target, timeoutMs);
 }
 
 async function checkOneProxy(
