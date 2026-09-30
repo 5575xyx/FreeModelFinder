@@ -100,6 +100,13 @@ buildFallbackChain(candidates, strategy, profile, estInputTokens)
 
 `同 provider 最多 2 席` 的实现为**排序后的贪心筛选**：遍历已按分数排好的列表，某 provider 已入链 2 个则跳过，直到链满 5 或耗尽。
 
+**链的作用域（重要，与失败切换的区别）**：候选链（含同厂 2 席、取前 5）**只约束初始主选与 §5 上报的 `pool`**。失败切换（B1 的 `advanceFailover`）走的是独立通道 —— `AutoRouter.rankCandidates()`：**全池、无席位上限**，同序 `score → generation → id`（本次让两者 generation 序统一，消除「主选按 generation 排、切换按 id 排」导致切换跳过候选的不一致）。
+因此：
+
+- 单 provider 目录下初始链最多 2 项，但失败切换仍能遍历该 provider 的全部候选；
+- `pool` 是「初始链」而非「切换可走集合」，两者不必相等；
+- 失败切换成功后写入的粘性，若目标不在当前链内，下一轮会被 §3 的链成员校验清除并重选 —— 这是预期行为，不是缺陷。
+
 ### §3 会话粘性（新表，模块级，与 `autoPoolCursor` 同级）
 
 ```

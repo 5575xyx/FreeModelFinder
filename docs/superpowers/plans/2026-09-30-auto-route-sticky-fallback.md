@@ -1167,3 +1167,8 @@ Expected: 工作树干净；本计划产生约 6–7 个 commit；**不 push**�
 6. **Task 5 · B2 无 key 返回省略 `sticky`** — 计划测试断言无 key 时 `sticky === undefined`，计划实现却返回 `false`；以测试为准，无 key 分支返回 `{provider, modelId}`（不含 `sticky`）。
 7. **Task 5 · B3 预检用例输入 `6000`→`8000`** — 计划算术错误：`6000 ≤ 8192×0.95` 时 `small-8k` 本不该被剔除；改 `8000` 才表达「窗口不足被剔除」。
 8. **Task 5 · B4 全剔空回退按 contextWindow 降序** — 计划实现全剔空后仍按 score 排序，与设计 §2-1-d「放宽到 contextWindow 最大的前几个」冲突；实现新增 `relaxed` 主键按窗口降序，非 relaxed 路径不变。
+9. **Task 5/6 · `rankCandidates` 排序统一** — 计划未涉及：发现初始主选按 `score→generation→id`、而失败切换 `rankCandidates` 按 `score→id`，两者不一致会让切换跳过候选。给 `rankCandidates` 也加 generation 次级键（与 `buildFallbackChain` 一致）。已同步设计 §2「链的作用域」说明：2 席/取 5 只约束初始链与 `pool`，失败切换走全池。
+10. **Task 6 · round-robin 遗留测试更新** — `model-unavailable-failover.test.ts` 5 处 `seenModels()` 期望改为 generation 降序、1 处（`does not consume a pool pick`）重写为「错误记录不再尝试别的模型」；`auto-modality.test.ts` 的 `notEqual`（round-robin）改为 `equal`（粘性）并改名。均为 round-robin 语义被本设计取代的必然结果。
+11. **Task 6 · 非 auto 请求不构造 `routeOpts`** — 计划的接线对每个请求都跑 `estimateInputTokens`/`sessionKeyOf`；改为仅 `auto`/`default` 时构造（`isAutoRequest`/`routeIsAuto` 门控），避免热路径白算。
+12. **Task 6 · 模态重写请求不上报空 `pool`** — 计划无条件给 `fmf_auto_route` 加 `sticky`/`pool`，但模态重写（vision/image/text-tier）不改走 `pickAutoModel` → `pool` 恒为 `[]`，可观测失真。改为仅在文本池非空（`pool.length > 0`）时才附 `sticky`/`pool`，模态请求保持 `{picked, strategy}`。
+13. **Task 6 · `auto-sticky` 第 4 用例修假绿** — 计划 fixture 里 `blind-8k`(50) 低于 `healthy`(50+5=55)，链首是 `healthy`，注入的 `context_length_exceeded` 永不触发（断言恒真）。改用 `gpt-5-blind`(flagship 95) 作链首，断言 `seenModels() === ['gpt-5-blind','healthy']` 真实覆盖 B1 兜底。
