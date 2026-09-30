@@ -1116,7 +1116,7 @@ Expected: lint 0 warnings；typecheck 5 包通过；coverage 阈值（core 85%/7
 > **执行期状态**：原列 3 处，其中 2 处已在执行中提前完成，**本步只剩第 1 条**。
 >
 > - ~~§1 `claude-3.5-sonnet` 行~~ → 已完成（commit `73a2be7`：改为 95 并注明判定顺序原因）
-> - ~~§4 `tool_calls` 只计 `arguments` 不计 `name`~~ → 已完成（commit `100cc84` 前后一并修入，含风险 4「多模态 text 双计」记录）
+> - ~~§4 `tool_calls` 只计 `arguments` 不计 `name`~~ → 已完成（commit `e124160`，含风险 4「多模态 text 双计」记录）
 > - 执行期另补的文档修正（均已完成）：§1 模式表 `\bmini\b`/`\blite\b`、移除 `air`、记录超大参数量落 standard 的立场（`1b91e87`）、§1 补记下划线归一化（`100cc84`）
 
 `docs/superpowers/specs/2026-09-30-auto-route-sticky-fallback-design.md`：
