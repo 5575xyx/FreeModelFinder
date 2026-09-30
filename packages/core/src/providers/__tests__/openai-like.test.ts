@@ -27,25 +27,36 @@ describe('parseToolCalls', () => {
     ]);
   });
 
-  it('omits the id when missing or empty while keeping the call', () => {
+  it('backfills call_<index> for missing or empty ids while keeping the call', () => {
     const calls = parseToolCalls([
       { type: 'function', function: { name: 'a' } },
       { id: '', type: 'function', function: { name: 'b' } },
       { id: 42, function: { name: 'c' } },
     ]);
     assert.deepEqual(calls, [
-      { type: 'function', function: { name: 'a' } },
-      { type: 'function', function: { name: 'b' } },
-      { type: 'function', function: { name: 'c' } },
+      { id: 'call_0', type: 'function', function: { name: 'a' } },
+      { id: 'call_1', type: 'function', function: { name: 'b' } },
+      { id: 'call_2', type: 'function', function: { name: 'c' } },
+    ]);
+  });
+
+  it('never overwrites an upstream id', () => {
+    const calls = parseToolCalls([
+      { id: 'upstream_1', function: { name: 'a' } },
+      { function: { name: 'b' } },
+    ]);
+    assert.deepEqual(calls, [
+      { id: 'upstream_1', type: 'function', function: { name: 'a' } },
+      { id: 'call_1', type: 'function', function: { name: 'b' } },
     ]);
   });
 
   it('defaults a missing name to an empty string and drops non-string arguments', () => {
     const calls = parseToolCalls([{ function: { arguments: 123 } }, {}, { name: 'x' }]);
     assert.deepEqual(calls, [
-      { type: 'function', function: { name: '' } },
-      { type: 'function', function: { name: '' } },
-      { type: 'function', function: { name: '' } },
+      { id: 'call_0', type: 'function', function: { name: '' } },
+      { id: 'call_1', type: 'function', function: { name: '' } },
+      { id: 'call_2', type: 'function', function: { name: '' } },
     ]);
   });
 
@@ -185,7 +196,32 @@ describe('mergeToolCallDeltas', () => {
     const calls = mergeToolCallDeltas([
       { index: 0, type: 'function', function: { arguments: '{}' } },
     ]);
-    assert.deepEqual(calls, [{ type: 'function', function: { name: '', arguments: '{}' } }]);
+    assert.deepEqual(calls, [
+      { id: 'call_0', type: 'function', function: { name: '', arguments: '{}' } },
+    ]);
+  });
+
+  it('backfills call_<index> for merged calls that never carried an id', () => {
+    const calls = mergeToolCallDeltas([
+      { index: 2, type: 'function', function: { name: 'a' } },
+      { index: 5, type: 'function', function: { name: 'b' } },
+      { index: 2, type: 'function', function: { arguments: '{}' } },
+    ]);
+    assert.deepEqual(calls, [
+      { id: 'call_2', type: 'function', function: { name: 'a', arguments: '{}' } },
+      { id: 'call_5', type: 'function', function: { name: 'b' } },
+    ]);
+  });
+
+  it('never overwrites an upstream id during a merge', () => {
+    const calls = mergeToolCallDeltas([
+      { index: 0, id: 'upstream_1', type: 'function', function: { name: 'a' } },
+      { index: 1, type: 'function', function: { name: 'b' } },
+    ]);
+    assert.deepEqual(calls, [
+      { id: 'upstream_1', type: 'function', function: { name: 'a' } },
+      { id: 'call_1', type: 'function', function: { name: 'b' } },
+    ]);
   });
 });
 

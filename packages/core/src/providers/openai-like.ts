@@ -48,7 +48,7 @@ export function parseToolCalls(value: unknown): ToolCall[] | undefined {
     const id = str(call['id']);
     const args = str(fn?.['arguments']);
     calls.push({
-      ...(id !== undefined && id !== '' ? { id } : {}),
+      id: id !== undefined && id !== '' ? id : `call_${calls.length}`,
       type: 'function',
       function: {
         name: str(fn?.['name']) ?? '',
@@ -102,6 +102,9 @@ export function mergeToolCallDeltas(deltas: ToolCallDelta[]): ToolCall[] {
     if (args !== undefined) {
       target.function.arguments = (target.function.arguments ?? '') + args;
     }
+  }
+  for (const [index, call] of byIndex) {
+    if (call.id === undefined) call.id = `call_${index}`;
   }
   return calls;
 }
