@@ -11,6 +11,7 @@ export * from './protocols/index.js';
 export * from './onboarding.js';
 export { isQueueFullError, retryOnQueueFull, type RetryOnQueueFullOptions } from './queue-retry.js';
 export { extractMaxTokensLimit, isMaxTokensTooLargeError } from './max-tokens.js';
+export { isContextLengthExceededError } from './context-length.js';
 export { looksVisionModelId, withVisionInput, isVisionCapable } from './vision.js';
 export { ProviderRegistry, resetAutoPoolCursor, type ListAllModelsResult } from './registry.js';
 export { composeModelId, bareModelId } from './model-id.js';

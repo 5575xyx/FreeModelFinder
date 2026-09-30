@@ -270,7 +270,7 @@ export interface SwitchNotice {
   reason: string;
   resetAt?: number;
   /** Machine-readable failure category behind this switch. */
-  cause?: 'unavailable' | 'rate-limit' | 'upstream';
+  cause?: 'unavailable' | 'rate-limit' | 'context' | 'upstream';
 }
 
 export interface ProviderCredentials {

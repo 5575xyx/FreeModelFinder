@@ -19,6 +19,7 @@ export interface RateLimitParseResult {
 }
 
 const DEFAULT_COOLDOWN_MS = 60_000;
+const CONTEXT_OVERFLOW_COOLDOWN_MS = 60_000;
 
 const MODEL_UNAVAILABLE_PATTERNS: RegExp[] = [
   /no provider supported/i,
@@ -266,6 +267,25 @@ export class AutoRouter {
         message: parsed.message,
       });
     }
+    return state;
+  }
+
+  /**
+   * Short model-scoped cooldown after an upstream rejected the input as
+   * larger than the model's context window. Deliberately NEVER escalates
+   * to a provider-wide cooldown: the overflow belongs to this one model's
+   * window, not to the shared account quota.
+   */
+  markContextOverflow(model: string, provider: ProviderId, message: string): RateLimitState {
+    const state: RateLimitState = {
+      model,
+      provider,
+      hitAt: Date.now(),
+      resetAt: Date.now() + CONTEXT_OVERFLOW_COOLDOWN_MS,
+      message,
+      scope: 'model',
+    };
+    this.cooldowns.set(model.toLowerCase(), state);
     return state;
   }
 

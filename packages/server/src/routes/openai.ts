@@ -4,6 +4,7 @@ import {
   chatResponseToOpenAI,
   composeModelId,
   extractMaxTokensLimit,
+  isContextLengthExceededError,
   isMaxTokensTooLargeError,
   isVisionCapable,
   openAIToChatRequest,
@@ -76,7 +77,7 @@ export function classifyStatus(err: unknown): { status: CallStatus; httpStatus?:
   return { status: 'error', httpStatus: upstream };
 }
 
-type FailureKind = 'unavailable' | 'rate-limit' | 'request' | 'upstream';
+type FailureKind = 'unavailable' | 'rate-limit' | 'context' | 'request' | 'upstream';
 
 export function classifyFailure(err: unknown): { kind: FailureKind; message: string } {
   const message = err instanceof Error ? err.message : String(err);
@@ -85,6 +86,7 @@ export function classifyFailure(err: unknown): { kind: FailureKind; message: str
   if (unavailable.isModelUnavailable) {
     return { kind: 'unavailable', message: unavailable.message };
   }
+  if (isContextLengthExceededError(err)) return { kind: 'context', message };
   const match = message.match(/failed\s+(\d{3})/i);
   const status = match ? Number(match[1]) : undefined;
   if (status !== undefined && status >= 400 && status < 500) return { kind: 'request', message };
@@ -152,13 +154,16 @@ function buildFailoverNotice(
   next: ModelInfo,
 ): SwitchNotice {
   const to = composeModelId(next.provider, next.id);
-  const cause = kind === 'unavailable' || kind === 'rate-limit' ? kind : 'upstream';
+  const cause =
+    kind === 'unavailable' || kind === 'rate-limit' || kind === 'context' ? kind : 'upstream';
   const reason =
     kind === 'rate-limit'
       ? `⚠️ 模型 "${failedKey}" 已被限流（冷却中），已自动切换到：${to}`
       : kind === 'unavailable'
         ? `⚠️ 模型 "${failedKey}" 上游不可用，已永久剔除并自动切换到：${to}`
-        : `⚠️ 模型 "${failedKey}" 上游请求失败，已自动切换到：${to}`;
+        : kind === 'context'
+          ? `⚠️ 模型 "${failedKey}" 上下文超出窗口，已自动切换到：${to}`
+          : `⚠️ 模型 "${failedKey}" 上游请求失败，已自动切换到：${to}`;
   return {
     type: 'switch-away',
     from: failedKey,
@@ -225,6 +230,8 @@ async function dispatchWithAutoRoute(
           router.markModelUnavailable(realModelId, provider.id, failure.message);
         } else if (failure.kind === 'rate-limit') {
           router.markRateLimited(realModelId, provider.id, parseRateLimitError(err));
+        } else if (failure.kind === 'context') {
+          router.markContextOverflow(realModelId, provider.id, failure.message);
         }
       };
 
@@ -955,6 +962,8 @@ export function registerOpenAIRoutes(
                 router.markModelUnavailable(realModelId, provider.id, failure.message);
               } else if (failure.kind === 'rate-limit') {
                 router.markRateLimited(realModelId, provider.id, parseRateLimitError(err));
+              } else if (failure.kind === 'context') {
+                router.markContextOverflow(realModelId, provider.id, failure.message);
               }
             };
 
