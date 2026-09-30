@@ -25,15 +25,15 @@
 
 ## 已确认的需求决策
 
-| 决策点 | 选择 |
-|--------|------|
-| 打分改造深度 | **乙：结构化档位查表**（弃 id 正则子串，改为 profile 解析 + 档位→分数表） |
-| 池策略 | **会话粘性 + 失败才换**（替代 round-robin，OpenRouter/LiteLLM/Claude Code 同构） |
-| 池内构成 | **同 provider 最多 2 席**（在 fallback 链上生效，防止单厂垄断链首与链身） |
-| 上下文超限 | **发送前预检剔除**（`0.95 × contextWindow`），保留 B1 的收 400 兜底 |
-| 错误分类 | B1 的 `kind: 'context'` 不变；400 请求形状错误仍不切换 |
-| 策略覆盖 | 只改 `capability` 策略；`speed`、`rate-limit` 策略与 `profile.*Score` 覆盖语义一律不动 |
-| 分数值域 | 保持 `95 / 80 / 65 / 45 / 30 / 50` + `contextWindow ≥ 128k 时 +5`，`score-model.test.ts` S1–S10 全部必须继续通过 |
+| 决策点       | 选择                                                                                                             |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- |
+| 打分改造深度 | **乙：结构化档位查表**（弃 id 正则子串，改为 profile 解析 + 档位→分数表）                                        |
+| 池策略       | **会话粘性 + 失败才换**（替代 round-robin，OpenRouter/LiteLLM/Claude Code 同构）                                 |
+| 池内构成     | **同 provider 最多 2 席**（在 fallback 链上生效，防止单厂垄断链首与链身）                                        |
+| 上下文超限   | **发送前预检剔除**（`0.95 × contextWindow`），保留 B1 的收 400 兜底                                              |
+| 错误分类     | B1 的 `kind: 'context'` 不变；400 请求形状错误仍不切换                                                           |
+| 策略覆盖     | 只改 `capability` 策略；`speed`、`rate-limit` 策略与 `profile.*Score` 覆盖语义一律不动                           |
+| 分数值域     | 保持 `95 / 80 / 65 / 45 / 30 / 50` + `contextWindow ≥ 128k 时 +5`，`score-model.test.ts` S1–S10 全部必须继续通过 |
 
 ## 行为规格
 
@@ -68,17 +68,17 @@ generation 解析（同分次级排序键，降序）：
 
 **关键语义：缩小标记优先于扩大标记**（步骤 1–3 在 4–5 之前判定），这一条直接消除截胡：
 
-| 模型 id | 现状分数 | 新分数 | 原因 |
-|---|---|---|---|
-| `cpa:gpt-4o-mini` | 95 | **65** | `mini` 在缩小标记集先命中 |
-| `glm-4-flash` | 80 | **65** | `flash` 先命中 |
-| `glm-4.5-flash` | 95 | **65** | `flash` 先命中 |
-| `claude-3.5-haiku` | 95 | **65** | `haiku` 先命中 |
-| `claude-3.5-sonnet` | 95 | **80** | `sonnet` 先命中（中档） |
-| `cpa:gpt-4o` | 95 | 95 | 无缩小标记 |
-| `cpa:gpt-5.5` | 95 | 95 | 无缩小标记，但 `generation 5.5 > 4` → 排序升到 `gpt-4o` 之前 |
-| `llama-3.1-70b` | 95 | 95 | S1 保持 |
-| `qwen2.5-3b` | 30 | 30 | S2 保持 |
+| 模型 id             | 现状分数 | 新分数 | 原因                                                                   |
+| ------------------- | -------- | ------ | ---------------------------------------------------------------------- |
+| `cpa:gpt-4o-mini`   | 95       | **65** | `mini` 在缩小标记集先命中                                              |
+| `glm-4-flash`       | 80       | **65** | `flash` 先命中                                                         |
+| `glm-4.5-flash`     | 95       | **65** | `flash` 先命中                                                         |
+| `claude-3.5-haiku`  | 95       | **65** | `haiku` 先命中                                                         |
+| `claude-3.5-sonnet` | 95       | 95     | `claude-3.5` 在 flagship 步先于 `sonnet`（large 步）命中，判定顺序所致 |
+| `cpa:gpt-4o`        | 95       | 95     | 无缩小标记                                                             |
+| `cpa:gpt-5.5`       | 95       | 95     | 无缩小标记，但 `generation 5.5 > 4` → 排序升到 `gpt-4o` 之前           |
+| `llama-3.1-70b`     | 95       | 95     | S1 保持                                                                |
+| `qwen2.5-3b`        | 30       | 30     | S2 保持                                                                |
 
 ### §2 候选链构建（替换 `registry.ts:pickFromScoredPool`）
 
@@ -152,6 +152,7 @@ estimateInputTokens(request) =
 ## 测试面
 
 **新增 `packages/core/src/__tests__/model-tier.test.ts`**
+
 - 截胡回归：`gpt-4o-mini→65`、`glm-4-flash→65`、`glm-4.5-flash→65`、`claude-3.5-haiku→65`
 - 扩大标记正常：`gpt-4o→95`、`gpt-5.5→95`、`opus→95`、`llama-70b→95`、`sonnet→80`
 - 参数量边界：`3b→30`、`10b→45`、`20b→65`、`40b→80`、`70b→95`、**`140b` 不得被 `40b` 命中**
@@ -159,10 +160,12 @@ estimateInputTokens(request) =
 - contextWindow ≥128k → +5
 
 **改 `score-model.test.ts`**
+
 - S1–S10 必须原样通过（约束见「需求决策」表）
 - 新增：同分时 generation 降序生效
 
 **改 `registry.test.ts`「auto scored pool」段（`315–461` 行）**
+
 - 删除/改写：`round-robins across the scored pool`、`wraps the pool cursor around`（轮换语义不复存在）
 - 保留：`skips cooling-down members`、`falls back to the first catalog model when whole pool cooling`、`recomputes the pool when strategy changes`
 - 新增：
@@ -176,23 +179,24 @@ estimateInputTokens(request) =
   - 全部候选被预检剔除 → 回退到最大窗口候选，不返回空
 
 **新增 server e2e（`packages/server/src/__tests__/`）**
+
 - `POST /v1/chat/completions model=auto` 同一用户首条消息连发两次 → 两次命中同一模型
 - 响应含 `fmf_auto_route.sticky`
 - 模拟上游 `context_length_exceeded` 且预检无法提前发现（窗口未知）→ 仍走 B1 failover（回归）
 
 ## 文件影响
 
-| 文件 | 改动 |
-|------|------|
-| `packages/core/src/model-tier.ts` | **新建**：`parseModelProfile` + tier→分数查表 + generation 解析 |
-| `packages/core/src/context-estimate.ts` | **新建**：`estimateInputTokens`（字符/3 + tools） |
-| `packages/core/src/router/auto-router.ts` | `heuristicCapabilityScore` 改为调用 `model-tier`；新增粘性表（`stickyStore`）与 TTL/LRU；新增 `pickSticky` 语义；预检过滤 |
-| `packages/core/src/registry.ts` | `pickFromScoredPool` → `buildFallbackChain` + 粘性查表；排序键加 generation 与同厂 2 席；移除 `autoPoolCursor` |
-| `packages/core/src/index.ts` | 导出 `parseModelProfile`、`estimateInputTokens` |
-| `packages/core/src/__tests__/model-tier.test.ts` | 新建 |
-| `packages/core/src/registry/__tests__/registry.test.ts` | 改写轮换段为粘性/链语义 |
-| `packages/core/src/router/__tests__/score-model.test.ts` | 新增代际排序用例，S1–S10 保持 |
-| `packages/server/src/__tests__/`（新文件） | e2e 粘性 + 预检 + B1 回归 |
+| 文件                                                     | 改动                                                                                                                      |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core/src/model-tier.ts`                        | **新建**：`parseModelProfile` + tier→分数查表 + generation 解析                                                           |
+| `packages/core/src/context-estimate.ts`                  | **新建**：`estimateInputTokens`（字符/3 + tools）                                                                         |
+| `packages/core/src/router/auto-router.ts`                | `heuristicCapabilityScore` 改为调用 `model-tier`；新增粘性表（`stickyStore`）与 TTL/LRU；新增 `pickSticky` 语义；预检过滤 |
+| `packages/core/src/registry.ts`                          | `pickFromScoredPool` → `buildFallbackChain` + 粘性查表；排序键加 generation 与同厂 2 席；移除 `autoPoolCursor`            |
+| `packages/core/src/index.ts`                             | 导出 `parseModelProfile`、`estimateInputTokens`                                                                           |
+| `packages/core/src/__tests__/model-tier.test.ts`         | 新建                                                                                                                      |
+| `packages/core/src/registry/__tests__/registry.test.ts`  | 改写轮换段为粘性/链语义                                                                                                   |
+| `packages/core/src/router/__tests__/score-model.test.ts` | 新增代际排序用例，S1–S10 保持                                                                                             |
+| `packages/server/src/__tests__/`（新文件）               | e2e 粘性 + 预检 + B1 回归                                                                                                 |
 
 ## 风险与回退
 
