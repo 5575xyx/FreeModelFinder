@@ -6,6 +6,7 @@ import type {
   ToolCall,
   ToolDefinition,
 } from '../types.js';
+import { createToolIdPairer } from './tool-id-pairing.js';
 
 export interface OpenAIContentPart {
   type: string;
@@ -47,9 +48,8 @@ function normalizeContent(c: OpenAIChatCompletionRequest['messages'][number]['co
     .join('');
 }
 
-function normalizeOpenAIToolCall(t: OpenAIToolCall, id: string): ToolCall {
+function normalizeOpenAIToolCall(t: OpenAIToolCall): ToolCall {
   return {
-    id,
     type: 'function',
     function: {
       name: t.function?.name ?? '',
@@ -80,39 +80,21 @@ function extractContentParts(
 }
 
 export function openAIToChatRequest(req: OpenAIChatCompletionRequest): ChatRequest {
-  const awaiting: Array<{ call: ToolCall; auto: boolean }> = [];
-  let autoIndex = 0;
+  const pairer = createToolIdPairer();
   const messages: ChatMessage[] = req.messages.map((m) => {
     const contentParts = extractContentParts(m.content);
     const reasoning = m.reasoning_content ?? m.reasoning;
     let tool_calls: ToolCall[] | undefined;
-    if (m.tool_calls && m.tool_calls.length > 0) {
+    if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+      pairer.reset();
       tool_calls = m.tool_calls.map((t) => {
-        const explicitId = t.id !== undefined && t.id !== '' ? t.id : undefined;
-        const id = explicitId ?? `call_${autoIndex}`;
-        if (explicitId === undefined) autoIndex += 1;
-        const call = normalizeOpenAIToolCall(t, id);
-        awaiting.push({ call, auto: explicitId === undefined });
+        const call = normalizeOpenAIToolCall(t);
+        pairer.nextForCall(t.id, call);
         return call;
       });
     }
-    let tool_call_id = m.tool_call_id;
-    if (m.role === 'tool') {
-      if (tool_call_id !== undefined && tool_call_id !== '') {
-        const matched = awaiting.findIndex((a) => a.call.id === tool_call_id);
-        if (matched >= 0) {
-          awaiting.splice(matched, 1);
-        } else {
-          const first = awaiting[0];
-          if (first?.auto) {
-            first.call.id = tool_call_id;
-            awaiting.shift();
-          }
-        }
-      } else {
-        tool_call_id = awaiting.shift()?.call.id;
-      }
-    }
+    const tool_call_id =
+      m.role === 'tool' ? pairer.resolveForResult(m.tool_call_id) : m.tool_call_id;
     return {
       role: m.role,
       content: normalizeContent(m.content),
