@@ -5,6 +5,9 @@ import type {
   ModelInfo,
   ProviderId,
   StreamChunk,
+  ToolCall,
+  ToolCallDelta,
+  ToolDefinition,
 } from '../types.js';
 import { assertImageDataUrlWithinLimit } from '../vision.js';
 import { BaseProvider } from './base.js';
@@ -13,6 +16,8 @@ interface GeminiContentPart {
   text?: string;
   inlineData?: { mimeType?: string; data?: string };
   fileData?: { mimeType?: string; fileUri?: string };
+  functionCall?: { name?: string; args?: Record<string, unknown> };
+  functionResponse?: { name?: string; response?: unknown };
 }
 interface GeminiContent {
   role: 'user' | 'model';
@@ -46,6 +51,64 @@ function pushImageParts(parts: GeminiContentPart[], urls: string[]) {
   }
 }
 
+function parseJsonObject(raw?: string): Record<string, unknown> {
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function parseToolContent(content: string): unknown {
+  const trimmed = content.trim();
+  if (trimmed) {
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      return content;
+    }
+  }
+  return content;
+}
+
+function parseFunctionCalls(parts: GeminiContentPart[]): ToolCall[] | undefined {
+  const calls: ToolCall[] = [];
+  for (const p of parts) {
+    if (!p.functionCall?.name) continue;
+    calls.push({
+      type: 'function',
+      function: {
+        name: p.functionCall.name,
+        arguments: JSON.stringify(p.functionCall.args ?? {}),
+      },
+    });
+  }
+  return calls.length > 0 ? calls : undefined;
+}
+
+function parseFunctionCallDeltas(parts: GeminiContentPart[], startIndex: number): ToolCallDelta[] {
+  const deltas: ToolCallDelta[] = [];
+  let index = startIndex;
+  for (const p of parts) {
+    if (!p.functionCall?.name) continue;
+    deltas.push({
+      index: index++,
+      type: 'function',
+      function: {
+        name: p.functionCall.name,
+        arguments: JSON.stringify(p.functionCall.args ?? {}),
+      },
+    });
+  }
+  return deltas;
+}
+
 function buildMessageParts(m: ChatMessage): GeminiContentPart[] {
   const msgParts: GeminiContentPart[] = [];
   const imageUrls: string[] = [];
@@ -68,16 +131,50 @@ function toGeminiContents(messages: ChatMessage[]): {
   contents: GeminiContent[];
   systemInstruction?: { parts: GeminiContentPart[] };
 } {
+  const toolNameById = new Map<string, string>();
+  for (const m of messages) {
+    if (m.role !== 'assistant') continue;
+    for (const call of m.tool_calls ?? []) {
+      if (call.id) toolNameById.set(call.id, call.function.name);
+    }
+  }
+
   const systemPieces: string[] = [];
   const contents: GeminiContent[] = [];
   for (const m of messages) {
     if (m.role === 'system') {
       systemPieces.push(m.content);
-    } else if (m.role === 'assistant') {
-      contents.push({ role: 'model', parts: buildMessageParts(m) });
-    } else {
-      contents.push({ role: 'user', parts: buildMessageParts(m) });
+      continue;
     }
+    if (m.role === 'tool') {
+      const name = (m.tool_call_id ? toolNameById.get(m.tool_call_id) : undefined) ?? m.name ?? '';
+      const part: GeminiContentPart = {
+        functionResponse: { name, response: { content: parseToolContent(m.content) } },
+      };
+      const last = contents[contents.length - 1];
+      if (last && last.role === 'user' && last.parts.some((p) => p.functionResponse)) {
+        last.parts.push(part);
+      } else {
+        contents.push({ role: 'user', parts: [part] });
+      }
+      continue;
+    }
+    if (m.role === 'assistant') {
+      const parts = buildMessageParts(m).filter((p) => p.text !== '');
+      for (const call of m.tool_calls ?? []) {
+        if (!call.function.name) continue;
+        parts.push({
+          functionCall: {
+            name: call.function.name,
+            args: parseJsonObject(call.function.arguments),
+          },
+        });
+      }
+      if (parts.length === 0) parts.push({ text: '' });
+      contents.push({ role: 'model', parts });
+      continue;
+    }
+    contents.push({ role: 'user', parts: buildMessageParts(m) });
   }
   return {
     contents,
@@ -122,9 +219,21 @@ export class GeminiProvider extends BaseProvider {
 
   private buildBody(req: ChatRequest) {
     const { contents, systemInstruction } = toGeminiContents(req.messages);
+    const tools = req.tools?.length
+      ? [
+          {
+            functionDeclarations: req.tools.map((t: ToolDefinition) => ({
+              name: t.function.name,
+              ...(t.function.description ? { description: t.function.description } : {}),
+              ...(t.function.parameters ? { parameters: t.function.parameters } : {}),
+            })),
+          },
+        ]
+      : undefined;
     return {
       contents,
       systemInstruction,
+      ...(tools ? { tools } : {}),
       generationConfig: {
         temperature: req.temperature,
         topP: req.top_p,
@@ -203,13 +312,16 @@ export class GeminiProvider extends BaseProvider {
       : undefined;
     this.observeUsage(req.model, usage);
     const cand = data.candidates?.[0];
-    const text = cand?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
+    const parts = cand?.content?.parts ?? [];
+    const text = parts.map((p) => p.text ?? '').join('');
+    const toolCalls = parseFunctionCalls(parts);
     return {
       id: `gemini-${Date.now()}`,
       model: req.model,
       created: Math.floor(Date.now() / 1000),
       content: text,
-      finish_reason: mapFinish(cand?.finishReason),
+      finish_reason: toolCalls ? 'tool_calls' : mapFinish(cand?.finishReason),
+      ...(toolCalls ? { tool_calls: toolCalls } : {}),
       usage,
     };
   }
@@ -234,6 +346,7 @@ export class GeminiProvider extends BaseProvider {
     let buffer = '';
     const streamId = `gemini-${Date.now()}`;
     let latestUsage: ChatResponse['usage'];
+    let toolIndex = 0;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -256,13 +369,18 @@ export class GeminiProvider extends BaseProvider {
             };
           }
           const cand = json.candidates?.[0];
-          const delta = cand?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
+          const deltaParts = cand?.content?.parts ?? [];
+          const delta = deltaParts.map((p) => p.text ?? '').join('');
+          const toolCalls = parseFunctionCallDeltas(deltaParts, toolIndex);
+          toolIndex += toolCalls.length;
           yield {
             id: streamId,
             model: req.model,
             created: Math.floor(Date.now() / 1000),
             delta,
-            finish_reason: mapFinish(cand?.finishReason) ?? null,
+            ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+            finish_reason:
+              toolCalls.length > 0 ? 'tool_calls' : (mapFinish(cand?.finishReason) ?? null),
           };
         } catch {
           // ignore
