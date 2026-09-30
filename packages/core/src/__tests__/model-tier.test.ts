@@ -31,6 +31,7 @@ describe('parseModelProfile', () => {
     assert.equal(parseModelProfile('llama-3.1-70b-instruct').tier, 'flagship');
     assert.equal(parseModelProfile('deepseek-v3').tier, 'flagship');
     assert.equal(parseModelProfile('glm-4.5').tier, 'flagship');
+    assert.equal(parseModelProfile('gemini-2.5-pro').tier, 'flagship');
   });
 
   it('large markers capture gpt-4 class and 30b-40b', () => {

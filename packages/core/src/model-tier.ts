@@ -19,10 +19,10 @@ const TINY_PATTERNS = [/tiny/i, /\b(?:1|2|3)b\b/i];
 const MINOR_PATTERNS = [/small/i, /nano/i, /\b(?:7|8|9|10)b\b/i];
 
 const SMALL_PATTERNS = [
-  /mini/i,
+  /\bmini\b/i,
   /flash/i,
   /haiku/i,
-  /lite/i,
+  /\blite\b/i,
   /mixtral/i,
   /command-r/i,
   /\b(?:13|14|20)b\b/i,
