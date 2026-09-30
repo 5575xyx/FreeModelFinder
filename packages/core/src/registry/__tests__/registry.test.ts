@@ -376,15 +376,6 @@ describe('ProviderRegistry auto scored pool', () => {
     await registry.listAllModels(true);
   }
 
-  it('round-robins across the scored pool for auto', async () => {
-    resetAutoPoolCursor();
-    const registry = catalogRegistry([smallModel, bigModel, midModel]);
-    await fill(registry);
-    const picks = new Set<string>();
-    for (let i = 0; i < 3; i++) picks.add(registry.resolveModel('auto').modelId);
-    assert.deepEqual([...picks].sort(), ['big-70b', 'mid-14b', 'tiny-3b'].sort());
-  });
-
   it('skips cooling-down members and shrinks the pool', async () => {
     resetAutoPoolCursor();
     const registry = catalogRegistry([smallModel, bigModel, midModel]);
@@ -400,9 +391,8 @@ describe('ProviderRegistry auto scored pool', () => {
     router.clearProviderCooldown('openrouter');
     const a = registry.resolveModel('auto').modelId;
     const b = registry.resolveModel('auto').modelId;
-    assert.notEqual(a, b);
-    assert.ok(a === 'mid-14b' || a === 'tiny-3b');
-    assert.ok(b === 'mid-14b' || b === 'tiny-3b');
+    assert.equal(a, 'mid-14b');
+    assert.equal(b, 'mid-14b');
   });
 
   it('falls back to the first catalog model when the whole pool is cooling', async () => {
@@ -431,17 +421,6 @@ describe('ProviderRegistry auto scored pool', () => {
     assert.equal(pick, 'tiny-3b');
   });
 
-  it('wraps the pool cursor around after the pool size', async () => {
-    resetAutoPoolCursor();
-    const registry = catalogRegistry([smallModel, bigModel, midModel]);
-    await fill(registry);
-    const picks: string[] = [];
-    for (let i = 0; i < 6; i++) picks.push(registry.resolveModel('auto').modelId);
-    assert.equal(picks[3], picks[0]);
-    assert.equal(picks[4], picks[1]);
-    assert.equal(picks[5], picks[2]);
-  });
-
   it('default resolves defaultModel first (regression)', async () => {
     resetAutoPoolCursor();
     const registry = catalogRegistry([smallModel, bigModel]);
@@ -457,6 +436,106 @@ describe('ProviderRegistry auto scored pool', () => {
   it('auto throws when no provider catalog is available', () => {
     const registry = catalogRegistry([], undefined);
     assert.throws(() => registry.resolveModel('auto'), /no model available/);
+  });
+
+  it('keeps the same model for the same session across requests', async () => {
+    resetAutoPoolCursor();
+    const registry = catalogRegistry([smallModel, bigModel, midModel]);
+    await fill(registry);
+    const opts = { sessionKey: 'sess-a' };
+    const a = registry.resolveModel('auto', opts).modelId;
+    const b = registry.resolveModel('auto', opts).modelId;
+    assert.equal(a, b);
+    assert.equal(registry.resolveModel('auto', opts).sticky, true);
+  });
+
+  it('re-picks when the sticky model cools down', async () => {
+    resetAutoPoolCursor();
+    const registry = catalogRegistry([smallModel, bigModel, midModel]);
+    await fill(registry);
+    const opts = { sessionKey: 'sess-b' };
+    const first = registry.resolveModel('auto', opts).modelId;
+    const router = registry.getAutoRouter();
+    router.markRateLimited(first, 'openrouter', {
+      isRateLimit: true,
+      resetAt: Date.now() + 60_000,
+      message: 'rpm',
+    });
+    router.clearProviderCooldown('openrouter');
+    const second = registry.resolveModel('auto', opts).modelId;
+    assert.notEqual(second, first);
+    assert.equal(router.getSticky('sess-b')?.modelId, second);
+  });
+
+  it('serves a fresh pick without a session key', async () => {
+    resetAutoPoolCursor();
+    const registry = catalogRegistry([smallModel, bigModel, midModel]);
+    await fill(registry);
+    const pick = registry.resolveModel('auto');
+    assert.equal(pick.modelId, 'big-70b');
+    assert.equal(pick.sticky, undefined);
+  });
+
+  it('caps a single provider at two seats on the fallback chain', async () => {
+    resetAutoPoolCursor();
+    const flood: ModelInfo[] = [];
+    for (let i = 0; i < 6; i++) {
+      flood.push({ id: `custom-gpt-5.${i}`, provider: 'custom', displayName: 'C', free: true });
+    }
+    flood.push({ id: 'big-70b', provider: 'openrouter', displayName: 'O', free: true });
+    const registry = catalogRegistry([...flood]);
+    await fill(registry);
+    const chain = (
+      registry as unknown as { buildFallbackChain(i?: number): ModelInfo[] }
+    ).buildFallbackChain();
+    const customSeats = chain.filter((m) => m.provider === 'custom').length;
+    assert.ok(customSeats <= 2, `custom seats = ${customSeats}`);
+    assert.ok(chain.some((m) => m.provider === 'openrouter'));
+    assert.ok(chain.length >= 3);
+  });
+
+  it('orders equal scores by generation then id', async () => {
+    resetAutoPoolCursor();
+    const registry = catalogRegistry([
+      { id: 'gpt-4o', provider: 'custom', displayName: 'a', free: true },
+      { id: 'gpt-5.5', provider: 'custom', displayName: 'b', free: true },
+    ]);
+    await fill(registry);
+    const chain = (
+      registry as unknown as { buildFallbackChain(i?: number): ModelInfo[] }
+    ).buildFallbackChain();
+    assert.equal(chain[0]?.id, 'gpt-5.5');
+    assert.equal(chain[1]?.id, 'gpt-4o');
+  });
+
+  it('drops candidates whose window cannot hold the prompt', async () => {
+    resetAutoPoolCursor();
+    const registry = catalogRegistry([
+      { id: 'small-8k', provider: 'openrouter', displayName: 'S', free: true, contextWindow: 8192 },
+      { id: 'huge-1m', provider: 'zhipu', displayName: 'H', free: true, contextWindow: 1_000_000 },
+    ]);
+    await fill(registry);
+    const chain = (
+      registry as unknown as { buildFallbackChain(i?: number): ModelInfo[] }
+    ).buildFallbackChain(8000);
+    assert.deepEqual(
+      chain.map((m) => m.id),
+      ['huge-1m'],
+    );
+  });
+
+  it('falls back to the largest window when every candidate fails the precheck', async () => {
+    resetAutoPoolCursor();
+    const registry = catalogRegistry([
+      { id: 'a-8k', provider: 'openrouter', displayName: 'A', free: true, contextWindow: 8192 },
+      { id: 'b-16k', provider: 'zhipu', displayName: 'B', free: true, contextWindow: 16384 },
+    ]);
+    await fill(registry);
+    const chain = (
+      registry as unknown as { buildFallbackChain(i?: number): ModelInfo[] }
+    ).buildFallbackChain(999_999);
+    assert.ok(chain.length >= 1);
+    assert.equal(chain[0]?.id, 'b-16k');
   });
 });
 

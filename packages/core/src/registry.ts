@@ -32,6 +32,7 @@ import {
 } from './router/auto-router.js';
 import { retryOnQueueFull, type RetryOnQueueFullOptions } from './queue-retry.js';
 import { composeModelId, bareModelId } from './model-id.js';
+import { parseModelProfile } from './model-tier.js';
 import type {
   AppConfig,
   ImageGenerationRequest,
@@ -69,10 +70,7 @@ const PROVIDER_CTORS: Record<
 
 const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 
-let autoPoolCursor = 0;
-
 export function resetAutoPoolCursor(): void {
-  autoPoolCursor = 0;
   resetStickyStore();
 }
 
@@ -345,12 +343,19 @@ export class ProviderRegistry {
     return this.getModelQuota(resolved.provider.id, resolved.modelId);
   }
 
-  resolveModel(modelId: string): { provider: BaseProvider; modelId: string } {
+  resolveModel(
+    modelId: string,
+    opts?: {
+      inputTokens?: number;
+      sessionKey?: string;
+      onPick?: (info: { sticky: boolean; pool: string[] }) => void;
+    },
+  ): { provider: BaseProvider; modelId: string; sticky?: boolean } {
     if (modelId === 'auto' || modelId === 'default') {
       if (modelId === 'default') {
         const preferred = this.config.defaultModel;
         if (preferred && preferred !== 'auto' && preferred !== 'default') {
-          return this.resolveModel(preferred);
+          return this.resolveModel(preferred, opts);
         }
       }
       const enabled = this.listEnabledProviders();
@@ -358,7 +363,7 @@ export class ProviderRegistry {
         throw new Error('no provider is configured; add an API key in Settings first');
       }
       if (modelId === 'auto') {
-        const picked = this.pickFromScoredPool();
+        const picked = this.pickAutoModel(opts);
         if (picked) return picked;
       }
       const cached = this.modelsCache?.models;
@@ -479,38 +484,93 @@ export class ProviderRegistry {
     return { provider: this.getProvider('openrouter'), modelId };
   }
 
-  /**
-   * auto 文本兜底：按策略给可用模型打分，取 Top-3 池，池内轮询
-   * （autoPoolCursor 游标在池内循环，池变化时游标取模重置）。
-   * 候选实时过滤被限流的 provider/model（filter 而非循环跳过）。
-   * 池全冷却、无缓存或无候选 → 返回 null，由 resolveModel 回退到
-   * modelsCache 首项或抛出 "no model available for `auto`" 错误。
-   */
-  private pickFromScoredPool(): { provider: BaseProvider; modelId: string } | null {
+  private buildFallbackChain(inputTokens?: number): ModelInfo[] {
     const cached = this.modelsCache?.models;
-    if (!cached || cached.length === 0) return null;
+    if (!cached || cached.length === 0) return [];
     const strategy = this.autoRouter.getStrategy();
-    const candidates = cached.filter((m) => {
-      if (this.autoRouter.isProviderRateLimited(m.provider)) return false;
+    const cooling = (m: ModelInfo): boolean => {
+      if (this.autoRouter.isProviderRateLimited(m.provider)) return true;
       if (
         this.autoRouter.isRateLimited(bareModelId(m.provider, m.id)) ||
         this.autoRouter.isRateLimited(composeModelId(m.provider, m.id))
       ) {
-        return false;
+        return true;
       }
-      return true;
-    });
-    if (candidates.length === 0) return null;
-    const scored = candidates
-      .map((m) => ({ m, s: scoreModel(m, strategy, this.autoRouter.getProfile(m.id)) }))
-      .sort((a, b) => b.s - a.s || a.m.id.localeCompare(b.m.id));
-    const pool = scored.slice(0, 3);
-    const pick = pool[autoPoolCursor % pool.length]!;
-    autoPoolCursor = (autoPoolCursor + 1) % pool.length;
-    return {
-      provider: this.getProvider(pick.m.provider),
-      modelId: bareModelId(pick.m.provider, pick.m.id),
+      return false;
     };
+    const alive = cached.filter((m) => !cooling(m));
+    const poolable = (m: ModelInfo): boolean => {
+      if (inputTokens === undefined) return true;
+      if (!m.contextWindow || m.contextWindow <= 0) return true;
+      return inputTokens <= m.contextWindow * 0.95;
+    };
+    let eligible = alive.filter(poolable);
+    const relaxed = eligible.length === 0 && alive.length > 0;
+    if (relaxed) eligible = alive;
+    if (eligible.length === 0) return [];
+    const scored = eligible
+      .map((m) => ({
+        m,
+        s: scoreModel(m, strategy, this.autoRouter.getProfile(m.id)),
+        g: parseModelProfile(m.id).generation,
+      }))
+      .sort((a, b) => {
+        if (relaxed) {
+          const byWindow = (b.m.contextWindow ?? 0) - (a.m.contextWindow ?? 0);
+          if (byWindow !== 0) return byWindow;
+        }
+        return (
+          b.s - a.s ||
+          (b.g ?? Number.NEGATIVE_INFINITY) - (a.g ?? Number.NEGATIVE_INFINITY) ||
+          a.m.id.localeCompare(b.m.id)
+        );
+      });
+    const seats = new Map<ProviderId, number>();
+    const chain: ModelInfo[] = [];
+    for (const row of scored) {
+      const used = seats.get(row.m.provider) ?? 0;
+      if (used >= 2) continue;
+      seats.set(row.m.provider, used + 1);
+      chain.push(row.m);
+      if (chain.length >= 5) break;
+    }
+    return chain;
+  }
+
+  private pickAutoModel(opts?: {
+    inputTokens?: number;
+    sessionKey?: string;
+    onPick?: (info: { sticky: boolean; pool: string[] }) => void;
+  }): { provider: BaseProvider; modelId: string; sticky?: boolean } | null {
+    const chain = this.buildFallbackChain(opts?.inputTokens);
+    if (chain.length === 0) return null;
+    const pool = chain.map((m) => composeModelId(m.provider, m.id));
+    const key = opts?.sessionKey;
+    if (key) {
+      const sticky = this.autoRouter.getSticky(key);
+      if (sticky) {
+        const hit = chain.find(
+          (m) => m.provider === sticky.provider && bareModelId(m.provider, m.id) === sticky.modelId,
+        );
+        if (hit) {
+          opts?.onPick?.({ sticky: true, pool });
+          return {
+            provider: this.getProvider(hit.provider),
+            modelId: bareModelId(hit.provider, hit.id),
+            sticky: true,
+          };
+        }
+        this.autoRouter.clearSticky(key);
+      }
+    }
+    const head = chain[0]!;
+    const modelId = bareModelId(head.provider, head.id);
+    opts?.onPick?.({ sticky: false, pool });
+    if (key) {
+      this.autoRouter.setSticky(key, head.provider, modelId);
+      return { provider: this.getProvider(head.provider), modelId, sticky: false };
+    }
+    return { provider: this.getProvider(head.provider), modelId };
   }
 
   async generateImage(

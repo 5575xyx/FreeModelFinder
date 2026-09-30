@@ -15,6 +15,9 @@ export { isContextLengthExceededError } from './context-length.js';
 export { looksVisionModelId, withVisionInput, isVisionCapable } from './vision.js';
 export { ProviderRegistry, resetAutoPoolCursor, type ListAllModelsResult } from './registry.js';
 export { composeModelId, bareModelId } from './model-id.js';
+export { parseModelProfile, TIER_SCORES, type ModelTier, type ModelProfile } from './model-tier.js';
+export { estimateInputTokens } from './context-estimate.js';
+export { sessionKeyOf } from './session-key.js';
 export { redact } from './credentials/redact.js';
 export {
   getCredentialRuntime,
@@ -44,6 +47,7 @@ export {
   scoreModel,
   formatResetTime,
   formatModelId,
+  resetStickyStore,
   type AutoRouterOptions,
   type RateLimitParseResult,
   type ModelUnavailableParseResult,
