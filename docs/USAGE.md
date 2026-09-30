@@ -15,7 +15,7 @@ FreeModelFinder 将多个第三方平台的**可用免费文本模型**统一为
 | 多种使用方式 | 提供 npm CLI、浏览器 Dashboard 和 macOS 纯状态栏应用；三者共享同一份本机配置。                                                        |
 | 本机保护     | Provider Key、Gateway Key 和自定义来源 Key 使用本机随机主密钥与 AES-256-GCM 加密保存。                                                |
 
-目前网关面向**文本聊天**：支持常用聊天字段、流式输出，以及 OpenAI / Anthropic / Gemini 三协议的工具 / Function Calling（全部内置 Provider 透传上游 `tool_calls`，可配合 MCP 与 Agent 工具）；暂不支持图片/音频输入输出，也不能在一条已经开始输出的流中无缝改投另一个模型。
+目前网关面向**文本聊天与工具调用**：支持常用聊天字段、流式输出，以及 OpenAI / Anthropic / Gemini 三协议的工具 / Function Calling（全部内置 Provider 透传上游 `tool_calls`，可配合 MCP 与 Agent 工具）；另支持图片输入（vision）与图片、视频生成接口。暂不支持音频输入输出，也不能在一条已经开始输出的流中无缝改投另一个模型。
 
 ## 2. 工作方式
 

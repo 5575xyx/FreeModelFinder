@@ -376,7 +376,7 @@ Gateway 认证默认关闭。启用 Gateway Key 后，请增加 `Authorization: 
 | 适合                                    | 暂不适合                                |
 | --------------------------------------- | --------------------------------------- |
 | 想统一管理多个免费模型来源              | 需要生产级 SLA 或高并发                 |
-| 给 Cline / OpenCode 等客户端接工具、MCP | 需要图片、音频等多模态能力              |
+| 给 Cline / OpenCode 等客户端接工具、MCP | 需要音频输入输出                        |
 | 希望免费额度用尽后自动切换              | 需要在同一次请求内无缝改投模型          |
 | 希望 Provider Key 和网关默认只留在本机  | 希望在本机直接运行模型；这更适合 Ollama |
 
@@ -412,17 +412,19 @@ fmf serve \
 
 ## 当前限制与 Roadmap
 
-v0.1 只承诺常用文本聊天字段与流式文本增量，不是三家 SDK 的完整替代实现。以下未完成项是候选方向，不代表发布时间承诺。
+v0.1 只承诺常用文本聊天字段、流式文本增量与工具调用，不是三家 SDK 的完整替代实现。以下未完成项是候选方向，不代表发布时间承诺。
 
 - [x] 免费目录、Dashboard、CLI 与 macOS 状态栏 App
 - [x] OpenAI、Anthropic、Gemini 兼容文本接口
 - [x] 多策略自动路由、限流冷却与来源切换
 - [x] Tool / Function Calling（OpenAI / Anthropic / Gemini 三协议，全部 Provider 透传）
 - [x] Cline 与 OpenCode Zen（含匿名通道）Provider
-- [ ] 图片、音频等多模态输入输出
-- [ ] 同一 Provider 的多 Key 轮询
+- [x] 图片输入（vision）与图片、视频生成
+- [x] 同一 Provider 的多 Key 轮询
+- [x] Docker 部署
+- [ ] 音频输入输出
 - [ ] Ollama fallback
-- [ ] Docker、Homebrew 和自动下载安装更新
+- [ ] Homebrew 与自动下载安装更新
 - [ ] Apple Developer ID 签名与公证
 
 流式响应中途失败后，当前不会在同一次请求内无缝回退。
