@@ -10,6 +10,7 @@ import {
   type SwitchNotice,
 } from '../types.js';
 import { composeModelId, bareModelId } from '../model-id.js';
+import { parseModelProfile, TIER_SCORES } from '../model-tier.js';
 
 export interface RateLimitParseResult {
   isRateLimit: boolean;
@@ -118,19 +119,8 @@ function findProfile(
 }
 
 function heuristicCapabilityScore(m: ModelInfo): number {
-  const id = m.id.toLowerCase();
-  let score = 50;
-  if (
-    /(70b|72b|65b|80b|405b|deepseek-r1|deepseek-v3|glm-4\.5|qwen[-_]?max|opus|gpt-5|gpt-4o|gemini-2\.5-pro|claude-3\.5)/i.test(
-      id,
-    )
-  )
-    score = 95;
-  else if (/(30b|32b|34b|40b|gpt-4|glm-4|gemini-2\.0|deepseek-v2|qwen-plus|sonnet)/i.test(id))
-    score = 80;
-  else if (/(14b|13b|20b|mixtral|command-r|haiku|flash|mini)/i.test(id)) score = 65;
-  else if (/(7b|8b|9b|10b|small|nano)/i.test(id)) score = 45;
-  else if (/(1b|2b|3b|tiny)/i.test(id)) score = 30;
+  const { tier } = parseModelProfile(m.id);
+  let score = TIER_SCORES[tier];
   if (m.contextWindow && m.contextWindow >= 128_000) score += 5;
   return score;
 }

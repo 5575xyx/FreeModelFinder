@@ -62,4 +62,26 @@ describe('scoreModel', () => {
     const m = makeModel('nothing', 'custom');
     assert.equal(scoreModel(m, 'rate-limit'), 50);
   });
+
+  it('S11: gpt-4o-mini scores as a small model, not flagship', () => {
+    const m = makeModel('cpa:gpt-4o-mini', 'custom');
+    assert.equal(scoreModel(m, 'capability'), 65);
+  });
+
+  it('S12: glm-4-flash scores as a small model', () => {
+    const m = makeModel('glm-4-flash', 'zhipu');
+    assert.equal(scoreModel(m, 'capability'), 65);
+  });
+
+  it('S13: flagship ids keep 95', () => {
+    assert.equal(scoreModel(makeModel('cpa:gpt-5.5', 'custom'), 'capability'), 95);
+    assert.equal(scoreModel(makeModel('cpa:gpt-4o', 'custom'), 'capability'), 95);
+    assert.equal(scoreModel(makeModel('llama-3.1-70b', 'openrouter'), 'capability'), 95);
+  });
+
+  it('S14: speed and rate-limit strategies are untouched by tier parsing', () => {
+    assert.equal(scoreModel(makeModel('gemini-2.0-flash', 'gemini'), 'speed'), 85);
+    assert.equal(scoreModel(makeModel('claude-3-opus', 'openrouter'), 'speed'), 35);
+    assert.equal(scoreModel(makeModel('anything', 'siliconflow'), 'rate-limit'), 70);
+  });
 });
