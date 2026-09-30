@@ -1,10 +1,20 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { GeminiProvider } from '../gemini.js';
+import { geminiToChatRequest } from '../../protocols/gemini.js';
 import type { ChatRequest, StreamChunk, ToolDefinition } from '../../types.js';
 
 interface Capture {
   body?: Record<string, unknown>;
+}
+
+function hasContentKey(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    'content' in (value as Record<string, unknown>)
+  );
 }
 
 function jsonProvider(response: unknown, capture: Capture): GeminiProvider {
@@ -110,12 +120,13 @@ describe('gemini functionCall response parsing', () => {
     assert.equal(res.content, '');
     assert.equal(res.finish_reason, 'tool_calls');
     assert.equal(res.tool_calls?.length, 1);
+    assert.equal(res.tool_calls?.[0]?.id, 'call_0');
     assert.equal(res.tool_calls?.[0]?.type, 'function');
     assert.equal(res.tool_calls?.[0]?.function.name, 'get_weather');
     assert.equal(res.tool_calls?.[0]?.function.arguments, '{"city":"SF"}');
   });
 
-  it('parses multiple functionCalls and coerces missing args to {}', async () => {
+  it('parses multiple functionCalls, assigns call_<index> ids and coerces missing args', async () => {
     const capture: Capture = {};
     const provider = jsonProvider(
       {
@@ -136,10 +147,32 @@ describe('gemini functionCall response parsing', () => {
     );
     const res = await provider.chat(baseReq());
     assert.equal(res.tool_calls?.length, 2);
+    assert.equal(res.tool_calls?.[0]?.id, 'call_0');
     assert.equal(res.tool_calls?.[0]?.function.name, 'a');
     assert.equal(res.tool_calls?.[0]?.function.arguments, '{"x":1}');
+    assert.equal(res.tool_calls?.[1]?.id, 'call_1');
     assert.equal(res.tool_calls?.[1]?.function.name, 'b');
     assert.equal(res.tool_calls?.[1]?.function.arguments, '{}');
+  });
+
+  it('keeps an upstream functionCall id when one is present', async () => {
+    const capture: Capture = {};
+    const provider = jsonProvider(
+      {
+        candidates: [
+          {
+            content: {
+              role: 'model',
+              parts: [{ functionCall: { id: 'upstream-1', name: 'a', args: {} } }],
+            },
+            finishReason: 'STOP',
+          },
+        ],
+      },
+      capture,
+    );
+    const res = await provider.chat(baseReq());
+    assert.equal(res.tool_calls?.[0]?.id, 'upstream-1');
   });
 
   it('keeps plain text responses unchanged without functionCall', async () => {
@@ -221,12 +254,12 @@ describe('gemini functionCall / functionResponse outbound', () => {
       { role: 'model', parts: [{ functionCall: { name: 'get_weather', args: { city: 'SF' } } }] },
       {
         role: 'user',
-        parts: [{ functionResponse: { name: 'get_weather', response: { content: { temp: 25 } } } }],
+        parts: [{ functionResponse: { name: 'get_weather', response: { temp: 25 } } }],
       },
     ]);
   });
 
-  it('wraps non-JSON tool content and groups consecutive results', async () => {
+  it('passes non-JSON tool content through unchanged and groups consecutive results', async () => {
     const capture: Capture = {};
     const provider = jsonProvider(textResponse('ok'), capture);
     await provider.chat(
@@ -256,8 +289,8 @@ describe('gemini functionCall / functionResponse outbound', () => {
       {
         role: 'user',
         parts: [
-          { functionResponse: { name: 'a', response: { content: 'sunny' } } },
-          { functionResponse: { name: 'b', response: { content: [1, 2] } } },
+          { functionResponse: { name: 'a', response: 'sunny' } },
+          { functionResponse: { name: 'b', response: [1, 2] } },
         ],
       },
     ]);
@@ -278,14 +311,45 @@ describe('gemini functionCall / functionResponse outbound', () => {
       { role: 'model', parts: [{ text: '' }] },
       {
         role: 'user',
-        parts: [{ functionResponse: { name: 'get_weather', response: { content: { temp: 25 } } } }],
+        parts: [{ functionResponse: { name: 'get_weather', response: { temp: 25 } } }],
       },
     ]);
+  });
+
+  it('round-trips a Gemini functionResponse without nesting a content wrapper', async () => {
+    const inbound = geminiToChatRequest('gemini-3.5-flash', {
+      contents: [
+        { role: 'user', parts: [{ text: 'weather?' }] },
+        {
+          role: 'model',
+          parts: [{ functionCall: { name: 'get_weather', args: { city: 'SF' } } }],
+        },
+        {
+          role: 'user',
+          parts: [{ functionResponse: { name: 'get_weather', response: { temp: 25 } } }],
+        },
+      ],
+    });
+    const toolMessage = inbound.messages.find((m) => m.role === 'tool');
+    assert.equal(toolMessage?.content, '{"temp":25}');
+    assert.equal(toolMessage?.name, 'get_weather');
+
+    const capture: Capture = {};
+    const provider = jsonProvider(textResponse('ok'), capture);
+    await provider.chat(baseReq({ messages: inbound.messages }));
+    const contents = capture.body?.contents as Array<{
+      role: string;
+      parts: Array<{ functionResponse?: { name?: string; response?: unknown } }>;
+    }>;
+    const responsePart = contents[contents.length - 1]?.parts[0]?.functionResponse;
+    assert.equal(responsePart?.name, 'get_weather');
+    assert.deepEqual(responsePart?.response, { temp: 25 });
+    assert.equal(hasContentKey(responsePart?.response), false);
   });
 });
 
 describe('gemini streaming functionCall', () => {
-  it('emits streamed functionCall parts as tool_call deltas with increasing index', async () => {
+  it('emits streamed functionCall parts as tool_call deltas with index and call ids', async () => {
     const capture: Capture = {};
     const provider = sseProvider(
       [
@@ -312,11 +376,46 @@ describe('gemini streaming functionCall', () => {
     assert.equal(chunks[0]?.delta, '');
     assert.equal(chunks[0]?.finish_reason, 'tool_calls');
     assert.equal(chunks[0]?.tool_calls?.[0]?.index, 0);
+    assert.equal(chunks[0]?.tool_calls?.[0]?.id, 'call_0');
     assert.equal(chunks[0]?.tool_calls?.[0]?.function?.name, 'a');
     assert.equal(chunks[0]?.tool_calls?.[0]?.function?.arguments, '{"x":1}');
     assert.equal(chunks[0]?.tool_calls?.[1]?.index, 1);
+    assert.equal(chunks[0]?.tool_calls?.[1]?.id, 'call_1');
     assert.equal(chunks[0]?.tool_calls?.[1]?.function?.name, 'b');
     assert.equal(chunks[0]?.tool_calls?.[1]?.function?.arguments, '{}');
+  });
+
+  it('keeps index and call id increasing across streamed frames', async () => {
+    const capture: Capture = {};
+    const provider = sseProvider(
+      [
+        {
+          candidates: [
+            {
+              content: { role: 'model', parts: [{ functionCall: { name: 'a', args: {} } }] },
+              finishReason: null,
+            },
+          ],
+        },
+        {
+          candidates: [
+            {
+              content: { role: 'model', parts: [{ functionCall: { name: 'b', args: {} } }] },
+              finishReason: 'STOP',
+            },
+          ],
+        },
+      ],
+      capture,
+    );
+    const chunks: StreamChunk[] = [];
+    for await (const chunk of provider.stream(baseReq({ stream: true }))) chunks.push(chunk);
+    assert.equal(chunks.length, 2);
+    assert.equal(chunks[0]?.tool_calls?.[0]?.index, 0);
+    assert.equal(chunks[0]?.tool_calls?.[0]?.id, 'call_0');
+    assert.equal(chunks[1]?.tool_calls?.[0]?.index, 1);
+    assert.equal(chunks[1]?.tool_calls?.[0]?.id, 'call_1');
+    assert.equal(chunks[1]?.finish_reason, 'tool_calls');
   });
 
   it('keeps streaming text deltas unchanged when no functionCall appears', async () => {

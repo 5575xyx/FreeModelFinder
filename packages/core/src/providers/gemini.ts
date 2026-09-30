@@ -16,7 +16,7 @@ interface GeminiContentPart {
   text?: string;
   inlineData?: { mimeType?: string; data?: string };
   fileData?: { mimeType?: string; fileUri?: string };
-  functionCall?: { name?: string; args?: Record<string, unknown> };
+  functionCall?: { id?: string; name?: string; args?: Record<string, unknown> };
   functionResponse?: { name?: string; response?: unknown };
 }
 interface GeminiContent {
@@ -79,15 +79,18 @@ function parseToolContent(content: string): unknown {
 
 function parseFunctionCalls(parts: GeminiContentPart[]): ToolCall[] | undefined {
   const calls: ToolCall[] = [];
+  let index = 0;
   for (const p of parts) {
     if (!p.functionCall?.name) continue;
     calls.push({
+      id: p.functionCall.id ?? `call_${index}`,
       type: 'function',
       function: {
         name: p.functionCall.name,
         arguments: JSON.stringify(p.functionCall.args ?? {}),
       },
     });
+    index += 1;
   }
   return calls.length > 0 ? calls : undefined;
 }
@@ -98,13 +101,15 @@ function parseFunctionCallDeltas(parts: GeminiContentPart[], startIndex: number)
   for (const p of parts) {
     if (!p.functionCall?.name) continue;
     deltas.push({
-      index: index++,
+      index,
+      id: p.functionCall.id ?? `call_${index}`,
       type: 'function',
       function: {
         name: p.functionCall.name,
         arguments: JSON.stringify(p.functionCall.args ?? {}),
       },
     });
+    index += 1;
   }
   return deltas;
 }
@@ -149,7 +154,7 @@ function toGeminiContents(messages: ChatMessage[]): {
     if (m.role === 'tool') {
       const name = (m.tool_call_id ? toolNameById.get(m.tool_call_id) : undefined) ?? m.name ?? '';
       const part: GeminiContentPart = {
-        functionResponse: { name, response: { content: parseToolContent(m.content) } },
+        functionResponse: { name, response: parseToolContent(m.content) },
       };
       const last = contents[contents.length - 1];
       if (last && last.role === 'user' && last.parts.some((p) => p.functionResponse)) {
