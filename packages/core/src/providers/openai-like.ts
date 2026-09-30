@@ -81,6 +81,31 @@ export function parseToolCallDeltas(value: unknown): ToolCallDelta[] | undefined
   return calls.length > 0 ? calls : undefined;
 }
 
+export function mergeToolCallDeltas(deltas: ToolCallDelta[]): ToolCall[] {
+  const calls: ToolCall[] = [];
+  const byIndex = new Map<number, ToolCall>();
+  for (const delta of deltas) {
+    let target = byIndex.get(delta.index);
+    if (target === undefined) {
+      target = { type: 'function', function: { name: '' } };
+      byIndex.set(delta.index, target);
+      calls.push(target);
+    }
+    if (target.id === undefined && delta.id !== undefined && delta.id !== '') {
+      target.id = delta.id;
+    }
+    const name = delta.function?.name;
+    if (target.function.name === '' && name !== undefined && name !== '') {
+      target.function.name = name;
+    }
+    const args = delta.function?.arguments;
+    if (args !== undefined) {
+      target.function.arguments = (target.function.arguments ?? '') + args;
+    }
+  }
+  return calls;
+}
+
 export function parseOpenAIMessage(message: unknown): {
   content: string;
   reasoning?: string;

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   mapFinishReason,
+  mergeToolCallDeltas,
   parseOpenAIDelta,
   parseOpenAIMessage,
   parseToolCallDeltas,
@@ -136,6 +137,55 @@ describe('parseToolCallDeltas', () => {
     assert.equal(parseToolCallDeltas(['x', 1, null]), undefined);
     const deltas = parseToolCallDeltas(['x', { index: 1 }]);
     assert.deepEqual(deltas, [{ index: 1, type: 'function' }]);
+  });
+});
+
+describe('mergeToolCallDeltas', () => {
+  it('returns an empty array for no deltas', () => {
+    assert.deepEqual(mergeToolCallDeltas([]), []);
+  });
+
+  it('concatenates argument fragments and keeps the first id and name', () => {
+    const calls = mergeToolCallDeltas([
+      {
+        index: 0,
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'get_weather', arguments: '{"ci' },
+      },
+      {
+        index: 0,
+        id: 'call_ignored',
+        type: 'function',
+        function: { name: 'ignored', arguments: 'ty":' },
+      },
+      { index: 0, type: 'function', function: { arguments: '"x"}' } },
+    ]);
+    assert.deepEqual(calls, [
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'get_weather', arguments: '{"city":"x"}' },
+      },
+    ]);
+  });
+
+  it('groups calls by index in first-seen order', () => {
+    const calls = mergeToolCallDeltas([
+      { index: 1, id: 'call_2', type: 'function', function: { name: 'b' } },
+      { index: 0, id: 'call_1', type: 'function', function: { name: 'a', arguments: '{}' } },
+    ]);
+    assert.deepEqual(calls, [
+      { id: 'call_2', type: 'function', function: { name: 'b' } },
+      { id: 'call_1', type: 'function', function: { name: 'a', arguments: '{}' } },
+    ]);
+  });
+
+  it('leaves the name empty when no delta carries one', () => {
+    const calls = mergeToolCallDeltas([
+      { index: 0, type: 'function', function: { arguments: '{}' } },
+    ]);
+    assert.deepEqual(calls, [{ type: 'function', function: { name: '', arguments: '{}' } }]);
   });
 });
 

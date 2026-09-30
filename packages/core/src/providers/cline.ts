@@ -9,13 +9,17 @@ import type {
   ModelInfo,
   ProviderId,
   StreamChunk,
-  ToolCall,
   ToolCallDelta,
 } from '../types.js';
 import { BaseProvider } from './base.js';
 import type { ClineCatalogModel } from './cline-catalog.js';
 import { listClineCatalogModels } from './cline-catalog.js';
-import { mapFinishReason, parseToolCallDeltas, parseToolCalls } from './openai-like.js';
+import {
+  mapFinishReason,
+  mergeToolCallDeltas,
+  parseToolCallDeltas,
+  parseToolCalls,
+} from './openai-like.js';
 import { toOpenAIMessages } from './openai-messages.js';
 
 const REFRESH_URL = 'https://api.cline.bot/api/v1/auth/refresh';
@@ -51,7 +55,7 @@ const RESETS_AT_RE = /"resets_at"\s*:\s*"([^"]+)"/;
 const FREE_LIMIT_MARKER = 'free limit reached on model';
 const RETRY_IN_MARKER = 'try again in ';
 
-type FinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
+type FinishReason = ChatResponse['finish_reason'];
 
 export type ClineErrorKind = 'rate_limit' | 'invalid' | 'fatal' | 'network' | 'empty';
 
@@ -221,9 +225,7 @@ function framesFromText(text: string): SseFrame[] {
           ? source.reasoning
           : '';
     const frame: SseFrame = { delta: content };
-    const toolCalls = delta
-      ? parseToolCallDeltas(delta.tool_calls)
-      : messageToolCallDeltas(message);
+    const toolCalls = parseToolCallDeltas(delta?.tool_calls) ?? messageToolCallDeltas(message);
     if (toolCalls) frame.toolCalls = toolCalls;
     if (typeof parsed === 'object' && parsed !== null) {
       const envelope = parsed as Record<string, unknown>;
@@ -795,34 +797,16 @@ export class ClineProvider extends BaseProvider {
     let usage: ChatResponse['usage'];
     let id: string | undefined;
     let created: number | undefined;
-    const toolCalls: ToolCall[] = [];
-    const toolByIndex = new Map<number, ToolCall>();
+    const toolDeltas: ToolCallDelta[] = [];
     for await (const frame of this.parseSSE(response, accountId, model)) {
       if (!id && frame.id) id = frame.id;
       if (created === undefined && frame.created !== undefined) created = frame.created;
       content += frame.delta;
-      for (const delta of frame.toolCalls ?? []) {
-        let target = toolByIndex.get(delta.index);
-        if (!target) {
-          target = { type: 'function', function: { name: '' } };
-          toolByIndex.set(delta.index, target);
-          toolCalls.push(target);
-        }
-        if (target.id === undefined && delta.id !== undefined && delta.id !== '') {
-          target.id = delta.id;
-        }
-        const name = delta.function?.name;
-        if (target.function.name === '' && name !== undefined && name !== '') {
-          target.function.name = name;
-        }
-        const args = delta.function?.arguments;
-        if (args !== undefined) {
-          target.function.arguments = (target.function.arguments ?? '') + args;
-        }
-      }
+      if (frame.toolCalls) toolDeltas.push(...frame.toolCalls);
       if (frame.finish) finish = frame.finish;
       if (frame.usage) usage = frame.usage;
     }
+    const toolCalls = mergeToolCallDeltas(toolDeltas);
     return {
       id: id ?? `cline-${Date.now()}`,
       model,

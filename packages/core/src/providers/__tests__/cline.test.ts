@@ -1105,8 +1105,52 @@ describe('ClineProvider chat and stream fixtures', () => {
     assert.equal(response.finish_reason, 'tool_calls');
     assert.equal(response.tool_calls?.length, 1);
     assert.equal(response.tool_calls?.[0]?.id, 'call_1');
+    assert.equal(response.tool_calls?.[0]?.type, 'function');
     assert.equal(response.tool_calls?.[0]?.function.name, 'get_weather');
     assert.equal(response.tool_calls?.[0]?.function.arguments, '{"city":"SF"}');
+  });
+
+  it('reassembles tool_calls from a message-form SSE frame', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [{ id: 'a1', accessToken: 'at-1', expiresAt: VALID_EXPIRY() }]);
+    const { fetchImpl } = harness(() =>
+      sseResponse([
+        {
+          id: 'stream-1',
+          model: 'upstream-model',
+          created: 1,
+          choices: [
+            {
+              index: 0,
+              delta: {},
+              message: {
+                role: 'assistant',
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call_1',
+                    type: 'function',
+                    function: { name: 'a', arguments: '{"x":1}' },
+                  },
+                  { id: 'call_2', type: 'function', function: { name: 'b', arguments: '{}' } },
+                ],
+              },
+              finish_reason: 'stop',
+            },
+          ],
+        },
+      ]),
+    );
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const response = await provider.chat(req('cline-free/deepseek-v4.1-flash'));
+    assert.equal(response.tool_calls?.length, 2);
+    assert.equal(response.tool_calls?.[0]?.id, 'call_1');
+    assert.equal(response.tool_calls?.[0]?.function.name, 'a');
+    assert.equal(response.tool_calls?.[0]?.function.arguments, '{"x":1}');
+    assert.equal(response.tool_calls?.[1]?.id, 'call_2');
+    assert.equal(response.tool_calls?.[1]?.function.name, 'b');
+    assert.equal(response.tool_calls?.[1]?.function.arguments, '{}');
   });
 
   it('reassembles multiple streamed tool_call deltas by index', async () => {
@@ -1125,8 +1169,11 @@ describe('ClineProvider chat and stream fixtures', () => {
 
     const response = await provider.chat(req('cline-free/deepseek-v4.1-flash'));
     assert.equal(response.tool_calls?.length, 2);
+    assert.equal(response.tool_calls?.[0]?.id, 'call_1');
     assert.equal(response.tool_calls?.[0]?.function.arguments, '{"x":1}');
+    assert.equal(response.tool_calls?.[1]?.id, 'call_2');
     assert.equal(response.tool_calls?.[1]?.function.name, 'b');
+    assert.equal(response.tool_calls?.[1]?.function.arguments, '{}');
   });
 
   it('emits tool_call deltas on the streaming path without aggregating', async () => {
