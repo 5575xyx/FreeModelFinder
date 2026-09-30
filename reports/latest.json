@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-29",
-  "generatedAt": "2026-09-29T02:02:54.737Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-29.md",
-  "totalModels": 99,
+  "date": "2026-09-30",
+  "generatedAt": "2026-09-30T01:20:29.332Z",
+  "reportPath": "reports/provider-free-model-audit-2026-09-30.md",
+  "totalModels": 104,
   "providers": [
     {
       "id": "openrouter",
@@ -412,42 +412,11 @@
       "id": "qianfan",
       "display": "Baidu Qianfan",
       "status": "ok",
-      "count": 6,
-      "freeType": "官方永久免费型号",
-      "freeBasis": "官方公告永久免费的 ERNIE Speed / Lite 白名单，实时目录取交集（AppBuilder 已退役）；接口不可用时回退审核过的白名单",
-      "risk": "QPS 限速约 1 次/秒；免费清单与型号以官方政策为准，退役型号由交集自动剔除",
-      "models": [
-        {
-          "id": "ernie-lite-128k",
-          "displayName": "ERNIE Lite 128K",
-          "contextWindow": 128000
-        },
-        {
-          "id": "ernie-lite-8k",
-          "displayName": "ERNIE Lite 8K",
-          "contextWindow": 8000
-        },
-        {
-          "id": "ernie-lite-8k-0922",
-          "displayName": "ERNIE Lite 8K 0922",
-          "contextWindow": 8000
-        },
-        {
-          "id": "ernie-speed-128k",
-          "displayName": "ERNIE Speed 128K",
-          "contextWindow": 128000
-        },
-        {
-          "id": "ernie-speed-8k",
-          "displayName": "ERNIE Speed 8K",
-          "contextWindow": 8000
-        },
-        {
-          "id": "ernie-tiny",
-          "displayName": "ERNIE Tiny",
-          "contextWindow": null
-        }
-      ]
+      "count": 0,
+      "freeType": "官方免费白名单交集",
+      "freeBasis": "实时目录取交集，仅收录官方公告永久免费的白名单型号；当前 Speed / Lite / Tiny 等旧免费型号已全部退役，暂无可用型号，新免费型号加入白名单即恢复",
+      "risk": "QPS 限速约 1 次/秒；免费与否以官方政策为准，退役型号由交集自动剔除",
+      "models": []
     },
     {
       "id": "kilo",
@@ -651,35 +620,113 @@
           "contextWindow": null
         }
       ]
+    },
+    {
+      "id": "opencode",
+      "display": "OpenCode Zen",
+      "status": "ok",
+      "count": 11,
+      "freeType": "实时零价模型（匿名通道）",
+      "freeBasis": "实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public）",
+      "risk": "匿名通道与免费层有速率和并发限制；部分免费模型只在 Go tier 提供；上游目录与定价可能随时变化",
+      "models": [
+        {
+          "id": "opencode:big-pickle",
+          "displayName": "big-pickle",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:deepseek-v4-flash-free",
+          "displayName": "deepseek-v4-flash-free",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:ling-3.0-flash-fin-free",
+          "displayName": "ling-3.0-flash-fin-free",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:longcat-2.5-preview-free",
+          "displayName": "longcat-2.5-preview-free",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:mimo-v2.5-free",
+          "displayName": "mimo-v2.5-free",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:mimo-v2.6-flash-free",
+          "displayName": "mimo-v2.6-flash-free",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:muse-spark-1.2-contributor-free",
+          "displayName": "muse-spark-1.2-contributor-free",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:muse-spark-1.3-contributor-free",
+          "displayName": "muse-spark-1.3-contributor-free",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:nemotron-3-ultra-free",
+          "displayName": "nemotron-3-ultra-free",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:nemotron-3.5-lightning-free",
+          "displayName": "nemotron-3.5-lightning-free",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:space-bunny-free",
+          "displayName": "space-bunny-free",
+          "contextWindow": null
+        }
+      ]
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-28",
+    "comparedWith": "2026-09-29",
     "added": [],
     "removed": [
       {
-        "provider": "openrouter",
-        "id": "inclusionai/ling-3.0-flash-fin:free",
-        "displayName": "inclusionAI: Ling 3.0 Flash Fin (free)",
-        "contextWindow": 262144
+        "provider": "qianfan",
+        "id": "ernie-lite-128k",
+        "displayName": "ERNIE Lite 128K",
+        "contextWindow": 128000
       },
       {
-        "provider": "nvidia",
-        "id": "mistralai/mistral-nemotron",
-        "displayName": "mistralai/mistral-nemotron",
+        "provider": "qianfan",
+        "id": "ernie-lite-8k",
+        "displayName": "ERNIE Lite 8K",
+        "contextWindow": 8000
+      },
+      {
+        "provider": "qianfan",
+        "id": "ernie-lite-8k-0922",
+        "displayName": "ERNIE Lite 8K 0922",
+        "contextWindow": 8000
+      },
+      {
+        "provider": "qianfan",
+        "id": "ernie-speed-128k",
+        "displayName": "ERNIE Speed 128K",
+        "contextWindow": 128000
+      },
+      {
+        "provider": "qianfan",
+        "id": "ernie-speed-8k",
+        "displayName": "ERNIE Speed 8K",
+        "contextWindow": 8000
+      },
+      {
+        "provider": "qianfan",
+        "id": "ernie-tiny",
+        "displayName": "ERNIE Tiny",
         "contextWindow": null
-      },
-      {
-        "provider": "huggingface",
-        "id": "inclusionAI/Ling-3.0-flash-Fin",
-        "displayName": "inclusionAI/Ling-3.0-flash-Fin",
-        "contextWindow": 262144
-      },
-      {
-        "provider": "kilo",
-        "id": "inclusionai/ling-3.0-flash-fin:free",
-        "displayName": "inclusionAI: Ling 3.0 Flash Fin (free)",
-        "contextWindow": 262144
       }
     ],
     "comparedProviders": [

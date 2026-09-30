@@ -2,41 +2,44 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-09-29（Asia/Shanghai）** · **99** 个免费模型入口 · **12/14** 个 Provider 正常。
+> 最近目录审计：**2026-09-30（Asia/Shanghai）** · **104** 个免费模型入口 · **13/15** 个 Provider 正常。
 
-[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-29.md)
+[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-30.md)
 
 这份列表每天由 GitHub Actions 通过各 Provider 的模型目录接口刷新，并应用 FreeModelFinder 核心层的免费规则。它不执行真实推理，不代表无限额度、永久免费或生产级可用。同一上游模型通过多个 Provider 提供时会分别计数，因为对应的账号资格、额度和 Gateway 模型 ID 不同。
 
 ## 今日变化
 
-与 2026-09-28 相比，在成功比较的 12 个 Provider 中：**新增 0 个，移除 4 个**。
+与 2026-09-29 相比，在成功比较的 12 个 Provider 中：**新增 0 个，移除 6 个**。
 
 ### 移除
 
-- `openrouter:inclusionai/ling-3.0-flash-fin:free`
-- `nvidia:mistralai/mistral-nemotron`
-- `huggingface:inclusionAI/Ling-3.0-flash-Fin`
-- `kilo:inclusionai/ling-3.0-flash-fin:free`
+- `qianfan:ernie-lite-128k`
+- `qianfan:ernie-lite-8k`
+- `qianfan:ernie-lite-8k-0922`
+- `qianfan:ernie-speed-128k`
+- `qianfan:ernie-speed-8k`
+- `qianfan:ernie-tiny`
 
 ## Provider 汇总
 
-| Provider                 | 状态      | 免费模型数 | 免费类型              | 免费依据                                                                                                          |
-| ------------------------ | --------- | ---------: | --------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| OpenRouter               | 🟢 正常   |         16 | 零价格模型            | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型                               |
-| Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier        | 账号实时目录与 Free Tier 白名单取交集，只保留支持 `generateContent` 的型号                                        |
-| Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号          | 只列入官方免费 Flash 清单                                                                                         |
-| SiliconFlow              | 🟢 正常   |          5 | 免费白名单            | 平台免费型号白名单与实时模型目录取交集                                                                            |
-| ModelScope               | 🟢 正常   |         16 | 账号免费额度          | API-Inference 免费型号清单与可用目录取交集                                                                        |
-| NVIDIA NIM               | 🟢 正常   |         10 | 免费开发端点          | 只保留审核过的 build.nvidia.com 免费开发端点                                                                      |
-| GitHub Models            | ⚪ 未接入 |     未接入 | 原型开发额度          | 目录中的文本输出模型使用账号自带原型开发额度                                                                      |
-| Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`                                             |
-| Hugging Face             | 🟢 正常   |          2 | 实时零价端点          | 实时端点明确报告 `is_free`，或输入输出价格均为 0                                                                  |
-| SenseNova                | 🟢 正常   |          7 | 实时零价模型          | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单                                       |
-| Baidu Qianfan            | 🟢 正常   |          6 | 官方永久免费型号      | 官方公告永久免费的 ERNIE Speed / Lite 白名单，实时目录取交集（AppBuilder 已退役）；接口不可用时回退审核过的白名单 |
-| Kilo Code                | 🟢 正常   |         21 | 聚合免费模型          | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                                                      |
-| Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型          | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                    |
-| Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型          | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                    |
+| Provider                 | 状态      | 免费模型数 | 免费类型                 | 免费依据                                                                                                                                      |
+| ------------------------ | --------- | ---------: | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenRouter               | 🟢 正常   |         16 | 零价格模型               | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型                                                           |
+| Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier           | 账号实时目录与 Free Tier 白名单取交集，只保留支持 `generateContent` 的型号                                                                    |
+| Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号             | 只列入官方免费 Flash 清单                                                                                                                     |
+| SiliconFlow              | 🟢 正常   |          5 | 免费白名单               | 平台免费型号白名单与实时模型目录取交集                                                                                                        |
+| ModelScope               | 🟢 正常   |         16 | 账号免费额度             | API-Inference 免费型号清单与可用目录取交集                                                                                                    |
+| NVIDIA NIM               | 🟢 正常   |         10 | 免费开发端点             | 只保留审核过的 build.nvidia.com 免费开发端点                                                                                                  |
+| GitHub Models            | ⚪ 未接入 |     未接入 | 原型开发额度             | 目录中的文本输出模型使用账号自带原型开发额度                                                                                                  |
+| Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production    | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`                                                                         |
+| Hugging Face             | 🟢 正常   |          2 | 实时零价端点             | 实时端点明确报告 `is_free`，或输入输出价格均为 0                                                                                              |
+| SenseNova                | 🟢 正常   |          7 | 实时零价模型             | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单                                                                   |
+| Baidu Qianfan            | 🟢 正常   |          0 | 官方免费白名单交集       | 实时目录取交集，仅收录官方公告永久免费的白名单型号；当前 Speed / Lite / Tiny 等旧免费型号已全部退役，暂无可用型号，新免费型号加入白名单即恢复 |
+| Kilo Code                | 🟢 正常   |         21 | 聚合免费模型             | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                                                                                  |
+| Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型             | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                                                |
+| Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型             | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                                                |
+| OpenCode Zen             | 🟢 正常   |         11 | 实时零价模型（匿名通道） | 实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public） |
 
 ## 完整列表
 
@@ -201,17 +204,10 @@
 
 - Provider ID：`qianfan`
 - 状态：🟢 正常
-- 免费依据：官方公告永久免费的 ERNIE Speed / Lite 白名单，实时目录取交集（AppBuilder 已退役）；接口不可用时回退审核过的白名单
-- 主要风险：QPS 限速约 1 次/秒；免费清单与型号以官方政策为准，退役型号由交集自动剔除
+- 免费依据：实时目录取交集，仅收录官方公告永久免费的白名单型号；当前 Speed / Lite / Tiny 等旧免费型号已全部退役，暂无可用型号，新免费型号加入白名单即恢复
+- 主要风险：QPS 限速约 1 次/秒；免费与否以官方政策为准，退役型号由交集自动剔除
 
-| Gateway 模型 ID              | 显示名称           | 上下文窗口 |
-| ---------------------------- | ------------------ | ---------: |
-| `qianfan:ernie-lite-128k`    | ERNIE Lite 128K    |       128K |
-| `qianfan:ernie-lite-8k`      | ERNIE Lite 8K      |         8K |
-| `qianfan:ernie-lite-8k-0922` | ERNIE Lite 8K 0922 |         8K |
-| `qianfan:ernie-speed-128k`   | ERNIE Speed 128K   |       128K |
-| `qianfan:ernie-speed-8k`     | ERNIE Speed 8K     |         8K |
-| `qianfan:ernie-tiny`         | ERNIE Tiny         |          — |
+目录接口成功，但没有命中免费过滤的模型。
 
 ### Kilo Code
 
@@ -276,3 +272,24 @@
 | `agnes-intl:agnes-image-2.5-flash` | agnes-image-2.5-flash |          — |
 | `agnes-intl:agnes-video-2.5-flash` | agnes-video-2.5-flash |          — |
 | `agnes-intl:agnes-video-v2.0`      | agnes-video-v2.0      |          — |
+
+### OpenCode Zen
+
+- Provider ID：`opencode`
+- 状态：🟢 正常
+- 免费依据：实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public）
+- 主要风险：匿名通道与免费层有速率和并发限制；部分免费模型只在 Go tier 提供；上游目录与定价可能随时变化
+
+| Gateway 模型 ID                                     | 显示名称                        | 上下文窗口 |
+| --------------------------------------------------- | ------------------------------- | ---------: |
+| `opencode:opencode:big-pickle`                      | big-pickle                      |          — |
+| `opencode:opencode:deepseek-v4-flash-free`          | deepseek-v4-flash-free          |          — |
+| `opencode:opencode:ling-3.0-flash-fin-free`         | ling-3.0-flash-fin-free         |          — |
+| `opencode:opencode:longcat-2.5-preview-free`        | longcat-2.5-preview-free        |          — |
+| `opencode:opencode:mimo-v2.5-free`                  | mimo-v2.5-free                  |          — |
+| `opencode:opencode:mimo-v2.6-flash-free`            | mimo-v2.6-flash-free            |          — |
+| `opencode:opencode:muse-spark-1.2-contributor-free` | muse-spark-1.2-contributor-free |          — |
+| `opencode:opencode:muse-spark-1.3-contributor-free` | muse-spark-1.3-contributor-free |          — |
+| `opencode:opencode:nemotron-3-ultra-free`           | nemotron-3-ultra-free           |          — |
+| `opencode:opencode:nemotron-3.5-lightning-free`     | nemotron-3.5-lightning-free     |          — |
+| `opencode:opencode:space-bunny-free`                | space-bunny-free                |          — |

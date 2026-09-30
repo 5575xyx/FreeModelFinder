@@ -33,40 +33,43 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-09-29（Asia/Shanghai）更新：99 个免费模型入口，覆盖 12/14 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-09-30（Asia/Shanghai）更新：104 个免费模型入口，覆盖 13/15 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 未配置密钥：Google Gemini、GitHub Models。
 
-| Provider                 | 状态      | 免费模型数 | 免费类型              |
-| ------------------------ | --------- | ---------: | --------------------- |
-| OpenRouter               | 🟢 正常   |         16 | 零价格模型            |
-| Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier        |
-| Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号          |
-| SiliconFlow              | 🟢 正常   |          5 | 免费白名单            |
-| ModelScope               | 🟢 正常   |         16 | 账号免费额度          |
-| NVIDIA NIM               | 🟢 正常   |         10 | 免费开发端点          |
-| GitHub Models            | ⚪ 未接入 |     未接入 | 原型开发额度          |
-| Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production |
-| Hugging Face             | 🟢 正常   |          2 | 实时零价端点          |
-| SenseNova                | 🟢 正常   |          7 | 实时零价模型          |
-| Baidu Qianfan            | 🟢 正常   |          6 | 官方永久免费型号      |
-| Kilo Code                | 🟢 正常   |         21 | 聚合免费模型          |
-| Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型          |
-| Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型          |
+| Provider                 | 状态      | 免费模型数 | 免费类型                 |
+| ------------------------ | --------- | ---------: | ------------------------ |
+| OpenRouter               | 🟢 正常   |         16 | 零价格模型               |
+| Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier           |
+| Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号             |
+| SiliconFlow              | 🟢 正常   |          5 | 免费白名单               |
+| ModelScope               | 🟢 正常   |         16 | 账号免费额度             |
+| NVIDIA NIM               | 🟢 正常   |         10 | 免费开发端点             |
+| GitHub Models            | ⚪ 未接入 |     未接入 | 原型开发额度             |
+| Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production    |
+| Hugging Face             | 🟢 正常   |          2 | 实时零价端点             |
+| SenseNova                | 🟢 正常   |          7 | 实时零价模型             |
+| Baidu Qianfan            | 🟢 正常   |          0 | 官方免费白名单交集       |
+| Kilo Code                | 🟢 正常   |         21 | 聚合免费模型             |
+| Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型             |
+| Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型             |
+| OpenCode Zen             | 🟢 正常   |         11 | 实时零价模型（匿名通道） |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-29.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-30.md)
 
 ### 今日变化
 
-与 2026-09-28 相比，在成功比较的 12 个 Provider 中：**新增 0 个，移除 4 个**。
+与 2026-09-29 相比，在成功比较的 12 个 Provider 中：**新增 0 个，移除 6 个**。
 
 <details>
-<summary>查看移除的 4 个模型</summary>
+<summary>查看移除的 6 个模型</summary>
 
-- `openrouter:inclusionai/ling-3.0-flash-fin:free`
-- `nvidia:mistralai/mistral-nemotron`
-- `huggingface:inclusionAI/Ling-3.0-flash-Fin`
-- `kilo:inclusionai/ling-3.0-flash-fin:free`
+- `qianfan:ernie-lite-128k`
+- `qianfan:ernie-lite-8k`
+- `qianfan:ernie-lite-8k-0922`
+- `qianfan:ernie-speed-128k`
+- `qianfan:ernie-speed-8k`
+- `qianfan:ernie-tiny`
 
 </details>
 
@@ -180,14 +183,9 @@
 </details>
 
 <details>
-<summary><strong>Baidu Qianfan · 6 个模型</strong></summary>
+<summary><strong>Baidu Qianfan · 0 个模型</strong></summary>
 
-- `qianfan:ernie-lite-128k` — ERNIE Lite 128K
-- `qianfan:ernie-lite-8k` — ERNIE Lite 8K
-- `qianfan:ernie-lite-8k-0922` — ERNIE Lite 8K 0922
-- `qianfan:ernie-speed-128k` — ERNIE Speed 128K
-- `qianfan:ernie-speed-8k` — ERNIE Speed 8K
-- `qianfan:ernie-tiny` — ERNIE Tiny
+- 本次目录中没有命中免费过滤的模型。
 
 </details>
 
@@ -240,6 +238,23 @@
 - `agnes-intl:agnes-image-2.5-flash`
 - `agnes-intl:agnes-video-2.5-flash`
 - `agnes-intl:agnes-video-v2.0`
+
+</details>
+
+<details>
+<summary><strong>OpenCode Zen · 11 个模型</strong></summary>
+
+- `opencode:opencode:big-pickle` — big-pickle
+- `opencode:opencode:deepseek-v4-flash-free` — deepseek-v4-flash-free
+- `opencode:opencode:ling-3.0-flash-fin-free` — ling-3.0-flash-fin-free
+- `opencode:opencode:longcat-2.5-preview-free` — longcat-2.5-preview-free
+- `opencode:opencode:mimo-v2.5-free` — mimo-v2.5-free
+- `opencode:opencode:mimo-v2.6-flash-free` — mimo-v2.6-flash-free
+- `opencode:opencode:muse-spark-1.2-contributor-free` — muse-spark-1.2-contributor-free
+- `opencode:opencode:muse-spark-1.3-contributor-free` — muse-spark-1.3-contributor-free
+- `opencode:opencode:nemotron-3-ultra-free` — nemotron-3-ultra-free
+- `opencode:opencode:nemotron-3.5-lightning-free` — nemotron-3.5-lightning-free
+- `opencode:opencode:space-bunny-free` — space-bunny-free
 
 </details>
 
