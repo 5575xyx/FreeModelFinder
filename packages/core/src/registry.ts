@@ -151,6 +151,16 @@ export class ProviderRegistry {
   updateConfig(next: AppConfig, options: { preserveModels?: boolean } = {}): void {
     this.config = next;
     if (!options.preserveModels) {
+      for (const instance of this.instances.values()) {
+        // Dropping the instance must also stop whatever it scheduled: a
+        // provider with background timers would otherwise keep them running for
+        // the rest of the process lifetime.
+        try {
+          instance.dispose?.();
+        } catch {
+          // A failing teardown must not prevent the new config from taking over.
+        }
+      }
       this.instances.clear();
       this.modelsCache = null;
     }

@@ -17,6 +17,31 @@ function configWithProviders(providers: AppConfig['providers']): AppConfig {
 }
 
 describe('ProviderRegistry model catalog', () => {
+  it('disposes cached providers it drops so their background work stops', () => {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        opencode: { enabled: true, credentials: { apiKey: '', extra: { anonymous: true } } },
+      } as unknown as AppConfig['providers']),
+    );
+
+    const provider = registry.getProvider('opencode');
+    const disposed: string[] = [];
+    provider.dispose = () => disposed.push('opencode');
+
+    registry.updateConfig(registry.getConfig());
+    assert.deepEqual(disposed, ['opencode']);
+
+    const replaced = registry.getProvider('opencode');
+    assert.notEqual(replaced, provider, 'updateConfig must drop the cached instance');
+
+    replaced.dispose = () => disposed.push('replaced');
+    registry.updateConfig(registry.getConfig(), { preserveModels: true });
+    assert.deepEqual(disposed, ['opencode'], 'preserveModels keeps the instance alive');
+
+    registry.updateConfig(registry.getConfig());
+    assert.deepEqual(disposed, ['opencode', 'replaced']);
+  });
+
   it('ignores unknown provider keys left by older config files', () => {
     const providers = {
       openrouter: { enabled: false },

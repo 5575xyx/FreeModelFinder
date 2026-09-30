@@ -45,6 +45,7 @@ export class ZenProvider extends BaseProvider {
   private gateway: ZenGateway | undefined;
   private refreshed = false;
   private cacheLoaded = false;
+  private started = false;
 
   override hasCredentials(): boolean {
     const extra = asRecord(this.ctx.credentials?.extra);
@@ -96,6 +97,16 @@ export class ZenProvider extends BaseProvider {
     return this.gateway;
   }
 
+  private async ensureStarted(gateway: ZenGateway): Promise<void> {
+    if (this.started) return;
+    // start() loads the disk cache, schedules the catalog refresher and the
+    // periodic proxy health checks. It is best effort: a gateway that fails to
+    // start still serves requests, and the per-request proxy verification plus
+    // the optimistic anonymous retry recover the transports on demand.
+    await gateway.start().catch(() => undefined);
+    this.started = true;
+  }
+
   private async ensureCacheLoaded(gateway: ZenGateway): Promise<void> {
     if (this.cacheLoaded) return;
     await gateway.loadCache().catch(() => undefined);
@@ -103,6 +114,7 @@ export class ZenProvider extends BaseProvider {
   }
 
   private async ensureRefreshed(gateway: ZenGateway): Promise<void> {
+    await this.ensureStarted(gateway);
     await this.ensureCacheLoaded(gateway);
     if (this.refreshed) return;
     await gateway.refresh().catch(() => undefined);
@@ -120,6 +132,7 @@ export class ZenProvider extends BaseProvider {
 
   async listModels(): Promise<ModelInfo[]> {
     const gateway = this.gatewayInstance();
+    await this.ensureStarted(gateway);
     await this.ensureCacheLoaded(gateway);
     await gateway.refresh().catch(() => undefined);
     this.refreshed = true;
@@ -151,5 +164,18 @@ export class ZenProvider extends BaseProvider {
     for await (const chunk of gateway.stream(req as unknown as ZenChatRequest)) {
       yield chunk;
     }
+  }
+
+  /**
+   * Release the gateway background timers. The registry drops cached provider
+   * instances when the configuration changes, so without this every settings
+   * save would leave an orphaned refresher and health-check loop behind.
+   */
+  override dispose(): void {
+    this.gateway?.stop();
+    this.gateway = undefined;
+    this.started = false;
+    this.refreshed = false;
+    this.cacheLoaded = false;
   }
 }

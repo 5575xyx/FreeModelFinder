@@ -388,4 +388,79 @@ describe('zen gateway runtime', () => {
     await waitFor(() => gateway.snapshot().proxies.healthy === 1);
     gateway.stop();
   });
+
+  it('unrefs the background timers so a started gateway cannot hold the loop open', async () => {
+    const handles: Array<{ hasRef(): boolean }> = [];
+    const realSetInterval = globalThis.setInterval;
+    globalThis.setInterval = ((...args: Parameters<typeof realSetInterval>) => {
+      const handle = realSetInterval(...args);
+      handles.push(handle as unknown as { hasRef(): boolean });
+      return handle;
+    }) as typeof realSetInterval;
+
+    const dir = await mkdtemp(join(tmpdir(), 'zen-unref-'));
+    const gateway = createZenGateway({
+      config: normalizeZenConfig({ anonymous: true }),
+      proxies: PROXIES,
+      httpClient: new FakeClient(() => inboundJson(200, CHAT_BODY)),
+      fetchImpl: failingFetch(),
+      cachePaths: { catalog: join(dir, 'catalog.json'), pricing: join(dir, 'pricing.json') },
+      logger: {},
+    });
+    try {
+      await gateway.start();
+      assert.ok(handles.length >= 2, 'start() must schedule the refresher and health timers');
+      for (const handle of handles) {
+        assert.equal(handle.hasRef(), false, 'background timers must not keep the process alive');
+      }
+    } finally {
+      gateway.stop();
+      globalThis.setInterval = realSetInterval;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('lets a concurrent refresh join the in-flight one instead of returning a stale result', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'zen-single-flight-'));
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let fetches = 0;
+    const slowFetch = (async (input: RequestInfo | URL) => {
+      fetches += 1;
+      if (fetches === 1) await gate;
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('models.opencode.ai')) return webJson(CAPABILITIES);
+      if (url.includes('models.dev')) return webJson(MODELS_DEV);
+      if (url.endsWith('/go/v1/models')) return webJson(GO_MODELS);
+      if (url.endsWith('/v1/models')) return webJson(ZEN_MODELS);
+      if (url.includes('.mdx')) return new Response('', { status: 404 });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const gateway = createZenGateway({
+      config: normalizeZenConfig({ anonymous: true }),
+      proxies: PROXIES,
+      httpClient: new FakeClient(() => inboundJson(200, CHAT_BODY)),
+      fetchImpl: slowFetch,
+      cachePaths: { catalog: join(dir, 'catalog.json'), pricing: join(dir, 'pricing.json') },
+      logger: {},
+    });
+
+    try {
+      const first = gateway.refresh();
+      const second = gateway.refresh();
+      release();
+      const [a, b] = await Promise.all([first, second]);
+
+      assert.equal(a, b, 'a concurrent refresh must share the in-flight result');
+      assert.ok(a.total >= 1, 'the joined refresh must report the refreshed catalog');
+      assert.equal(gateway.snapshot().models.total >= 1, true);
+    } finally {
+      gateway.stop();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

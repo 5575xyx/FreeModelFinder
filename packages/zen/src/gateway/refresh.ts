@@ -225,7 +225,7 @@ export class ZenRefresher {
     errors: [],
   };
   private timer: ReturnType<typeof setInterval> | undefined;
-  private refreshing = false;
+  private inFlight: Promise<ZenRefreshResult> | undefined;
 
   constructor(options: ZenRefresherOptions) {
     this.config = options.config;
@@ -283,8 +283,21 @@ export class ZenRefresher {
   }
 
   async refreshOnce(): Promise<ZenRefreshResult> {
-    if (this.refreshing) return this.lastResult;
-    this.refreshing = true;
+    // Single flight: a caller that arrives while a refresh is running joins that
+    // refresh instead of receiving the previous snapshot. Returning lastResult
+    // here would hand the caller a stale catalog, which is exactly what the
+    // periodic refresher racing a request-driven refresh used to cause.
+    if (this.inFlight) return this.inFlight;
+    const run = this.runRefresh();
+    this.inFlight = run;
+    try {
+      return await run;
+    } finally {
+      if (this.inFlight === run) this.inFlight = undefined;
+    }
+  }
+
+  private async runRefresh(): Promise<ZenRefreshResult> {
     const errors: string[] = [];
     try {
       const now = this.now();
@@ -348,8 +361,6 @@ export class ZenRefresher {
       this.lastErrorMessage = errors.join('; ');
       this.logger.warn?.('zen refresh failed', { error: message });
       return this.lastResult;
-    } finally {
-      this.refreshing = false;
     }
   }
 
@@ -359,6 +370,9 @@ export class ZenRefresher {
     this.timer = setInterval(() => {
       void this.refreshOnce();
     }, this.intervalMs);
+    // A started gateway must never be the reason a process stays alive: the CLI
+    // and one-shot commands exit as soon as their work is done.
+    if (typeof this.timer.unref === 'function') this.timer.unref();
   }
 
   stop(): void {

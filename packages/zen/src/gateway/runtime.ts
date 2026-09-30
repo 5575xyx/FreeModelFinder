@@ -427,6 +427,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
       healthTimer = setInterval(() => {
         void runProxyHealthChecks();
       }, PROXY_HEALTH_CHECK_INTERVAL_MS);
+      if (typeof healthTimer.unref === 'function') healthTimer.unref();
     }
   }
 

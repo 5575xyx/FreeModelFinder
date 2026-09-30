@@ -93,6 +93,13 @@ export abstract class BaseProvider {
 
   hasCredentials?(): boolean;
 
+  /**
+   * Release any background work (timers, sockets, pools) held by the instance.
+   * Called when the registry drops a cached provider, so a provider that starts
+   * periodic work does not leave an orphan loop behind after a settings change.
+   */
+  dispose?(): void;
+
   generateImage?(req: ImageGenerationRequest): Promise<ImageGenerationResponse>;
   generateVideo?(req: VideoGenerationRequest): Promise<VideoGenerationResponse>;
   queryVideoStatus?(videoId: string): Promise<VideoGenerationResponse>;

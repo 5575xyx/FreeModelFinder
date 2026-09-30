@@ -54,6 +54,25 @@ const CHAT_BODY = {
   usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
 };
 
+/**
+ * Isolated cache paths for tests that build a real gateway. A started gateway
+ * persists the catalog and pricing in the background, so without this the suite
+ * reads and writes the developer's real ~/.freemodelfinder state and its result
+ * depends on whatever another run left there.
+ */
+async function tempCachePaths(): Promise<{
+  extra: { cachePaths: { catalog: string; pricing: string } };
+  cleanup: () => Promise<void>;
+}> {
+  const dir = await mkdtemp(join(tmpdir(), 'fmf-zen-provider-'));
+  return {
+    extra: {
+      cachePaths: { catalog: join(dir, 'catalog.json'), pricing: join(dir, 'pricing.json') },
+    },
+    cleanup: () => rm(dir, { recursive: true, force: true }),
+  };
+}
+
 function webJson(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -107,8 +126,12 @@ function recordingGateway(calls: string[]): ZenGateway {
       calls.push('stream');
       yield* [];
     },
-    start: async () => undefined,
-    stop: () => undefined,
+    start: async () => {
+      calls.push('start');
+    },
+    stop: () => {
+      calls.push('stop');
+    },
     refresh: async () => {
       calls.push('refresh');
       return {};
@@ -154,18 +177,23 @@ describe('zen (opencode) provider', () => {
   });
 
   it('lists routes with the opencode provider id', async () => {
-    const provider = new ZenProvider({
-      credentials: { apiKey: 'zen-key' },
-      fetchImpl: fixedFetch(),
-    });
-    const models = await provider.listModels();
-    assert.ok(models.length >= 1);
-    assert.equal(
-      models.every((model) => model.provider === 'opencode'),
-      true,
-    );
-    assert.equal(models.find((model) => model.id === 'opencode:free-model')?.free, true);
-    assert.equal(models.find((model) => model.id === 'opencode:paid-model')?.free, false);
+    const cache = await tempCachePaths();
+    try {
+      const provider = new ZenProvider({
+        credentials: { apiKey: 'zen-key', extra: cache.extra },
+        fetchImpl: fixedFetch(),
+      });
+      const models = await provider.listModels();
+      assert.ok(models.length >= 1);
+      assert.equal(
+        models.every((model) => model.provider === 'opencode'),
+        true,
+      );
+      assert.equal(models.find((model) => model.id === 'opencode:free-model')?.free, true);
+      assert.equal(models.find((model) => model.id === 'opencode:paid-model')?.free, false);
+    } finally {
+      await cache.cleanup();
+    }
   });
 
   it('throws when the catalog is unavailable so the registry can fall back', async () => {
@@ -187,22 +215,30 @@ describe('zen (opencode) provider', () => {
 
   it('returns a ChatResponse from chat()', async () => {
     const client = new FakeClient(() => inboundJson(200, CHAT_BODY));
-    const provider = new ZenProvider({
-      credentials: { apiKey: '', extra: { anonymous: true, httpClient: client } },
-      fetchImpl: fixedFetch(),
-    });
-    const response = await provider.chat({
-      model: 'free-model',
-      messages: [{ role: 'user', content: 'hi' }],
-      stream: false,
-      rawProtocol: 'openai',
-    });
-    assert.equal(response.model, 'free-model');
-    assert.equal(response.content, 'hello');
-    assert.equal(response.usage?.total_tokens, 3);
-    assert.equal(response.rawProtocol, 'openai');
-    assert.deepEqual(response.raw, CHAT_BODY);
-    assert.ok(client.requests.length >= 1);
+    const cache = await tempCachePaths();
+    try {
+      const provider = new ZenProvider({
+        credentials: {
+          apiKey: '',
+          extra: { anonymous: true, httpClient: client, ...cache.extra },
+        },
+        fetchImpl: fixedFetch(),
+      });
+      const response = await provider.chat({
+        model: 'free-model',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        rawProtocol: 'openai',
+      });
+      assert.equal(response.model, 'free-model');
+      assert.equal(response.content, 'hello');
+      assert.equal(response.usage?.total_tokens, 3);
+      assert.equal(response.rawProtocol, 'openai');
+      assert.deepEqual(response.raw, CHAT_BODY);
+      assert.ok(client.requests.length >= 1);
+    } finally {
+      await cache.cleanup();
+    }
   });
 
   it('loads the zen cache once before the first chat refresh', async () => {
@@ -218,7 +254,55 @@ describe('zen (opencode) provider', () => {
       stream: false,
     });
 
-    assert.deepEqual(calls, ['loadCache', 'refresh', 'chat']);
+    assert.deepEqual(calls, ['start', 'loadCache', 'refresh', 'chat']);
+  });
+
+  it('starts the zen gateway once so its background health checks are scheduled', async () => {
+    const calls: string[] = [];
+    const provider = new RecordingZenProvider(
+      { credentials: { apiKey: '', extra: { anonymous: true } } },
+      recordingGateway(calls),
+    );
+
+    await provider.chat({
+      model: 'free-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: false,
+    });
+    await provider.listModels();
+    for await (const _chunk of provider.stream({
+      model: 'free-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+    })) {
+      void _chunk;
+    }
+
+    assert.equal(calls.filter((call) => call === 'start').length, 1);
+    assert.equal(calls[0], 'start');
+  });
+
+  it('stops the zen gateway on dispose', async () => {
+    const calls: string[] = [];
+    const provider = new RecordingZenProvider(
+      { credentials: { apiKey: '', extra: { anonymous: true } } },
+      recordingGateway(calls),
+    );
+
+    await provider.chat({
+      model: 'free-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: false,
+    });
+    provider.dispose();
+
+    assert.deepEqual(
+      calls.filter((call) => call === 'stop'),
+      ['stop'],
+    );
+    calls.length = 0;
+    provider.dispose();
+    assert.deepEqual(calls, [], 'dispose must be idempotent');
   });
 
   it('loads the zen cache once before the first listModels refresh', async () => {
@@ -230,7 +314,7 @@ describe('zen (opencode) provider', () => {
 
     const models = await provider.listModels();
     assert.ok(models.length >= 1);
-    assert.deepEqual(calls, ['loadCache', 'refresh']);
+    assert.deepEqual(calls, ['start', 'loadCache', 'refresh']);
   });
 
   it('does not reload the zen cache on subsequent calls', async () => {
