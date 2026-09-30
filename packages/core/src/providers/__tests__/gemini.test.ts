@@ -197,6 +197,47 @@ describe('gemini functionCall response parsing', () => {
     const res = await provider.chat(baseReq());
     assert.equal(res.finish_reason, 'length');
   });
+
+  it('keeps length when MAX_TOKENS arrives alongside a functionCall', async () => {
+    const capture: Capture = {};
+    const provider = jsonProvider(
+      {
+        candidates: [
+          {
+            content: { role: 'model', parts: [{ functionCall: { name: 'a', args: {} } }] },
+            finishReason: 'MAX_TOKENS',
+          },
+        ],
+      },
+      capture,
+    );
+    const res = await provider.chat(baseReq());
+    assert.equal(res.finish_reason, 'length');
+    assert.equal(res.tool_calls?.[0]?.function.name, 'a');
+  });
+
+  it('keeps both text content and tool_calls when a response mixes them', async () => {
+    const capture: Capture = {};
+    const provider = jsonProvider(
+      {
+        candidates: [
+          {
+            content: {
+              role: 'model',
+              parts: [{ text: 'calling a tool' }, { functionCall: { name: 'a', args: { x: 1 } } }],
+            },
+            finishReason: 'STOP',
+          },
+        ],
+      },
+      capture,
+    );
+    const res = await provider.chat(baseReq());
+    assert.equal(res.content, 'calling a tool');
+    assert.equal(res.finish_reason, 'tool_calls');
+    assert.equal(res.tool_calls?.[0]?.id, 'call_0');
+    assert.equal(res.tool_calls?.[0]?.function.name, 'a');
+  });
 });
 
 describe('gemini functionCall / functionResponse outbound', () => {
@@ -346,6 +387,83 @@ describe('gemini functionCall / functionResponse outbound', () => {
     assert.deepEqual(responsePart?.response, { temp: 25 });
     assert.equal(hasContentKey(responsePart?.response), false);
   });
+
+  it('resolves the function name for every tool result across multiple rounds', async () => {
+    const capture: Capture = {};
+    const provider = jsonProvider(textResponse('ok'), capture);
+    await provider.chat(
+      baseReq({
+        messages: [
+          { role: 'user', content: 'go' },
+          {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              { id: 'call_1', type: 'function', function: { name: 'alpha', arguments: '{}' } },
+            ],
+          },
+          { role: 'tool', content: '{"n":1}', tool_call_id: 'call_1' },
+          {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              { id: 'call_2', type: 'function', function: { name: 'beta', arguments: '{}' } },
+            ],
+          },
+          { role: 'tool', content: '{"n":2}', tool_call_id: 'call_2' },
+        ],
+      }),
+    );
+    assert.deepEqual(capture.body?.contents, [
+      { role: 'user', parts: [{ text: 'go' }] },
+      { role: 'model', parts: [{ functionCall: { name: 'alpha', args: {} } }] },
+      { role: 'user', parts: [{ functionResponse: { name: 'alpha', response: { n: 1 } } }] },
+      { role: 'model', parts: [{ functionCall: { name: 'beta', args: {} } }] },
+      { role: 'user', parts: [{ functionResponse: { name: 'beta', response: { n: 2 } } }] },
+    ]);
+  });
+
+  it('skips a tool message whose function name cannot be resolved', async () => {
+    const capture: Capture = {};
+    const provider = jsonProvider(textResponse('ok'), capture);
+    await provider.chat(
+      baseReq({
+        messages: [
+          { role: 'user', content: 'hi' },
+          { role: 'tool', content: '{"n":1}', tool_call_id: 'unknown-id' },
+        ],
+      }),
+    );
+    const contents = capture.body?.contents as Array<{ parts: Array<Record<string, unknown>> }>;
+    assert.equal(
+      contents.some((c) => c.parts.some((p) => 'functionResponse' in p)),
+      false,
+    );
+  });
+
+  it('does not attach an id to outbound functionCall parts', async () => {
+    const capture: Capture = {};
+    const provider = jsonProvider(textResponse('ok'), capture);
+    await provider.chat(
+      baseReq({
+        messages: [
+          {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              { id: 'call_1', type: 'function', function: { name: 'a', arguments: '{}' } },
+            ],
+          },
+        ],
+      }),
+    );
+    const contents = capture.body?.contents as Array<{
+      parts: Array<{ functionCall?: Record<string, unknown> }>;
+    }>;
+    const fnCall = contents[0]?.parts[0]?.functionCall;
+    assert.deepEqual(fnCall, { name: 'a', args: {} });
+    assert.equal('id' in (fnCall ?? {}), false);
+  });
 });
 
 describe('gemini streaming functionCall', () => {
@@ -416,6 +534,29 @@ describe('gemini streaming functionCall', () => {
     assert.equal(chunks[1]?.tool_calls?.[0]?.index, 1);
     assert.equal(chunks[1]?.tool_calls?.[0]?.id, 'call_1');
     assert.equal(chunks[1]?.finish_reason, 'tool_calls');
+  });
+
+  it('does not mark a non-final functionCall frame as tool_calls', async () => {
+    const capture: Capture = {};
+    const provider = sseProvider(
+      [
+        {
+          candidates: [
+            {
+              content: { role: 'model', parts: [{ functionCall: { name: 'a', args: {} } }] },
+              finishReason: null,
+            },
+          ],
+        },
+      ],
+      capture,
+    );
+    const chunks: StreamChunk[] = [];
+    for await (const chunk of provider.stream(baseReq({ stream: true }))) chunks.push(chunk);
+    assert.equal(chunks.length, 1);
+    assert.equal(chunks[0]?.tool_calls?.[0]?.function?.name, 'a');
+    assert.notEqual(chunks[0]?.finish_reason, 'tool_calls');
+    assert.equal(chunks[0]?.finish_reason, null);
   });
 
   it('keeps streaming text deltas unchanged when no functionCall appears', async () => {

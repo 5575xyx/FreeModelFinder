@@ -157,6 +157,7 @@ function toGeminiContents(messages: ChatMessage[]): {
     }
     if (m.role === 'tool') {
       const name = (m.tool_call_id ? toolNameById.get(m.tool_call_id) : undefined) ?? m.name ?? '';
+      if (!name) continue;
       const parsed = parseToolContent(m.content);
       const part: GeminiContentPart = {
         functionResponse: { name, response: isPlainObject(parsed) ? parsed : { content: parsed } },
@@ -325,12 +326,13 @@ export class GeminiProvider extends BaseProvider {
     const parts = cand?.content?.parts ?? [];
     const text = parts.map((p) => p.text ?? '').join('');
     const toolCalls = parseFunctionCalls(parts);
+    const mapped = mapFinish(cand?.finishReason);
     return {
       id: `gemini-${Date.now()}`,
       model: req.model,
       created: Math.floor(Date.now() / 1000),
       content: text,
-      finish_reason: toolCalls ? 'tool_calls' : mapFinish(cand?.finishReason),
+      finish_reason: toolCalls && mapped === 'stop' ? 'tool_calls' : mapped,
       ...(toolCalls ? { tool_calls: toolCalls } : {}),
       usage,
     };
@@ -383,14 +385,14 @@ export class GeminiProvider extends BaseProvider {
           const delta = deltaParts.map((p) => p.text ?? '').join('');
           const toolCalls = parseFunctionCallDeltas(deltaParts, toolIndex);
           toolIndex += toolCalls.length;
+          const mapped = mapFinish(cand?.finishReason);
           yield {
             id: streamId,
             model: req.model,
             created: Math.floor(Date.now() / 1000),
             delta,
             ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-            finish_reason:
-              toolCalls.length > 0 ? 'tool_calls' : (mapFinish(cand?.finishReason) ?? null),
+            finish_reason: toolCalls.length > 0 && mapped === 'stop' ? 'tool_calls' : mapped,
           };
         } catch {
           // ignore
