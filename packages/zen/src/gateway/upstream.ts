@@ -345,6 +345,61 @@ function observeAnonymousResult(
   else pool.markFailure(node, status, error, retryAfterMs(response, options));
 }
 
+interface ZenAnonymousAttempt {
+  response?: ZenHttpResponse;
+  error?: unknown;
+}
+
+// One anonymous attempt: build the request, send it, then observe and record the
+// outcome. Shared by the normal round-robin loop and the optimistic retry.
+async function attemptAnonymousNode(
+  options: ZenUpstreamOptions,
+  route: ZenRoute,
+  ids: ZenRequestIds,
+  pool: ZenAnonymousPool,
+  node: ZenAnonymousNode,
+  body: Record<string, unknown>,
+  baseUrl: string,
+  protocol: ZenProtocol,
+  attempt: number,
+): Promise<ZenAnonymousAttempt> {
+  const proxy = node.proxy;
+  const upstreamRequest = buildUpstreamRequest(
+    baseUrl,
+    protocol,
+    body,
+    ids,
+    ANONYMOUS_KEY,
+    proxy.spec,
+  );
+  const started = nowOf(options);
+  let response: ZenHttpResponse | undefined;
+  let error: unknown;
+  try {
+    response = await proxy.client.send(upstreamRequest);
+  } catch (caught) {
+    error = caught;
+  }
+  const duration = nowOf(options) - started;
+  if (!isAborted(ids.signal)) {
+    observeAnonymousResult(options, pool, node, response, error);
+    recordUpstreamAttempt(
+      options,
+      route,
+      ids,
+      attempt,
+      'anonymous',
+      'anonymous',
+      true,
+      proxy,
+      response,
+      error,
+      duration,
+    );
+  }
+  return { response, error };
+}
+
 // Mirrors observeKeyResult in internal/gateway/upstream.go:696-711. Key/proxy
 // rebinding on proxy failure is not part of this port: nodes never change their
 // proxy binding, so the "only mark when still bound" guard is always true.
@@ -409,43 +464,22 @@ export async function doAnonymousUpstream(
       drain(lastResponse);
       lastResponse = undefined;
     }
-    const proxy = node.proxy;
-    const upstreamRequest = buildUpstreamRequest(
+    const { response, error } = await attemptAnonymousNode(
+      options,
+      route,
+      ids,
+      pool,
+      node,
+      body,
       baseUrl,
       protocol,
-      body,
-      ids,
-      ANONYMOUS_KEY,
-      proxy.spec,
+      attemptOffset + attempts,
     );
-    const started = nowOf(options);
-    let response: ZenHttpResponse | undefined;
-    let error: unknown;
-    try {
-      response = await proxy.client.send(upstreamRequest);
-    } catch (caught) {
-      error = caught;
-    }
-    const duration = nowOf(options) - started;
     if (isAborted(ids.signal)) {
       lastResponse = response;
       lastError = error ?? (response ? undefined : abortError());
       break;
     }
-    observeAnonymousResult(options, pool, node, response, error);
-    recordUpstreamAttempt(
-      options,
-      route,
-      ids,
-      attemptOffset + attempts,
-      'anonymous',
-      'anonymous',
-      true,
-      proxy,
-      response,
-      error,
-      duration,
-    );
     if (error === undefined && response && isSuccess(response.status)) {
       return { response, used: attempts, error: undefined };
     }
@@ -454,11 +488,48 @@ export async function doAnonymousUpstream(
   }
 
   if (lastResponse) return { response: lastResponse, used: attempts, error: undefined };
+
+  if (attempts === 0 && pool.len() > 0 && !isAborted(ids.signal)) {
+    const node = pool.bestEffortNode();
+    if (node) {
+      const { response, error } = await attemptAnonymousNode(
+        options,
+        route,
+        ids,
+        pool,
+        node,
+        body,
+        baseUrl,
+        protocol,
+        attemptOffset + 1,
+      );
+      if (error === undefined && response && isSuccess(response.status)) {
+        pool.markSuccess(node);
+        setProxyHealthy(node.proxy.health, true);
+        return { response, used: attempts + 1, error: undefined };
+      }
+      if (response) {
+        return {
+          response,
+          used: attempts + 1,
+          error: new Error(`anonymous upstream returned HTTP ${response.status}`),
+        };
+      }
+      return {
+        response: undefined,
+        used: attempts + 1,
+        error: error ?? new Error('anonymous upstream request failed'),
+      };
+    }
+  }
+
   if (lastError === undefined && attempts === 0) {
+    const failure = pool.lastAnonymousFailure();
+    const suffix = failure ? ` (last upstream failure: HTTP ${failure.status})` : '';
     return {
       response: undefined,
       used: 0,
-      error: new Error('no available anonymous proxy (all proxies are cooling or unhealthy)'),
+      error: new Error(`no available anonymous proxy${suffix}`),
     };
   }
   return {

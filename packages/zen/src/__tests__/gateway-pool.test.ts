@@ -85,6 +85,35 @@ describe('zen anonymous pool', () => {
     pool.markFailure(node, 403, undefined, undefined);
     assert.equal(pool.inCooldown(node, Date.now()), true);
   });
+
+  it('bestEffortNode prefers a healthy node and otherwise the earliest cooldown', () => {
+    const pool = new ZenAnonymousPool(proxies, client, { cooldownBaseMs: 60_000 });
+    const first = pool.nodes()[0]!;
+    const second = pool.nodes()[1]!;
+    pool.markFailure(first, 429, undefined, 120_000);
+    setProxyHealthy(second.proxy.health, false);
+    assert.equal(pool.bestEffortNode()?.proxy.name, first.proxy.name);
+    setProxyHealthy(first.proxy.health, false);
+    pool.markFailure(second, 429, undefined, 10_000);
+    assert.equal(pool.bestEffortNode()?.proxy.name, second.proxy.name);
+  });
+
+  it('bestEffortNode returns undefined for an empty pool', () => {
+    const pool = new ZenAnonymousPool([], client);
+    assert.equal(pool.bestEffortNode(), undefined);
+  });
+
+  it('remembers the last anonymous failure status and error', () => {
+    const pool = new ZenAnonymousPool(proxies, client);
+    const node = pool.nodes()[0]!;
+    assert.equal(pool.lastAnonymousFailure(), undefined);
+    pool.markFailure(node, 429, undefined, undefined);
+    assert.equal(pool.lastAnonymousFailure()?.status, 429);
+    const boom = new Error('boom');
+    pool.markFailure(node, undefined, boom, undefined);
+    assert.equal(pool.lastAnonymousFailure()?.status, 0);
+    assert.equal(pool.lastAnonymousFailure()?.error, boom);
+  });
 });
 
 describe('zen gateway health', () => {

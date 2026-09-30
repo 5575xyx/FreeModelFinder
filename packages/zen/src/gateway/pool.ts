@@ -215,6 +215,8 @@ export class ZenAnonymousPool {
 
   private cursor = 0;
 
+  private lastFailure: { status: number; error?: unknown } | undefined;
+
   constructor(proxies: ProxySpec[], client: ZenHttpClient, options: ZenAnonymousPoolOptions = {}) {
     this.cooldownBaseMs = options.cooldownBaseMs ?? DEFAULT_COOLDOWN_BASE_MS;
     this.list = proxies.map((spec) => ({
@@ -249,8 +251,26 @@ export class ZenAnonymousPool {
     error?: unknown,
     retryAfterMs?: number,
   ): void {
+    if (status !== undefined || (error !== undefined && error !== null)) {
+      this.lastFailure = { status: status ?? 0, error };
+    }
     if (!shouldCooldown(status, error)) return;
     applyCooldown(node, this.cooldownBaseMs, retryAfterMs);
+  }
+
+  lastAnonymousFailure(): { status: number; error?: unknown } | undefined {
+    return this.lastFailure;
+  }
+
+  bestEffortNode(): ZenAnonymousNode | undefined {
+    if (this.list.length === 0) return undefined;
+    const healthy = this.list.filter((node) => proxyHealthy(node.proxy.health));
+    const candidates = healthy.length > 0 ? healthy : this.list;
+    let best = candidates[0]!;
+    for (const node of candidates) {
+      if (node.cooldownUntil < best.cooldownUntil) best = node;
+    }
+    return best;
   }
 
   inCooldown(node: ZenAnonymousNode, nowMs: number): boolean {

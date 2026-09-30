@@ -405,19 +405,55 @@ describe('zen proxy health checks', () => {
     assert.equal(proxyHealthy(proxy.health), true);
   });
 
-  it('reports cooling or unhealthy proxies when no anonymous node is selectable', async () => {
+  it('optimistically attempts an unhealthy proxy and recovers it on a 2xx', async () => {
     const client = new FakeClient(() => response(200, '{}'));
     const options = makeOptions(client);
-    for (const node of options.anonymousPool!.nodes()) {
+    const pool = options.anonymousPool!;
+    for (const node of pool.nodes()) {
       setProxyHealthy(node.proxy.health, false);
     }
     const result = await doAnonymousUpstream(options, anonymousRoute(), request, ids, 0);
-    assert.equal(result.response, undefined);
-    assert.equal(result.used, 0);
-    assert.match(
-      String((result.error as Error).message),
-      /no available anonymous proxy \(all proxies are cooling or unhealthy\)/,
-    );
-    assert.equal(client.requests.length, 0);
+    assert.equal(result.response?.status, 200);
+    assert.equal(result.used, 1);
+    assert.equal(client.requests.length, 1);
+    assert.equal(proxyHealthy(pool.nodes()[0]!.proxy.health), true);
+  });
+
+  it('optimistically retries a cooling node and resets its health and cooldown', async () => {
+    const single = parseProxyList(['direct'], '');
+    let status = 429;
+    const client = new FakeClient(() => response(status, '{}'));
+    const pool = new ZenAnonymousPool(single, client, { cooldownBaseMs: 60_000 });
+    const options = makeOptions(client, { anonymousPool: pool });
+    const node = pool.nodes()[0]!;
+
+    const first = await doAnonymousUpstream(options, anonymousRoute(), request, ids, 0);
+    assert.equal(first.response?.status, 429);
+    assert.equal(pool.inCooldown(node, Date.now()), true);
+    assert.equal(client.requests.length, 1);
+
+    status = 200;
+    const second = await doAnonymousUpstream(options, anonymousRoute(), request, ids, 1);
+    assert.equal(second.response?.status, 200);
+    assert.equal(second.used, 1);
+    assert.equal(pool.inCooldown(node, Date.now()), false);
+    assert.equal(proxyHealthy(node.proxy.health), true);
+    assert.equal(client.requests.length, 2);
+  });
+
+  it('surfaces the real upstream status instead of the generic message', async () => {
+    const single = parseProxyList(['direct'], '');
+    const client = new FakeClient(() => response(429, '{"error":{"message":"rate limited"}}'));
+    const pool = new ZenAnonymousPool(single, client, { cooldownBaseMs: 60_000 });
+    const options = makeOptions(client, { anonymousPool: pool });
+
+    await doAnonymousUpstream(options, anonymousRoute(), request, ids, 0);
+    const second = await doAnonymousUpstream(options, anonymousRoute(), request, ids, 1);
+
+    assert.ok(second.error instanceof Error);
+    assert.match((second.error as Error).message, /429/);
+    assert.doesNotMatch((second.error as Error).message, /no available anonymous proxy/);
+    assert.equal(second.used, 1);
+    assert.equal(client.requests.length, 2);
   });
 });
