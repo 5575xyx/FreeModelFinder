@@ -15,7 +15,7 @@ FreeModelFinder 将多个第三方平台的**可用免费文本模型**统一为
 | 多种使用方式 | 提供 npm CLI、浏览器 Dashboard 和 macOS 纯状态栏应用；三者共享同一份本机配置。                                                        |
 | 本机保护     | Provider Key、Gateway Key 和自定义来源 Key 使用本机随机主密钥与 AES-256-GCM 加密保存。                                                |
 
-目前网关面向**文本聊天**：支持常用聊天字段与流式输出；暂不支持 Tool / Function Calling、图片/音频输入输出，也不能在一条已经开始输出的流中无缝改投另一个模型。
+目前网关面向**文本聊天**：支持常用聊天字段、流式输出，以及 OpenAI / Anthropic / Gemini 三协议的工具 / Function Calling（全部内置 Provider 透传上游 `tool_calls`，可配合 MCP 与 Agent 工具）；暂不支持图片/音频输入输出，也不能在一条已经开始输出的流中无缝改投另一个模型。
 
 ## 2. 工作方式
 
@@ -79,7 +79,7 @@ fmf serve --open
 
 ## 4. Provider、模型与“免费”的含义
 
-内置 Provider 包括 OpenRouter、Google Gemini、智谱 AI、SiliconFlow、ModelScope、NVIDIA NIM、GitHub Models、Cohere、Hugging Face、SenseNova、百度千帆 Qianfan 与 OpenCode Zen。当前可用模型是实时目录与内置免费规则共同决定的，因此会随账号、地区和上游更新而变化。
+内置 Provider 包括 OpenRouter、Google Gemini、智谱 AI、SiliconFlow、ModelScope、NVIDIA NIM、GitHub Models、Cohere、Hugging Face、SenseNova、百度千帆 Qianfan、Cline 与 OpenCode Zen。当前可用模型是实时目录与内置免费规则共同决定的，因此会随账号、地区和上游更新而变化。
 
 OpenCode Zen 比较特殊：它内置**匿名通道**，无需任何 API Key 就能使用免费模型；也可以分别配置 Zen Key 与 Go Key 来提升额度。它覆盖 Zen 与 Zen Go 两个上游 tier，可在设置中选择优先使用哪一个，并支持为上游请求配置 HTTP/HTTPS/SOCKS5 代理。相关环境变量见下文。
 

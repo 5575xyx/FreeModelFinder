@@ -3,7 +3,7 @@
   <h1>FreeModelFinder</h1>
   <p><strong>免费模型用完额度，自动换下一个。</strong></p>
   <p>把散落在多个平台的免费大模型，变成一个会自动接力的本地 API。</p>
-  <p>内置 Dashboard、CLI 和 macOS 状态栏 App，兼容 OpenAI、Anthropic 与 Gemini 文本接口。</p>
+  <p>内置 Dashboard、CLI 和 macOS 状态栏 App，兼容 OpenAI、Anthropic 与 Gemini 接口，支持工具 / Function Calling（MCP 与 Agent 工具可端到端使用）。</p>
   <p>
     <a href="https://www.npmjs.com/package/freemodelfinder"><img src="https://img.shields.io/npm/v/freemodelfinder?logo=npm&label=npm" alt="npm version" /></a>
     <a href="FREE_MODELS.md"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Forange90%2FFreeModelFinder%2Fmain%2Freports%2Fbadge.json" alt="free models" /></a>
@@ -342,6 +342,8 @@ flowchart LR
 - **三种自动路由策略**：`auto` 支持规格优先、速度优先和请求限制优先，遇到限流后自动冷却、切换，并在恢复后回到原偏好。
 - **内置 Dashboard**：管理 Provider、Gateway Key 与自定义来源，查看模型变化和失败原因，并直接进行流式对话测试。
 - **多协议文本接口**：提供 OpenAI、Anthropic、Gemini 兼容接口与 SSE 流式输出。
+- **通用工具调用**：三协议均支持 `tools` / `tool_calls`，全部内置 Provider 透传上游工具调用，MCP 与 Agent 工具可端到端使用。
+- **更多免费来源**：内置 Cline（社区免费额度）与 OpenCode Zen（含无需 Key 的匿名通道）等 Provider，也可添加自定义 OpenAI-compatible 来源。
 - **macOS 状态栏控制**：切换模型或路由策略、复制 curl/Python 接入代码、设置登录启动、查看日志和更新提醒。
 - **本机凭据保护**：Provider Key、自定义来源 Key 和 Gateway Key 使用随机本地主密钥与 AES-256-GCM 加密保存。
 - **显式服务器模式**：将 Tailscale 管理面与强制认证的公网 API 分离，FreeModelFinder 自身仍只监听 loopback。
@@ -371,12 +373,12 @@ Gateway 认证默认关闭。启用 Gateway Key 后，请增加 `Authorization: 
 
 ## 适合与不适合
 
-| 适合                                   | 暂不适合                                |
-| -------------------------------------- | --------------------------------------- |
-| 想统一管理多个免费模型来源             | 需要生产级 SLA 或高并发                 |
-| 希望免费额度用尽后自动切换             | 需要 Tool / Function Calling            |
-| 想给文本聊天客户端提供统一 API         | 需要图片、音频等多模态能力              |
-| 希望 Provider Key 和网关默认只留在本机 | 希望在本机直接运行模型；这更适合 Ollama |
+| 适合                                    | 暂不适合                                |
+| --------------------------------------- | --------------------------------------- |
+| 想统一管理多个免费模型来源              | 需要生产级 SLA 或高并发                 |
+| 给 Cline / OpenCode 等客户端接工具、MCP | 需要图片、音频等多模态能力              |
+| 希望免费额度用尽后自动切换              | 需要在同一次请求内无缝改投模型          |
+| 希望 Provider Key 和网关默认只留在本机  | 希望在本机直接运行模型；这更适合 Ollama |
 
 ## 配置与安全
 
@@ -415,7 +417,8 @@ v0.1 只承诺常用文本聊天字段与流式文本增量，不是三家 SDK �
 - [x] 免费目录、Dashboard、CLI 与 macOS 状态栏 App
 - [x] OpenAI、Anthropic、Gemini 兼容文本接口
 - [x] 多策略自动路由、限流冷却与来源切换
-- [ ] Tool / Function Calling
+- [x] Tool / Function Calling（OpenAI / Anthropic / Gemini 三协议，全部 Provider 透传）
+- [x] Cline 与 OpenCode Zen（含匿名通道）Provider
 - [ ] 图片、音频等多模态输入输出
 - [ ] 同一 Provider 的多 Key 轮询
 - [ ] Ollama fallback
