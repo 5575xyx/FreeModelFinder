@@ -11,7 +11,11 @@ function str(value: unknown): string | undefined {
 }
 
 function num(value: unknown): number | undefined {
-  return typeof value === 'number' ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function nonNegativeInt(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 function firstString(...values: Array<string | undefined>): string | undefined {
@@ -62,7 +66,7 @@ export function parseToolCallDeltas(value: unknown): ToolCallDelta[] | undefined
     const call = asRecord(raw);
     if (!call) continue;
     const fn = asRecord(call['function']);
-    const delta: ToolCallDelta = { index: num(call['index']) ?? 0, type: 'function' };
+    const delta: ToolCallDelta = { index: nonNegativeInt(call['index']) ?? 0, type: 'function' };
     const id = str(call['id']);
     if (id !== undefined) delta.id = id;
     const name = str(fn?.['name']);

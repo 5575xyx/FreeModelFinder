@@ -67,6 +67,23 @@ describe('parseToolCallDeltas', () => {
     assert.deepEqual(deltas, [{ index: 0, type: 'function', function: { name: 'a' } }]);
   });
 
+  it('coerces negative, fractional and non-numeric indexes to 0', () => {
+    const deltas = parseToolCallDeltas([
+      { index: -1 },
+      { index: 1.5 },
+      { index: '2' },
+      { index: Number.NaN },
+      { index: Number.POSITIVE_INFINITY },
+    ]);
+    assert.deepEqual(deltas, [
+      { index: 0, type: 'function' },
+      { index: 0, type: 'function' },
+      { index: 0, type: 'function' },
+      { index: 0, type: 'function' },
+      { index: 0, type: 'function' },
+    ]);
+  });
+
   it('keeps incrementing indexes, first-block name and fragmented arguments', () => {
     const deltas = parseToolCallDeltas([
       {
@@ -95,6 +112,24 @@ describe('parseToolCallDeltas', () => {
   it('omits the function object when neither name nor arguments is a string', () => {
     const deltas = parseToolCallDeltas([{ index: 2, id: 'call_2' }]);
     assert.deepEqual(deltas, [{ index: 2, id: 'call_2', type: 'function' }]);
+  });
+
+  it('omits the function object when function is not an object', () => {
+    const deltas = parseToolCallDeltas([
+      { index: 0, function: 'x' },
+      { index: 1, function: [] },
+      { index: 2, function: 3 },
+    ]);
+    assert.deepEqual(deltas, [
+      { index: 0, type: 'function' },
+      { index: 1, type: 'function' },
+      { index: 2, type: 'function' },
+    ]);
+  });
+
+  it('keeps an explicit empty function.name', () => {
+    const deltas = parseToolCallDeltas([{ index: 0, function: { name: '' } }]);
+    assert.deepEqual(deltas, [{ index: 0, type: 'function', function: { name: '' } }]);
   });
 
   it('skips non-object entries and returns undefined when none remain', () => {
@@ -247,5 +282,23 @@ describe('parseUsage', () => {
     assert.deepEqual(parseUsage({ prompt_tokens: '10', completion_tokens: 2 }), {
       completion_tokens: 2,
     });
+  });
+
+  it('drops NaN and infinite numeric fields', () => {
+    assert.deepEqual(
+      parseUsage({
+        prompt_tokens: Number.NaN,
+        completion_tokens: Number.POSITIVE_INFINITY,
+        total_tokens: 15,
+      }),
+      { total_tokens: 15 },
+    );
+    assert.equal(
+      parseUsage({
+        prompt_tokens: Number.NaN,
+        prompt_tokens_details: { cached_tokens: Number.NaN },
+      }),
+      undefined,
+    );
   });
 });
