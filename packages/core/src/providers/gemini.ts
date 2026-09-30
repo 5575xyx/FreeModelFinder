@@ -77,6 +77,10 @@ function parseToolContent(content: string): unknown {
   return content;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function parseFunctionCalls(parts: GeminiContentPart[]): ToolCall[] | undefined {
   const calls: ToolCall[] = [];
   let index = 0;
@@ -153,8 +157,9 @@ function toGeminiContents(messages: ChatMessage[]): {
     }
     if (m.role === 'tool') {
       const name = (m.tool_call_id ? toolNameById.get(m.tool_call_id) : undefined) ?? m.name ?? '';
+      const parsed = parseToolContent(m.content);
       const part: GeminiContentPart = {
-        functionResponse: { name, response: parseToolContent(m.content) },
+        functionResponse: { name, response: isPlainObject(parsed) ? parsed : { content: parsed } },
       };
       const last = contents[contents.length - 1];
       if (last && last.role === 'user' && last.parts.some((p) => p.functionResponse)) {

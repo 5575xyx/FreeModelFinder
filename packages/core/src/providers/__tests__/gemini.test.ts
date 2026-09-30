@@ -259,7 +259,7 @@ describe('gemini functionCall / functionResponse outbound', () => {
     ]);
   });
 
-  it('passes non-JSON tool content through unchanged and groups consecutive results', async () => {
+  it('wraps non-object tool content in a content key and groups consecutive results', async () => {
     const capture: Capture = {};
     const provider = jsonProvider(textResponse('ok'), capture);
     await provider.chat(
@@ -289,8 +289,8 @@ describe('gemini functionCall / functionResponse outbound', () => {
       {
         role: 'user',
         parts: [
-          { functionResponse: { name: 'a', response: 'sunny' } },
-          { functionResponse: { name: 'b', response: [1, 2] } },
+          { functionResponse: { name: 'a', response: { content: 'sunny' } } },
+          { functionResponse: { name: 'b', response: { content: [1, 2] } } },
         ],
       },
     ]);
