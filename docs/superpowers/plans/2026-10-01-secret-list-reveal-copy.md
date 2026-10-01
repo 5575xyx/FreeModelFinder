@@ -554,20 +554,26 @@ if (removeProxyIndex !== undefined) {
 }
 ```
 
-范围越界按既有 `removeKeyIndex` 的先例（`:1000-1002` 返回 400）保持一致：把上面这段改为在整数校验后追加一条
+范围越界按既有 `removeKeyIndex` 的先例（`:1000-1002` 返回 400）保持一致。在整数校验后追加：
 
 ```ts
 const proxies = Array.isArray(curCfg.providers[providerId]?.credentials?.extra?.['proxies'])
-  ? (curCfg.providers[providerId]?.credentials?.extra?.['proxies'] as unknown[]).filter(
-      (v): v is string => typeof v === 'string',
-    )
+  ? (curCfg.providers[providerId]?.credentials?.extra?.['proxies'] as unknown[])
   : [];
 if (removeProxyIndex >= proxies.length) {
   return reply.code(400).send({ error: 'removeProxyIndex out of range' });
 }
+if (cleanExtra?.['proxies'] !== undefined) {
+  return reply.code(400).send({ error: 'removeProxyIndex conflicts with extra.proxies' });
+}
 ```
 
 并把 Step 1 的 `ignores an out-of-range removeProxyIndex` 用例期望从 200 改为 `400` —— 与 `removeKeyIndex` 的既有行为保持一致，而不是静默忽略。
+
+**两处关键点**：
+
+1. `proxies` **不做 `typeof string` 过滤**。`cleanExtra`（`:944-962`）只按 key 名做白名单、从不校验数组元素值，所以 `extra: { proxies: [42, 'http://a:1'] }` 能原样落盘。若这里过滤而 `buildProxyMeta` / `proxyCount` 不过滤，两侧索引基准就不同：界面上看得见的合法代理会返回 400 删不掉，删那条不可见的项则会连带清空整表。这与本文档开头「索引空间」一节「代理不做任何过滤，索引即存储下标」直接冲突。
+2. 拒绝与 `extra.proxies` 同请求提交。否则 `nextExtra` 刚被 `{...prevExtra, ...cleanExtra}` 合并出的新列表会被下面的「旧表减一项」静默覆盖，用户提交的代理凭空消失；且与兄弟参数 `removeKeyIndex`（作用在**合并后**的新列表上）语义相反，后续维护者极易踩。
 
 - [ ] **Step 4: 写应用实现**
 
@@ -576,13 +582,13 @@ if (removeProxyIndex >= proxies.length) {
 ```ts
 if (removeProxyIndex !== undefined && providerId === 'opencode') {
   const currentProxies = Array.isArray(prevExtra['proxies'])
-    ? (prevExtra['proxies'] as unknown[]).filter(
-        (value): value is string => typeof value === 'string',
-      )
+    ? (prevExtra['proxies'] as unknown[])
     : [];
   nextExtra.proxies = currentProxies.filter((_, i) => i !== removeProxyIndex);
 }
 ```
+
+同样**不做 `typeof string` 过滤**，理由见 Step 3 的关键点 1。
 
 - [ ] **Step 5: 对齐 `removeKeyIndex` 的索引空间**
 

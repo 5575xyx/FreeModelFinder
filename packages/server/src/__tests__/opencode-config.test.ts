@@ -215,10 +215,11 @@ describe('opencode hasKey seam', () => {
     assert.match(provider.proxyMeta[0].hint, /\*\*\*/);
   });
 
-  it('removes a single proxy via removeProxyIndex', async () => {
+  it('removes a single proxy via removeProxyIndex', async (t) => {
     const scoped = await serverFor(
       opencodeConfig({ apiKey: '', extra: { proxies: ['direct', 'http://a:1', 'http://b:2'] } }),
     );
+    t.after(() => scoped.close());
 
     const post = await scoped.inject({
       method: 'POST',
@@ -240,13 +241,13 @@ describe('opencode hasKey seam', () => {
       provider.proxyMeta.map((row: { hint: string }) => row.hint),
       ['direct', 'http://b:2/'],
     );
-    await scoped.close();
   });
 
-  it('rejects an out-of-range removeProxyIndex', async () => {
+  it('rejects an out-of-range removeProxyIndex', async (t) => {
     const scoped = await serverFor(
       opencodeConfig({ apiKey: '', extra: { proxies: ['http://a:1'] } }),
     );
+    t.after(() => scoped.close());
 
     const post = await scoped.inject({
       method: 'POST',
@@ -255,10 +256,11 @@ describe('opencode hasKey seam', () => {
       payload: { provider: 'opencode', enabled: true, removeProxyIndex: 9 },
     });
     assert.equal(post.statusCode, 400);
-    await scoped.close();
   });
 
   it('rejects a negative removeProxyIndex', async () => {
+    // Both 400-only cases below are answered before any config is read, so the shared
+    // app is safe here despite its registry being rebuilt by earlier POSTs.
     const post = await app.inject({
       method: 'POST',
       url: '/api/providers',
@@ -279,10 +281,11 @@ describe('opencode hasKey seam', () => {
     assert.equal(post.statusCode, 400);
   });
 
-  it('removes the key at the same index keyMeta reports', async () => {
+  it('removes the key at the same index keyMeta reports', async (t) => {
     const scoped = await serverFor(
       opencodeConfig({ apiKey: '', extra: {}, apiKeys: ['sk-aaa', '   ', 'sk-bbb'] }),
     );
+    t.after(() => scoped.close());
 
     const before = await scoped.inject({
       method: 'GET',
@@ -308,6 +311,95 @@ describe('opencode hasKey seam', () => {
     const provider = response.json().providers.opencode;
     assert.equal(provider.keyMeta.length, 1);
     assert.match(provider.keyMeta[0].hint, /aaa/);
-    await scoped.close();
+  });
+
+  // cleanExtra whitelists extra keys by name only and never inspects array element
+  // values, so a non-string proxy reaches storage verbatim. proxyMeta/proxyCount do
+  // not filter, so delete indices must address that same unfiltered list.
+  it('removes a visible proxy from a list holding a non-string entry', async (t) => {
+    const scoped = await serverFor(opencodeConfig({ apiKey: '', extra: {} }));
+    t.after(() => scoped.close());
+
+    const seed = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', enabled: true, extra: { proxies: [42, 'http://a:1'] } },
+    });
+    assert.equal(seed.statusCode, 200);
+
+    const post = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', enabled: true, removeProxyIndex: 1 },
+    });
+    assert.equal(post.statusCode, 200);
+
+    const response = await scoped.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    const provider = response.json().providers.opencode;
+    assert.equal(provider.proxyCount, 1);
+    assert.deepEqual(
+      provider.proxyMeta.map((row: { hint: string }) => row.hint),
+      [''],
+    );
+  });
+
+  it('removes a non-string proxy without clearing the whole list', async (t) => {
+    const scoped = await serverFor(opencodeConfig({ apiKey: '', extra: {} }));
+    t.after(() => scoped.close());
+
+    const seed = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', enabled: true, extra: { proxies: [42, 'http://a:1'] } },
+    });
+    assert.equal(seed.statusCode, 200);
+
+    const post = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', enabled: true, removeProxyIndex: 0 },
+    });
+    assert.equal(post.statusCode, 200);
+
+    const response = await scoped.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    const provider = response.json().providers.opencode;
+    assert.equal(provider.proxyCount, 1);
+    assert.deepEqual(
+      provider.proxyMeta.map((row: { hint: string }) => row.hint),
+      ['http://a:1/'],
+    );
+  });
+
+  it('rejects removeProxyIndex submitted together with extra.proxies', async (t) => {
+    const scoped = await serverFor(
+      opencodeConfig({ apiKey: '', extra: { proxies: ['http://a:1', 'http://b:2'] } }),
+    );
+    t.after(() => scoped.close());
+
+    const post = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: {
+        provider: 'opencode',
+        enabled: true,
+        extra: { proxies: ['http://new:1', 'http://new2:2'] },
+        removeProxyIndex: 0,
+      },
+    });
+    assert.equal(post.statusCode, 400);
+    assert.match(post.json().error, /conflicts/);
   });
 });

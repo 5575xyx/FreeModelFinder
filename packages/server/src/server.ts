@@ -1024,13 +1024,17 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         ) {
           return reply.code(400).send({ error: 'removeProxyIndex must be a non-negative integer' });
         }
+        // The stored list is addressed by raw position: proxyMeta and proxyCount
+        // do not filter either, so filtering here would make a visible proxy
+        // undeletable and let deleting a hidden entry clear the whole list.
         const proxies = Array.isArray(curCfg.providers[providerId]?.credentials?.extra?.['proxies'])
-          ? (curCfg.providers[providerId]?.credentials?.extra?.['proxies'] as unknown[]).filter(
-              (v): v is string => typeof v === 'string',
-            )
+          ? (curCfg.providers[providerId]?.credentials?.extra?.['proxies'] as unknown[])
           : [];
         if (removeProxyIndex >= proxies.length) {
           return reply.code(400).send({ error: 'removeProxyIndex out of range' });
+        }
+        if (cleanExtra?.['proxies'] !== undefined) {
+          return reply.code(400).send({ error: 'removeProxyIndex conflicts with extra.proxies' });
         }
       }
       if (removeSourceKey || appendSourceKeys) {
@@ -1146,10 +1150,9 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             ...(cleanModels !== undefined ? { models: cleanModels } : {}),
           };
           if (removeProxyIndex !== undefined && providerId === 'opencode') {
+            // Raw position, matching proxyMeta and the range check above.
             const currentProxies = Array.isArray(prevExtra['proxies'])
-              ? (prevExtra['proxies'] as unknown[]).filter(
-                  (value): value is string => typeof value === 'string',
-                )
+              ? (prevExtra['proxies'] as unknown[])
               : [];
             nextExtra.proxies = currentProxies.filter((_, i) => i !== removeProxyIndex);
           }
