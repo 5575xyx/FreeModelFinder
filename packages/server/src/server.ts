@@ -1227,6 +1227,40 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       }
     });
 
+    // One stored entry at a time, on demand. /api/config only ships masked rows, so a
+    // plain settings page load never hands every upstream secret to whoever can reach
+    // this port; the origin guard above is the only thing behind this route.
+    app.post('/api/providers/reveal', async (req, reply) => {
+      const body = (req.body ?? {}) as { provider?: unknown; kind?: unknown; index?: unknown };
+      const parsed = ProviderIdSchema.safeParse(body.provider);
+      if (!parsed.success || parsed.data === 'ollama') {
+        return reply.code(400).send({ error: `unsupported provider: ${String(body.provider)}` });
+      }
+      if (body.kind !== 'key' && body.kind !== 'proxy') {
+        return reply.code(400).send({ error: 'kind must be "key" or "proxy"' });
+      }
+      if (typeof body.index !== 'number' || !Number.isInteger(body.index) || body.index < 0) {
+        return reply.code(400).send({ error: 'index must be a non-negative integer' });
+      }
+
+      // Saved rows stay listable and removable while a provider is disabled, so
+      // `enabled` gates nothing here.
+      const credentials = getRegistry().getConfig().providers[parsed.data]?.credentials;
+      const index = body.index;
+      // Keys index the filtered pool behind keyMeta; proxies index the stored array by
+      // raw position, the same space proxyMeta, proxyCount and removeProxyIndex use.
+      // Filtering the proxy list here would reveal whatever row followed the gap.
+      const value =
+        body.kind === 'key'
+          ? providerKeyPool(credentials)[index]
+          : (Array.isArray(credentials?.extra?.['proxies'])
+              ? (credentials?.extra?.['proxies'] as unknown[])
+              : [])[index];
+
+      if (typeof value !== 'string') return reply.code(404).send({ error: 'not found' });
+      return { value };
+    });
+
     app.post<{ Body: { baseUrl: string; apiKey?: string; sourceId?: string } }>(
       '/api/custom/fetch-models',
       async (req, reply) => {

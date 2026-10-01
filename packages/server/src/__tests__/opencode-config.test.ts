@@ -402,4 +402,121 @@ describe('opencode hasKey seam', () => {
     assert.equal(post.statusCode, 400);
     assert.match(post.json().error, /conflicts/);
   });
+
+  // opencodeConfig leaves the provider disabled on purpose: saved rows are listed and
+  // removable regardless of `enabled`, so revealing one must work the same way.
+  it('reveals one stored key without exposing the others in /api/config', async (t) => {
+    const scoped = await serverFor(
+      opencodeConfig({
+        apiKey: '',
+        apiKeys: ['sk-first-secret', 'sk-second-secret'],
+        extra: { proxies: ['http://user:pw@host:1'] },
+      }),
+    );
+    t.after(() => scoped.close());
+
+    const reveal = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', kind: 'key', index: 1 },
+    });
+    assert.equal(reveal.statusCode, 200);
+    assert.deepEqual(reveal.json(), { value: 'sk-second-secret' });
+
+    const config = await scoped.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    assert.doesNotMatch(config.body, /sk-first-secret/);
+    assert.doesNotMatch(config.body, /sk-second-secret/);
+  });
+
+  it('reveals a stored proxy including its password', async (t) => {
+    const scoped = await serverFor(
+      opencodeConfig({ apiKey: '', extra: { proxies: ['http://user:pw@host:1'] } }),
+    );
+    t.after(() => scoped.close());
+
+    const reveal = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', kind: 'proxy', index: 0 },
+    });
+    assert.equal(reveal.statusCode, 200);
+    assert.equal(reveal.json().value, 'http://user:pw@host:1');
+  });
+
+  // The row at index 1 is what proxyMeta renders as the second row, so a filtered
+  // lookup would hand back 42's slot or miss entirely.
+  it('reveals a proxy at the raw index held by a non-string entry', async (t) => {
+    const scoped = await serverFor(
+      opencodeConfig({ apiKey: '', extra: { proxies: [42, 'http://a:1'] } }),
+    );
+    t.after(() => scoped.close());
+
+    const reveal = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', kind: 'proxy', index: 1 },
+    });
+    assert.equal(reveal.statusCode, 200);
+    assert.deepEqual(reveal.json(), { value: 'http://a:1' });
+  });
+
+  it('returns 404 for an out-of-range reveal index', async (t) => {
+    const scoped = await serverFor(
+      opencodeConfig({ apiKey: '', extra: { proxies: ['http://a:1'] } }),
+    );
+    t.after(() => scoped.close());
+
+    const reveal = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', kind: 'proxy', index: 42 },
+    });
+    assert.equal(reveal.statusCode, 404);
+  });
+
+  it('rejects an unknown reveal kind and a non-integer index', async (t) => {
+    const scoped = await serverFor(
+      opencodeConfig({ apiKey: '', extra: { proxies: ['http://a:1'] } }),
+    );
+    t.after(() => scoped.close());
+
+    const badKind = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', kind: 'nope', index: 0 },
+    });
+    assert.equal(badKind.statusCode, 400);
+
+    const badIndex = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', kind: 'key', index: 1.5 },
+    });
+    assert.equal(badIndex.statusCode, 400);
+  });
+
+  it('requires the ui origin guard for reveal', async (t) => {
+    const scoped = await serverFor(
+      opencodeConfig({ apiKey: '', extra: { proxies: ['http://a:1'] } }),
+    );
+    t.after(() => scoped.close());
+
+    const reveal = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: { 'x-fmf-client': 'ui' },
+      payload: { provider: 'opencode', kind: 'key', index: 0 },
+    });
+    assert.equal(reveal.statusCode, 403);
+  });
 });
