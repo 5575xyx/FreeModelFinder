@@ -1289,7 +1289,12 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
     // plain settings page load never hands every upstream secret to whoever can reach
     // this port; the origin guard above is the only thing behind this route.
     app.post('/api/providers/reveal', async (req, reply) => {
-      const body = (req.body ?? {}) as { provider?: unknown; kind?: unknown; index?: unknown };
+      const body = (req.body ?? {}) as {
+        provider?: unknown;
+        kind?: unknown;
+        index?: unknown;
+        sourceId?: unknown;
+      };
       const parsed = ProviderIdSchema.safeParse(body.provider);
       if (!parsed.success || parsed.data === 'ollama') {
         return reply.code(400).send({ error: `unsupported provider: ${String(body.provider)}` });
@@ -1300,20 +1305,52 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       if (typeof body.index !== 'number' || !Number.isInteger(body.index) || body.index < 0) {
         return reply.code(400).send({ error: 'index must be a non-negative integer' });
       }
+      // sourceId re-points the lookup at extra.sources[], a store only `custom` owns,
+      // and only key rows are addressed there. Mirrors the `source key ops require
+      // provider "custom"` guard on POST /api/providers so both routes agree.
+      if (body.sourceId !== undefined && parsed.data !== 'custom') {
+        return reply.code(400).send({ error: 'sourceId requires provider "custom"' });
+      }
+      if (body.sourceId !== undefined && body.kind !== 'key') {
+        return reply.code(400).send({ error: 'sourceId requires kind "key"' });
+      }
+      if (
+        body.sourceId !== undefined &&
+        (typeof body.sourceId !== 'string' || !body.sourceId.trim())
+      ) {
+        return reply.code(400).send({ error: 'sourceId invalid' });
+      }
 
       // Saved rows stay listable and removable while a provider is disabled, so
       // `enabled` gates nothing here.
-      const credentials = getRegistry().getConfig().providers[parsed.data]?.credentials;
+      const current = getRegistry().getConfig();
+      const credentials = current.providers[parsed.data]?.credentials;
       const index = body.index;
       // Keys index the filtered pool behind keyMeta; proxies index the stored array by
       // raw position, the same space proxyMeta, proxyCount and removeProxyIndex use.
       // Filtering the proxy list here would reveal whatever row followed the gap.
-      const value =
-        body.kind === 'key'
-          ? providerKeyPool(credentials)[index]
-          : (Array.isArray(credentials?.extra?.['proxies'])
-              ? (credentials?.extra?.['proxies'] as unknown[])
-              : [])[index];
+      let value: unknown;
+      if (body.kind === 'proxy') {
+        value = (
+          Array.isArray(credentials?.extra?.['proxies'])
+            ? (credentials?.extra?.['proxies'] as unknown[])
+            : []
+        )[index];
+      } else if (typeof body.sourceId === 'string') {
+        // Same list and same filter buildKeyMeta reads for custom.sources[].keyMeta,
+        // so index addresses the row the UI renders rather than the stored slot.
+        const customExtra = (current.providers.custom?.credentials?.extra ?? {}) as {
+          sources?: Array<{ id?: string; apiKey?: string | string[] }>;
+        };
+        const list = Array.isArray(customExtra.sources) ? customExtra.sources : [];
+        const target = list.find((s) => s?.id === body.sourceId);
+        if (!target) {
+          return reply.code(404).send({ error: `unknown source: ${body.sourceId}` });
+        }
+        value = sourceKeyPool(target.apiKey)[index];
+      } else {
+        value = providerKeyPool(credentials)[index];
+      }
 
       if (typeof value !== 'string') return reply.code(404).send({ error: 'not found' });
       return { value };

@@ -80,6 +80,15 @@ type ConfigRes = {
 
 type Toast = { kind: 'success' | 'error'; text: string } | null;
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+// One masked key row the reveal endpoint can address: a provider-level pool entry, or
+// a custom source entry when sourceId is set.
+type KeyRowTarget = {
+  provider: string;
+  index: number;
+  cacheKey: string;
+  hint: string;
+  sourceId?: string;
+};
 type PingState = 'idle' | 'testing' | 'ok' | 'error';
 type PingResult = {
   state: PingState;
@@ -760,12 +769,19 @@ export function SettingsView({
 
   // keyMeta ids are positional (k0, k1, ...), so a cached plaintext belongs to one
   // slot. Any change to the key lists shifts those slots, and a stale entry would
-  // otherwise keep showing the wrong secret after an add or delete.
+  // otherwise keep showing the wrong secret after an add or delete. Custom source
+  // rows carry their own positional ids, so their lists shift the same way and have
+  // to join the signature.
   const keyMetaSignature = useMemo(
     () =>
-      Object.entries(cfg?.providers ?? {})
-        .map(([id, state]) => `${id}:${(state.keyMeta ?? []).map((row) => row.hint).join(',')}`)
-        .join('|'),
+      [
+        ...Object.entries(cfg?.providers ?? {}).map(
+          ([id, state]) => `${id}:${(state.keyMeta ?? []).map((row) => row.hint).join(',')}`,
+        ),
+        `custom:${(cfg?.custom?.sources ?? [])
+          .map((s) => `${s.id}:${(s.keyMeta ?? []).map((row) => row.hint).join(',')}`)
+          .join('|')}`,
+      ].join('|'),
     [cfg],
   );
   useEffect(() => {
@@ -1452,13 +1468,20 @@ export function SettingsView({
     setTimeout(() => setCopied((c) => (c === id ? null : c)), 1400);
   }
 
-  async function revealProviderKey(providerId: string, index: number): Promise<string> {
+  async function revealProviderKey(target: KeyRowTarget): Promise<string> {
     const res = await fetch(
       `${GATEWAY}/api/providers/reveal`,
       withUiHeaders({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ provider: providerId, kind: 'key', index }),
+        body: JSON.stringify({
+          provider: target.provider,
+          kind: 'key',
+          index: target.index,
+          // Custom source keys live in extra.sources[], a store the provider-level
+          // pool cannot address, so they need the source they belong to.
+          ...(target.sourceId ? { sourceId: target.sourceId } : {}),
+        }),
       }),
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1467,26 +1490,27 @@ export function SettingsView({
     return data.value;
   }
 
-  async function toggleReveal(providerId: string, index: number, cacheKey: string): Promise<void> {
-    if (revealed[cacheKey] !== undefined) {
+  async function toggleReveal(target: KeyRowTarget): Promise<void> {
+    if (revealed[target.cacheKey] !== undefined) {
       setRevealed((prev) => {
         const next = { ...prev };
-        delete next[cacheKey];
+        delete next[target.cacheKey];
         return next;
       });
       return;
     }
     try {
-      const value = await revealProviderKey(providerId, index);
-      setRevealed((prev) => ({ ...prev, [cacheKey]: value }));
+      const value = await revealProviderKey(target);
+      setRevealed((prev) => ({ ...prev, [target.cacheKey]: value }));
     } catch {
       setToast({ kind: 'error', text: t('settings.copyFailed') });
     }
   }
 
-  async function copySecret(providerId: string, index: number, copiedId: string): Promise<void> {
+  async function copySecret(target: KeyRowTarget): Promise<void> {
+    const copiedId = `key-${target.cacheKey}`;
     try {
-      const value = await revealProviderKey(providerId, index);
+      const value = await revealProviderKey(target);
       if (!(await copyToClipboard(value))) {
         setToast({ kind: 'error', text: t('settings.copyFailed') });
         return;
@@ -2409,7 +2433,14 @@ export function SettingsView({
                                 <button
                                   type="button"
                                   disabled={saveState === 'saving'}
-                                  onClick={() => void toggleReveal(p.id, idx, cacheKey)}
+                                  onClick={() =>
+                                    void toggleReveal({
+                                      provider: p.id,
+                                      index: idx,
+                                      cacheKey,
+                                      hint: row.hint,
+                                    })
+                                  }
                                   aria-label={
                                     isRevealed ? t('settings.hideKey') : t('settings.showKey')
                                   }
@@ -2424,7 +2455,14 @@ export function SettingsView({
                                 <button
                                   type="button"
                                   disabled={saveState === 'saving'}
-                                  onClick={() => void copySecret(p.id, idx, `key-${cacheKey}`)}
+                                  onClick={() =>
+                                    void copySecret({
+                                      provider: p.id,
+                                      index: idx,
+                                      cacheKey,
+                                      hint: row.hint,
+                                    })
+                                  }
                                   aria-label={t('settings.copy.apiKey')}
                                   className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                                 >
@@ -2721,28 +2759,76 @@ export function SettingsView({
                           <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                             <KeyRound size={12} strokeWidth={1.75} /> API Key
                           </div>
-                          {(src.keyMeta ?? []).map((row, idx) => (
-                            <div
-                              key={row.id}
-                              className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
-                            >
-                              <code className="flex-1 truncate font-mono text-xs text-foreground">
-                                {row.hint}
-                              </code>
-                              <span className="sr-only">
-                                {t('settings.custom.keyRow', { n: idx + 1, hint: row.hint })}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => void removeSourceKey(src.id, idx)}
-                                disabled={customSaveState === 'saving'}
-                                aria-label={t('settings.custom.removeKey', { n: idx + 1 })}
-                                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                          {(src.keyMeta ?? []).map((row, idx) => {
+                            const cacheKey = `${src.id}:key:${idx}`;
+                            const isRevealed = revealed[cacheKey] !== undefined;
+                            return (
+                              <div
+                                key={row.id}
+                                className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
                               >
-                                <Trash2 size={13} strokeWidth={1.75} />
-                              </button>
-                            </div>
-                          ))}
+                                <code className="flex-1 truncate font-mono text-xs text-foreground">
+                                  {isRevealed ? revealed[cacheKey] : row.hint}
+                                </code>
+                                <span className="sr-only">
+                                  {t('settings.custom.keyRow', { n: idx + 1, hint: row.hint })}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={customSaveState === 'saving'}
+                                  onClick={() =>
+                                    void toggleReveal({
+                                      provider: 'custom',
+                                      index: idx,
+                                      cacheKey,
+                                      hint: row.hint,
+                                      sourceId: src.id,
+                                    })
+                                  }
+                                  aria-label={
+                                    isRevealed ? t('settings.hideKey') : t('settings.showKey')
+                                  }
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                >
+                                  {isRevealed ? (
+                                    <EyeOff size={13} strokeWidth={1.75} />
+                                  ) : (
+                                    <Eye size={13} strokeWidth={1.75} />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={customSaveState === 'saving'}
+                                  onClick={() =>
+                                    void copySecret({
+                                      provider: 'custom',
+                                      index: idx,
+                                      cacheKey,
+                                      hint: row.hint,
+                                      sourceId: src.id,
+                                    })
+                                  }
+                                  aria-label={t('settings.copy.apiKey')}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                >
+                                  {copied === `key-${cacheKey}` ? (
+                                    <Check size={13} strokeWidth={1.75} />
+                                  ) : (
+                                    <Copy size={13} strokeWidth={1.75} />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void removeSourceKey(src.id, idx)}
+                                  disabled={customSaveState === 'saving'}
+                                  aria-label={t('settings.custom.removeKey', { n: idx + 1 })}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                >
+                                  <Trash2 size={13} strokeWidth={1.75} />
+                                </button>
+                              </div>
+                            );
+                          })}
                           {srcDraftRows.map((srcDraft, di) => (
                             <div key={`sd-${di}`} className="relative">
                               <input

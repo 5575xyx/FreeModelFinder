@@ -694,6 +694,112 @@ describe('SettingsView copy buttons', () => {
     await waitFor(() => expect(screen.queryByText('sk-plaintext-1')).toBeNull());
     expect(await screen.findByText('…2222')).toBeTruthy();
   });
+
+  const sourceConfig = (keyMeta: Array<{ id: string; hint: string }>) => ({
+    ...configPayload,
+    custom: {
+      ...configPayload.custom,
+      sources: [{ ...configPayload.custom.sources[0], keyMeta }],
+    },
+  });
+
+  it('reveals one custom source key on demand and addresses it by sourceId', async () => {
+    const user = userEvent.setup();
+    const reveals: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json(sourceConfig([{ id: 'k0', hint: '…9xyz' }])),
+      ),
+      http.post(`${gateway}/api/providers/reveal`, async ({ request }) => {
+        reveals.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ value: 'sk-source-plaintext' });
+      }),
+    );
+    render(<SettingsView />);
+
+    const customSection = await screen.findByLabelText('自定义模型');
+    const hint = await within(customSection).findByText('…9xyz');
+    const controls = hint.parentElement;
+    expect(controls).not.toBeNull();
+    await user.click(within(controls!).getByRole('button', { name: '显示 Key' }));
+
+    expect(await within(customSection).findByText('sk-source-plaintext')).toBeTruthy();
+    expect(reveals[0]).toMatchObject({
+      provider: 'custom',
+      kind: 'key',
+      sourceId: 'fixture-source',
+      index: 0,
+    });
+    expect(JSON.stringify(configPayload)).not.toContain('sk-source-plaintext');
+
+    await user.click(within(controls!).getByRole('button', { name: '隐藏 Key' }));
+    expect(within(customSection).queryByText('sk-source-plaintext')).toBeNull();
+  });
+
+  it('copies a custom source key without flipping the row to revealed', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    override(navigator, 'clipboard', { writeText });
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json(sourceConfig([{ id: 'k0', hint: '…9xyz' }])),
+      ),
+      http.post(`${gateway}/api/providers/reveal`, () =>
+        HttpResponse.json({ value: 'sk-source-copy' }),
+      ),
+    );
+    render(<SettingsView />);
+
+    const customSection = await screen.findByLabelText('自定义模型');
+    const hint = await within(customSection).findByText('…9xyz');
+    const controls = hint.parentElement;
+    expect(controls).not.toBeNull();
+    await user.click(within(controls!).getByRole('button', { name: '复制 API Key' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('sk-source-copy'));
+    expect(within(customSection).queryByText('sk-source-copy')).toBeNull();
+    expect(within(controls!).getByRole('button', { name: '显示 Key' })).toBeTruthy();
+  });
+
+  it('drops a cached custom source plaintext once a delete renumbers the rows', async () => {
+    const user = userEvent.setup();
+    let removed = false;
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json(
+          sourceConfig(
+            removed
+              ? [{ id: 'k0', hint: '…2222' }]
+              : [
+                  { id: 'k0', hint: '…1111' },
+                  { id: 'k1', hint: '…2222' },
+                ],
+          ),
+        ),
+      ),
+      http.post(`${gateway}/api/providers/reveal`, () =>
+        HttpResponse.json({ value: 'sk-src-first' }),
+      ),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        if (body.removeSourceKey) removed = true;
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    render(<SettingsView />);
+
+    const customSection = await screen.findByLabelText('自定义模型');
+    const first = await within(customSection).findByText('…1111');
+    const controls = first.parentElement;
+    expect(controls).not.toBeNull();
+    await user.click(within(controls!).getByRole('button', { name: '显示 Key' }));
+    expect(await within(customSection).findByText('sk-src-first')).toBeTruthy();
+
+    await user.click(within(controls!).getByRole('button', { name: '删除 Key 1' }));
+
+    await waitFor(() => expect(within(customSection).queryByText('sk-src-first')).toBeNull());
+    expect(await within(customSection).findByText('…2222')).toBeTruthy();
+  });
 });
 
 const SHORT_GATEWAY_KEY = 'key-a';

@@ -33,6 +33,19 @@ function opencodeConfig(credentials: ProviderCredentials): AppConfig {
   };
 }
 
+// Custom source keys live in extra.sources[].apiKey, a different store from the
+// provider-level apiKey/apiKeys the other reveal cases address.
+function customSourcesConfig(
+  sources: Array<{ id: string; apiKey?: string | string[] }>,
+): AppConfig {
+  return {
+    ...testConfig(),
+    providers: {
+      custom: { enabled: true, credentials: { apiKey: '', extra: { sources } } },
+    },
+  };
+}
+
 // POST /api/providers rebuilds the registry from the persisted config, so a shared
 // registry binding goes stale after the first POST. Seeding both the store and a
 // fresh registry keeps the displayed rows and the persisted list in lockstep.
@@ -522,5 +535,106 @@ describe('opencode hasKey seam', () => {
       payload: { provider: 'opencode', kind: 'key', index: 0 },
     });
     assert.equal(reveal.statusCode, 403);
+  });
+
+  it('reveals one stored custom source key without exposing it in /api/config', async (t) => {
+    const scoped = await serverFor(
+      customSourcesConfig([
+        { id: 'alpha', apiKey: ['sk-alpha-first', 'sk-alpha-second'] },
+        { id: 'beta', apiKey: 'sk-beta-only' },
+      ]),
+    );
+    t.after(() => scoped.close());
+
+    const reveal = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'custom', kind: 'key', sourceId: 'alpha', index: 1 },
+    });
+    assert.equal(reveal.statusCode, 200);
+    assert.deepEqual(reveal.json(), { value: 'sk-alpha-second' });
+
+    const config = await scoped.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    assert.doesNotMatch(config.body, /sk-alpha-first/);
+    assert.doesNotMatch(config.body, /sk-alpha-second/);
+    assert.doesNotMatch(config.body, /sk-beta-only/);
+  });
+
+  it('addresses a custom source key by the source it belongs to', async (t) => {
+    const scoped = await serverFor(
+      customSourcesConfig([
+        { id: 'alpha', apiKey: 'sk-alpha-only' },
+        { id: 'beta', apiKey: 'sk-beta-only' },
+      ]),
+    );
+    t.after(() => scoped.close());
+
+    const reveal = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'custom', kind: 'key', sourceId: 'beta', index: 0 },
+    });
+    assert.equal(reveal.statusCode, 200);
+    assert.equal(reveal.json().value, 'sk-beta-only');
+  });
+
+  it('returns 404 when revealing a key of an unknown custom source', async (t) => {
+    const scoped = await serverFor(customSourcesConfig([{ id: 'alpha', apiKey: 'sk-alpha-only' }]));
+    t.after(() => scoped.close());
+
+    const reveal = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'custom', kind: 'key', sourceId: 'ghost', index: 0 },
+    });
+    assert.equal(reveal.statusCode, 404);
+  });
+
+  it('returns 404 for an out-of-range custom source key index', async (t) => {
+    const scoped = await serverFor(customSourcesConfig([{ id: 'alpha', apiKey: 'sk-alpha-only' }]));
+    t.after(() => scoped.close());
+
+    const reveal = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'custom', kind: 'key', sourceId: 'alpha', index: 7 },
+    });
+    assert.equal(reveal.statusCode, 404);
+  });
+
+  it('rejects sourceId for a provider other than custom', async (t) => {
+    const scoped = await serverFor(opencodeConfig({ apiKey: '', apiKeys: ['sk-opencode'] }));
+    t.after(() => scoped.close());
+
+    const reveal = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'opencode', kind: 'key', sourceId: 'alpha', index: 0 },
+    });
+    assert.equal(reveal.statusCode, 400);
+    assert.match(reveal.json().error, /custom/);
+  });
+
+  it('rejects sourceId on a proxy reveal, which addresses no source list', async (t) => {
+    const scoped = await serverFor(customSourcesConfig([{ id: 'alpha', apiKey: 'sk-alpha-only' }]));
+    t.after(() => scoped.close());
+
+    const reveal = await scoped.inject({
+      method: 'POST',
+      url: '/api/providers/reveal',
+      headers: localUiHeaders,
+      payload: { provider: 'custom', kind: 'proxy', sourceId: 'alpha', index: 0 },
+    });
+    assert.equal(reveal.statusCode, 400);
+    assert.match(reveal.json().error, /key/);
   });
 });
