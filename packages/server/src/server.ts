@@ -812,6 +812,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         clearCredentials?: boolean;
         appendKeys?: string[];
         removeKeyIndex?: number;
+        removeProxyIndex?: number;
         extra?: Record<string, unknown>;
         models?: Array<{ id: string; displayName?: string; contextWindow?: number }>;
         sources?: Array<{
@@ -837,6 +838,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         sources,
         appendKeys,
         removeKeyIndex,
+        removeProxyIndex,
         extra,
         appendSourceKeys,
         removeSourceKey,
@@ -1011,6 +1013,26 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           return reply.code(400).send({ error: 'removeKeyIndex out of range' });
         }
       }
+      if (removeProxyIndex !== undefined) {
+        if (providerId !== 'opencode') {
+          return reply.code(400).send({ error: 'removeProxyIndex requires provider "opencode"' });
+        }
+        if (
+          typeof removeProxyIndex !== 'number' ||
+          !Number.isInteger(removeProxyIndex) ||
+          removeProxyIndex < 0
+        ) {
+          return reply.code(400).send({ error: 'removeProxyIndex must be a non-negative integer' });
+        }
+        const proxies = Array.isArray(curCfg.providers[providerId]?.credentials?.extra?.['proxies'])
+          ? (curCfg.providers[providerId]?.credentials?.extra?.['proxies'] as unknown[]).filter(
+              (v): v is string => typeof v === 'string',
+            )
+          : [];
+        if (removeProxyIndex >= proxies.length) {
+          return reply.code(400).send({ error: 'removeProxyIndex out of range' });
+        }
+      }
       if (removeSourceKey || appendSourceKeys) {
         const customExtra = (curCfg.providers.custom?.credentials?.extra ?? {}) as {
           sources?: Array<{ id?: string; apiKey?: string | string[] }>;
@@ -1118,18 +1140,27 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             return cfg;
           }
 
-          const nextExtra = {
+          const nextExtra: Record<string, unknown> = {
             ...prevExtra,
             ...(cleanExtra ?? {}),
             ...(cleanModels !== undefined ? { models: cleanModels } : {}),
           };
+          if (removeProxyIndex !== undefined && providerId === 'opencode') {
+            const currentProxies = Array.isArray(prevExtra['proxies'])
+              ? (prevExtra['proxies'] as unknown[]).filter(
+                  (value): value is string => typeof value === 'string',
+                )
+              : [];
+            nextExtra.proxies = currentProxies.filter((_, i) => i !== removeProxyIndex);
+          }
           let nextApiKeys =
             cleanApiKeys !== undefined
               ? cleanApiKeys
               : cleanApiKey
                 ? [cleanApiKey]
-                : (cur.credentials?.apiKeys ??
-                  (cur.credentials?.apiKey ? [cur.credentials.apiKey] : undefined));
+                : cur.credentials?.apiKeys
+                  ? providerKeyPool(cur.credentials)
+                  : undefined;
           if (removeKeyIndex !== undefined && !shouldClear) {
             const base = nextApiKeys ?? providerKeyPool(cur.credentials);
             if (removeKeyIndex < base.length) {
