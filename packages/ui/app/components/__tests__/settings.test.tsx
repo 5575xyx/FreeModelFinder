@@ -511,6 +511,100 @@ describe('SettingsView copy buttons', () => {
   });
 });
 
+const SHORT_GATEWAY_KEY = 'key-a';
+const LONG_GATEWAY_KEY = 'fmf_live_0123456789abcdef0123456789abcdef0123456789';
+
+function gatewayKeyRow(label: string): HTMLElement {
+  const row = screen.getByText(label).closest('div.rounded-md');
+  expect(row).not.toBeNull();
+  return row as HTMLElement;
+}
+
+function gatewayKeyMask(label: string): string {
+  return within(gatewayKeyRow(label)).getByText(/^•+$/).textContent ?? '';
+}
+
+describe('gateway key masking', () => {
+  it('masks short and long keys to the same length so the key length cannot be read off', async () => {
+    expect(SHORT_GATEWAY_KEY.length).toBeLessThan(36);
+    expect(LONG_GATEWAY_KEY.length).toBeGreaterThan(36);
+    server.use(
+      http.get(`${gateway}/api/gateway`, () =>
+        HttpResponse.json({
+          hasKey: true,
+          apiKey: null,
+          requireAuth: true,
+          port: 11435,
+          keys: [
+            {
+              id: 'k-short',
+              label: '短钥匙',
+              key: SHORT_GATEWAY_KEY,
+              createdAt: 1_700_000_000_000,
+              expiresAt: null,
+              dailyRequestLimit: null,
+              dailyTokenLimit: null,
+            },
+            {
+              id: 'k-long',
+              label: '长钥匙',
+              key: LONG_GATEWAY_KEY,
+              createdAt: 1_700_000_000_000,
+              expiresAt: null,
+              dailyRequestLimit: null,
+              dailyTokenLimit: null,
+            },
+          ],
+        }),
+      ),
+    );
+    render(<SettingsView />);
+
+    await screen.findAllByText(/^•+$/);
+    expect(gatewayKeyMask('短钥匙')).toBe('•'.repeat(36));
+    expect(gatewayKeyMask('长钥匙')).toBe('•'.repeat(36));
+    expect(gatewayKeyMask('短钥匙')).toBe(gatewayKeyMask('长钥匙'));
+    expect(within(gatewayKeyRow('短钥匙')).queryByText(SHORT_GATEWAY_KEY)).toBeNull();
+    expect(within(gatewayKeyRow('长钥匙')).queryByText(LONG_GATEWAY_KEY)).toBeNull();
+  });
+
+  it('keeps the mask fixed width after the reveal toggle round-trips', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get(`${gateway}/api/gateway`, () =>
+        HttpResponse.json({
+          hasKey: true,
+          apiKey: null,
+          requireAuth: true,
+          port: 11435,
+          keys: [
+            {
+              id: 'k-short',
+              label: '短钥匙',
+              key: SHORT_GATEWAY_KEY,
+              createdAt: 1_700_000_000_000,
+              expiresAt: null,
+              dailyRequestLimit: null,
+              dailyTokenLimit: null,
+            },
+          ],
+        }),
+      ),
+    );
+    render(<SettingsView />);
+
+    const row = () => gatewayKeyRow('短钥匙');
+    await waitFor(() =>
+      expect(within(row()).getByRole('button', { name: '显示 Key' })).toBeTruthy(),
+    );
+    await user.click(within(row()).getByRole('button', { name: '显示 Key' }));
+    expect(within(row()).getByText(SHORT_GATEWAY_KEY)).toBeTruthy();
+
+    await user.click(within(row()).getByRole('button', { name: '隐藏 Key' }));
+    expect(gatewayKeyMask('短钥匙')).toBe('•'.repeat(36));
+  });
+});
+
 describe('matchesCapability', () => {
   const legacy: ModelOption = { id: 'custom:fixture:legacy', provider: 'custom' };
   const imageByName: ModelOption = { id: 'custom:image-gen', provider: 'custom' };

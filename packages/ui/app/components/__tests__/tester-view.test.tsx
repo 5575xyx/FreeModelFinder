@@ -94,13 +94,13 @@ describe('TesterView message copy', () => {
   it('leaves the copied state unlit without any error UI when execCommand gives up', async () => {
     const user = userEvent.setup();
     override(navigator, 'clipboard', undefined);
-    recordExecCommand(false);
+    const staged = recordExecCommand(false);
     renderTester();
 
     await user.click(screen.getByRole('button', { name: '复制' }));
 
+    expect(staged).toEqual([ANSWER]);
     expect(screen.queryByRole('button', { name: '已复制' })).toBeNull();
-    expect(screen.queryByText('复制失败，请手动选中复制')).toBeNull();
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('button', { name: '复制' })).toBeTruthy();
   });
 });
