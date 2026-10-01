@@ -193,7 +193,7 @@ describe('opencode hasKey seam', () => {
         enabled: true,
         extra: {
           anonymous: true,
-          proxies: ['http://user:secret@host:8080', 'socks5://10.0.0.1:1080', 'direct'],
+          proxies: ['user:secret@host:8080', 'http://user:secret@host:2', 'direct'],
         },
       },
     });
@@ -213,6 +213,10 @@ describe('opencode hasKey seam', () => {
     );
     assert.doesNotMatch(JSON.stringify(provider.proxyMeta), /secret/);
     assert.match(provider.proxyMeta[0].hint, /\*\*\*/);
+    assert.deepEqual(
+      provider.proxyMeta.map((row: { hint: string }) => row.hint),
+      ['***@host:8080', 'http://***@host:2/', 'direct'],
+    );
   });
 
   it('removes a single proxy via removeProxyIndex', async (t) => {

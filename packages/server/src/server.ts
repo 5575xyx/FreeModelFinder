@@ -307,11 +307,69 @@ function buildKeyMeta(keys: readonly string[]): Array<{ id: string; hint: string
     }));
 }
 
+/**
+ * Splits the userinfo component out of a proxy authority without relying on
+ * `new URL()`. WHATWG URL parses a schemeless `user:pass@host:port` as
+ * scheme=`user:`, pathname=`pass@host:port` with empty username/password, so
+ * `redactProxy` skips redaction entirely and returns the credentials verbatim.
+ * Returns `null` when the authority has no `@`, i.e. no userinfo can exist.
+ */
+function splitProxyUserinfo(raw: string): { head: string; userinfo: string; tail: string } | null {
+  // Locate the authority by scanning for the scheme delimiter rather than
+  // matching a valid scheme: a malformed prefix such as `://user:pass@host` or
+  // `sch eme://user:pass@host` must not hide the authority from redaction.
+  let authorityStart = 0;
+  for (let i = 0; i < raw.length; i += 1) {
+    const char = raw[i];
+    if (char === ':' && raw.slice(i + 1, i + 3) === '//') {
+      authorityStart = i + 3;
+      break;
+    }
+    if (char === '/' && i === 0 && raw[1] === '/') {
+      authorityStart = 2;
+      break;
+    }
+    if (char === '/' || char === '?' || char === '#') break;
+  }
+  const rest = raw.slice(authorityStart);
+  let authorityEnd = rest.length;
+  for (let i = 0; i < rest.length; i += 1) {
+    const char = rest[i];
+    if (char === '/' || char === '?' || char === '#') {
+      authorityEnd = i;
+      break;
+    }
+  }
+  const authority = rest.slice(0, authorityEnd);
+  // Last `@` wins: an unencoded `@` inside a password is legal in practice and
+  // trailing-userinfo parsing (RFC 3986 / curl) splits on the final one.
+  const at = authority.lastIndexOf('@');
+  if (at < 0) return null;
+  return {
+    head: raw.slice(0, authorityStart),
+    userinfo: authority.slice(0, at),
+    tail: rest.slice(at),
+  };
+}
+
+/**
+ * Hint text for a stored proxy entry. Strips userinfo structurally first, then
+ * hands the sanitized value to `redactProxy` purely for normalization (trailing
+ * slash, etc.). Sanitizing before redacting keeps the `hint === raw` comparison
+ * unreliable: URL parsing normalizes input, so `user:pass@host\nx` comes back
+ * with the newline stripped and the heuristic would miss the credential.
+ */
+function redactProxyHint(raw: string): string {
+  const parts = splitProxyUserinfo(raw);
+  if (!parts) return redactProxy(raw);
+  return redactProxy(`${parts.head}***${parts.tail}`);
+}
+
 function buildProxyMeta(proxies: unknown): Array<{ id: string; hint: string }> {
   if (!Array.isArray(proxies)) return [];
   return proxies.map((raw, index) => ({
     id: `p${index}`,
-    hint: redactProxy(typeof raw === 'string' ? raw : ''),
+    hint: typeof raw === 'string' ? redactProxyHint(raw) : '',
   }));
 }
 
