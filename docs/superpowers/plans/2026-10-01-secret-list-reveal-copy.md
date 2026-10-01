@@ -341,13 +341,15 @@ function buildProxyMeta(proxies: unknown): Array<{ id: string; hint: string }> {
 }
 ```
 
-并在文件顶部 import 区加入（与既有 `@freemodelfinder/zen` 导入合并）：
+`redactProxy` 由 `@freemodelfinder/zen` 导出（`packages/zen/src/index.ts:3` 转出 `./proxy/spec.js`，`spec.ts:7` 定义该函数）。
 
-```ts
-import { redactProxy } from '@freemodelfinder/zen';
+**依赖前置**：`packages/server/package.json` 当前只有 `@freemodelfinder/core`，**没有** `@freemodelfinder/zen`。因此必须先在该文件 `dependencies` 中加 `"@freemodelfinder/zen": "workspace:*"`，再执行：
+
+```bash
+pnpm install --frozen-lockfile
 ```
 
-确认 `@freemodelfinder/zen` 已在 `packages/server/package.json` 的 `dependencies` 中；若不在则改为相对路径不可行，必须先在该 package.json 添加依赖并执行 `pnpm install --frozen-lockfile`（此时 lockfile 会变化，需在 commit 说明中注明）。
+若 `--frozen-lockfile` 因 lockfile 未包含新依赖而失败，改用 `pnpm install` 更新 lockfile，并把 `pnpm-lock.yaml` 一并纳入本次提交。
 
 再在 opencode 读取分支（`:663-676`）的 `proxyCount` 之后追加：
 
