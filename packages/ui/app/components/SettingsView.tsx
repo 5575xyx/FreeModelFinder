@@ -155,6 +155,8 @@ function OpenCodeZenExtras({
   const [goKeys, setGoKeys] = useState('');
   const [proxies, setProxies] = useState('');
   const [proxyMeta, setProxyMeta] = useState(extra.proxyMeta ?? []);
+  const [revealedProxy, setRevealedProxy] = useState<Record<number, string>>({});
+  const [copiedProxy, setCopiedProxy] = useState<number | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [retry, setRetry] = useState('');
   const [models, setModels] = useState('');
@@ -163,7 +165,13 @@ function OpenCodeZenExtras({
 
   useEffect(() => setAnonymous(extra.anonymous), [extra.anonymous]);
   useEffect(() => setPrefer(extra.prefer ?? 'go'), [extra.prefer]);
-  useEffect(() => setProxyMeta(extra.proxyMeta ?? []), [extra.proxyMeta]);
+  useEffect(() => {
+    setProxyMeta(extra.proxyMeta ?? []);
+    // proxyMeta ids are positional (p0, p1, ...), so a revealed plaintext belongs to
+    // one slot. Reloading can renumber the slots, so drop the cache with the rows.
+    setRevealedProxy({});
+    setCopiedProxy(null);
+  }, [extra.proxyMeta]);
 
   async function postExtra(
     patch: Record<string, unknown>,
@@ -183,6 +191,52 @@ function OpenCodeZenExtras({
       }),
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  }
+
+  async function fetchProxySecret(index: number): Promise<string> {
+    const res = await fetch(
+      `${GATEWAY}/api/providers/reveal`,
+      withUiHeaders({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider: 'opencode', kind: 'proxy', index }),
+      }),
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json()) as { value?: string };
+    if (typeof data.value !== 'string') throw new Error('reveal returned no value');
+    return data.value;
+  }
+
+  async function toggleProxyReveal(index: number): Promise<void> {
+    if (revealedProxy[index] !== undefined) {
+      setRevealedProxy((prev) => {
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
+      return;
+    }
+    try {
+      const value = await fetchProxySecret(index);
+      setRevealedProxy((prev) => ({ ...prev, [index]: value }));
+    } catch {
+      onToast({ kind: 'error', text: t('settings.copyFailed') });
+    }
+  }
+
+  async function copyProxySecret(index: number): Promise<void> {
+    try {
+      const value = revealedProxy[index] ?? (await fetchProxySecret(index));
+      if (!(await copyToClipboard(value))) {
+        onToast({ kind: 'error', text: t('settings.copyFailed') });
+        return;
+      }
+      setCopiedProxy(index);
+      setTimeout(() => setCopiedProxy((c) => (c === index ? null : c)), 1400);
+    } catch {
+      onToast({ kind: 'error', text: t('settings.copyFailed') });
+    }
   }
 
   async function run(key: string, task: () => Promise<void>): Promise<void> {
@@ -371,28 +425,59 @@ function OpenCodeZenExtras({
           {busy === 'proxies' && <Loader2 size={12} strokeWidth={2} className="animate-spin" />}
           {t('settings.opencode.saveProxies')}
         </button>
-        {proxyMeta.map((row, idx) => (
-          <div
-            key={row.id}
-            className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
-          >
-            <code className="flex-1 truncate font-mono text-xs text-foreground">{row.hint}</code>
-            <span className="sr-only">{t('settings.opencode.proxies.row', { n: idx + 1 })}</span>
-            <button
-              type="button"
-              disabled={busy !== null}
-              onClick={() =>
-                void run('proxies', async () => {
-                  await postExtra({}, { topLevel: { removeProxyIndex: idx } });
-                })
-              }
-              aria-label={t('settings.opencode.proxies.remove', { n: idx + 1 })}
-              className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        {proxyMeta.map((row, idx) => {
+          const isRevealed = revealedProxy[idx] !== undefined;
+          return (
+            <div
+              key={row.id}
+              className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
             >
-              <Trash2 size={13} strokeWidth={1.75} />
-            </button>
-          </div>
-        ))}
+              <code className="flex-1 truncate font-mono text-xs text-foreground">
+                {isRevealed ? revealedProxy[idx] : row.hint}
+              </code>
+              <span className="sr-only">{t('settings.opencode.proxies.row', { n: idx + 1 })}</span>
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => void toggleProxyReveal(idx)}
+                aria-label={isRevealed ? t('settings.hideKey') : t('settings.showKey')}
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                {isRevealed ? (
+                  <EyeOff size={13} strokeWidth={1.75} />
+                ) : (
+                  <Eye size={13} strokeWidth={1.75} />
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => void copyProxySecret(idx)}
+                aria-label={t('settings.copy.proxy')}
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                {copiedProxy === idx ? (
+                  <Check size={13} strokeWidth={1.75} />
+                ) : (
+                  <Copy size={13} strokeWidth={1.75} />
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() =>
+                  void run('proxies', async () => {
+                    await postExtra({}, { topLevel: { removeProxyIndex: idx } });
+                  })
+                }
+                aria-label={t('settings.opencode.proxies.remove', { n: idx + 1 })}
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                <Trash2 size={13} strokeWidth={1.75} />
+              </button>
+            </div>
+          );
+        })}
         {proxyMeta.length > 0 && (
           <button
             type="button"
@@ -502,6 +587,7 @@ export function SettingsView({
   const [newKeyDailyTokens, setNewKeyDailyTokens] = useState('');
   const [newKeyExpires, setNewKeyExpires] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
 
   const [customSectionOpen, setCustomSectionOpen] = useState(true);
   const [customSources, setCustomSources] = useState<CustomSourceDef[]>([]);
@@ -671,6 +757,20 @@ export function SettingsView({
       .then((config) => setCfg(config))
       .catch(() => {});
   }, []);
+
+  // keyMeta ids are positional (k0, k1, ...), so a cached plaintext belongs to one
+  // slot. Any change to the key lists shifts those slots, and a stale entry would
+  // otherwise keep showing the wrong secret after an add or delete.
+  const keyMetaSignature = useMemo(
+    () =>
+      Object.entries(cfg?.providers ?? {})
+        .map(([id, state]) => `${id}:${(state.keyMeta ?? []).map((row) => row.hint).join(',')}`)
+        .join('|'),
+    [cfg],
+  );
+  useEffect(() => {
+    setRevealed({});
+  }, [keyMetaSignature]);
 
   useEffect(() => {
     fetch(`${GATEWAY}/api/config`, withUiHeaders())
@@ -1350,6 +1450,52 @@ export function SettingsView({
     }
     setCopied(id);
     setTimeout(() => setCopied((c) => (c === id ? null : c)), 1400);
+  }
+
+  async function revealProviderKey(providerId: string, index: number): Promise<string> {
+    const res = await fetch(
+      `${GATEWAY}/api/providers/reveal`,
+      withUiHeaders({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider: providerId, kind: 'key', index }),
+      }),
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json()) as { value?: string };
+    if (typeof data.value !== 'string') throw new Error('reveal returned no value');
+    return data.value;
+  }
+
+  async function toggleReveal(providerId: string, index: number, cacheKey: string): Promise<void> {
+    if (revealed[cacheKey] !== undefined) {
+      setRevealed((prev) => {
+        const next = { ...prev };
+        delete next[cacheKey];
+        return next;
+      });
+      return;
+    }
+    try {
+      const value = await revealProviderKey(providerId, index);
+      setRevealed((prev) => ({ ...prev, [cacheKey]: value }));
+    } catch {
+      setToast({ kind: 'error', text: t('settings.copyFailed') });
+    }
+  }
+
+  async function copySecret(providerId: string, index: number, copiedId: string): Promise<void> {
+    try {
+      const value = await revealProviderKey(providerId, index);
+      if (!(await copyToClipboard(value))) {
+        setToast({ kind: 'error', text: t('settings.copyFailed') });
+        return;
+      }
+      setCopied(copiedId);
+      setTimeout(() => setCopied((c) => (c === copiedId ? null : c)), 1400);
+    } catch {
+      setToast({ kind: 'error', text: t('settings.copyFailed') });
+    }
   }
 
   const gatewayBaseUrl = (gateway?.publicBaseUrl || GATEWAY).replace(/\/$/, '');
@@ -2246,28 +2392,60 @@ export function SettingsView({
                       )}
                       {!isCline && (
                         <>
-                          {(state?.keyMeta ?? []).map((row, idx) => (
-                            <div
-                              key={row.id}
-                              className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
-                            >
-                              <code className="flex-1 truncate font-mono text-xs text-foreground">
-                                {row.hint}
-                              </code>
-                              <span className="sr-only">
-                                {t('settings.sources.keyRow', { n: idx + 1, hint: row.hint })}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => void removeProviderKey(p.id, idx)}
-                                disabled={saveState === 'saving'}
-                                aria-label={t('settings.sources.removeKey', { n: idx + 1 })}
-                                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                          {(state?.keyMeta ?? []).map((row, idx) => {
+                            const cacheKey = `${p.id}:key:${idx}`;
+                            const isRevealed = revealed[cacheKey] !== undefined;
+                            return (
+                              <div
+                                key={row.id}
+                                className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
                               >
-                                <Trash2 size={13} strokeWidth={1.75} />
-                              </button>
-                            </div>
-                          ))}
+                                <code className="flex-1 truncate font-mono text-xs text-foreground">
+                                  {isRevealed ? revealed[cacheKey] : row.hint}
+                                </code>
+                                <span className="sr-only">
+                                  {t('settings.sources.keyRow', { n: idx + 1, hint: row.hint })}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={saveState === 'saving'}
+                                  onClick={() => void toggleReveal(p.id, idx, cacheKey)}
+                                  aria-label={
+                                    isRevealed ? t('settings.hideKey') : t('settings.showKey')
+                                  }
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                >
+                                  {isRevealed ? (
+                                    <EyeOff size={13} strokeWidth={1.75} />
+                                  ) : (
+                                    <Eye size={13} strokeWidth={1.75} />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={saveState === 'saving'}
+                                  onClick={() => void copySecret(p.id, idx, `key-${cacheKey}`)}
+                                  aria-label={t('settings.copy.apiKey')}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                >
+                                  {copied === `key-${cacheKey}` ? (
+                                    <Check size={13} strokeWidth={1.75} />
+                                  ) : (
+                                    <Copy size={13} strokeWidth={1.75} />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void removeProviderKey(p.id, idx)}
+                                  disabled={saveState === 'saving'}
+                                  aria-label={t('settings.sources.removeKey', { n: idx + 1 })}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                >
+                                  <Trash2 size={13} strokeWidth={1.75} />
+                                </button>
+                              </div>
+                            );
+                          })}
                           {draftRows.map((draft, di) => (
                             <div key={`draft-${di}`} className="relative">
                               <input

@@ -575,6 +575,125 @@ describe('SettingsView copy buttons', () => {
     expect(staged).toEqual([gateway]);
     expect(await screen.findByText('复制失败，请手动选中复制')).toBeTruthy();
   });
+
+  it('reveals one saved key on demand without shipping plaintext in /api/config', async () => {
+    const user = userEvent.setup();
+    const reveals: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            openrouter: {
+              enabled: true,
+              hasKey: true,
+              keyCount: 1,
+              keyMeta: [{ id: 'k0', hint: '…wxyz' }],
+            },
+          },
+        }),
+      ),
+      http.post(`${gateway}/api/providers/reveal`, async ({ request }) => {
+        reveals.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ value: 'sk-revealed-value' });
+      }),
+    );
+    render(<SettingsView />);
+
+    const hint = await screen.findByText('…wxyz');
+    expect(JSON.stringify(configPayload)).not.toContain('sk-revealed-value');
+    const controls = hint.parentElement;
+    expect(controls).not.toBeNull();
+    await user.click(within(controls!).getByRole('button', { name: '显示 Key' }));
+
+    expect(await screen.findByText('sk-revealed-value')).toBeTruthy();
+    expect(reveals[0]).toMatchObject({ provider: 'openrouter', kind: 'key', index: 0 });
+
+    await user.click(within(controls!).getByRole('button', { name: '隐藏 Key' }));
+    expect(screen.queryByText('sk-revealed-value')).toBeNull();
+  });
+
+  it('copies a saved key without flipping the row to revealed', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    override(navigator, 'clipboard', { writeText });
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            openrouter: {
+              enabled: true,
+              hasKey: true,
+              keyCount: 1,
+              keyMeta: [{ id: 'k0', hint: '…wxyz' }],
+            },
+          },
+        }),
+      ),
+      http.post(`${gateway}/api/providers/reveal`, () =>
+        HttpResponse.json({ value: 'sk-copy-me' }),
+      ),
+    );
+    render(<SettingsView />);
+
+    const hint = await screen.findByText('…wxyz');
+    const controls = hint.parentElement;
+    expect(controls).not.toBeNull();
+    await user.click(within(controls!).getByRole('button', { name: '复制 API Key' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('sk-copy-me'));
+    expect(screen.queryByText('sk-copy-me')).toBeNull();
+    expect(within(controls!).getByRole('button', { name: '显示 Key' })).toBeTruthy();
+  });
+
+  it('drops a cached plaintext once a delete renumbers the remaining key rows', async () => {
+    const user = userEvent.setup();
+    let removed = false;
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            openrouter: {
+              enabled: true,
+              hasKey: true,
+              keyCount: removed ? 1 : 2,
+              keyMeta: removed
+                ? [{ id: 'k0', hint: '…2222' }]
+                : [
+                    { id: 'k0', hint: '…1111' },
+                    { id: 'k1', hint: '…2222' },
+                  ],
+            },
+          },
+        }),
+      ),
+      http.post(`${gateway}/api/providers/reveal`, () =>
+        HttpResponse.json({ value: 'sk-plaintext-1' }),
+      ),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        if (body.removeKeyIndex === 0) removed = true;
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    render(<SettingsView />);
+
+    const first = await screen.findByText('…1111');
+    const controls = first.parentElement;
+    expect(controls).not.toBeNull();
+    await user.click(within(controls!).getByRole('button', { name: '显示 Key' }));
+    expect(await screen.findByText('sk-plaintext-1')).toBeTruthy();
+
+    await user.click(within(controls!).getByRole('button', { name: '删除 Key 1' }));
+
+    await waitFor(() => expect(screen.queryByText('sk-plaintext-1')).toBeNull());
+    expect(await screen.findByText('…2222')).toBeTruthy();
+  });
 });
 
 const SHORT_GATEWAY_KEY = 'key-a';
