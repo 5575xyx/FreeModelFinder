@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -799,6 +799,240 @@ describe('SettingsView copy buttons', () => {
 
     await waitFor(() => expect(within(customSection).queryByText('sk-src-first')).toBeNull());
     expect(await within(customSection).findByText('…2222')).toBeTruthy();
+  });
+
+  const twoKeyConfig = (first: string, second: string) => ({
+    ...configPayload,
+    providers: {
+      ...configPayload.providers,
+      openrouter: {
+        enabled: true,
+        hasKey: true,
+        keyCount: 2,
+        keyMeta: [
+          { id: 'k0', hint: first },
+          { id: 'k1', hint: second },
+        ],
+      },
+    },
+  });
+
+  const gatedReveal = (value: string) => {
+    const state: { release: (() => void) | null; pending: Promise<void> } = {
+      release: null,
+      pending: Promise.resolve(),
+    };
+    state.pending = new Promise<void>((resolve) => {
+      state.release = resolve;
+    });
+    return {
+      state,
+      handler: http.post(`${gateway}/api/providers/reveal`, async () => {
+        await state.pending;
+        return HttpResponse.json({ value });
+      }),
+    };
+  };
+
+  it('locks the key row while its reveal is in flight so a delete cannot renumber it', async () => {
+    const user = userEvent.setup();
+    const writes: Array<Record<string, unknown>> = [];
+    const reveal = gatedReveal('sk-inflight-plaintext');
+    server.use(
+      http.get(`${gateway}/api/config`, () => HttpResponse.json(twoKeyConfig('…aaaa', '…bbbb'))),
+      reveal.handler,
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    render(<SettingsView />);
+
+    const first = await screen.findByText('…aaaa');
+    const controls = first.parentElement;
+    expect(controls).not.toBeNull();
+    const remove = within(controls!).getByRole('button', { name: '删除 Key 1' });
+    await user.click(within(controls!).getByRole('button', { name: '显示 Key' }));
+
+    await waitFor(() => expect((remove as HTMLButtonElement).disabled).toBe(true));
+    await user.click(remove);
+    reveal.state.release!();
+
+    expect(await screen.findByText('sk-inflight-plaintext')).toBeTruthy();
+    expect(writes).toEqual([]);
+    expect(screen.getByText('…bbbb')).toBeTruthy();
+  });
+
+  it('locks a custom source key row while its reveal is in flight', async () => {
+    const user = userEvent.setup();
+    const reveal = gatedReveal('sk-src-inflight');
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json(
+          sourceConfig([
+            { id: 'k0', hint: '…cccc' },
+            { id: 'k1', hint: '…dddd' },
+          ]),
+        ),
+      ),
+      reveal.handler,
+    );
+    render(<SettingsView />);
+
+    const customSection = await screen.findByLabelText('自定义模型');
+    const first = await within(customSection).findByText('…cccc');
+    const controls = first.parentElement;
+    const remove = within(controls!).getByRole('button', { name: '删除 Key 1' });
+    await user.click(within(controls!).getByRole('button', { name: '显示 Key' }));
+
+    await waitFor(() => expect((remove as HTMLButtonElement).disabled).toBe(true));
+    reveal.state.release!();
+
+    expect(await within(customSection).findByText('sk-src-inflight')).toBeTruthy();
+  });
+
+  it('locks a proxy row while its reveal is in flight', async () => {
+    const user = userEvent.setup();
+    const reveal = gatedReveal('http://user:pw@host:1');
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            opencode: {
+              enabled: true,
+              hasKey: true,
+              anonymous: true,
+              proxyCount: 2,
+              proxyMeta: [
+                { id: 'p0', hint: 'http://***@a:1/' },
+                { id: 'p1', hint: 'http://***@b:2/' },
+              ],
+            },
+          },
+        }),
+      ),
+      reveal.handler,
+    );
+    render(<SettingsView />);
+
+    const row = await screen.findByText('http://***@a:1/');
+    const controls = row.parentElement;
+    const remove = within(controls!).getByRole('button', { name: '删除代理 1' });
+    await user.click(within(controls!).getByRole('button', { name: '显示 Key' }));
+
+    await waitFor(() => expect((remove as HTMLButtonElement).disabled).toBe(true));
+    reveal.state.release!();
+
+    expect(await screen.findByText('http://user:pw@host:1')).toBeTruthy();
+  });
+
+  it('discards a reveal response that lands after the rows have been renumbered', async () => {
+    const user = userEvent.setup();
+    let renumbered = false;
+    const reveal = gatedReveal('http://user:pw@host:1');
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            opencode: {
+              enabled: true,
+              hasKey: true,
+              anonymous: true,
+              proxyCount: renumbered ? 1 : 2,
+              proxyMeta: renumbered
+                ? [{ id: 'p0', hint: 'http://***@b:2/' }]
+                : [
+                    { id: 'p0', hint: 'http://***@a:1/' },
+                    { id: 'p1', hint: 'http://***@b:2/' },
+                  ],
+            },
+          },
+        }),
+      ),
+      reveal.handler,
+    );
+    render(<SettingsView />);
+
+    const row = await screen.findByText('http://***@a:1/');
+    const card = row.closest('[data-testid="provider-card-opencode"]') as HTMLElement;
+    await user.click(
+      within(row.parentElement as HTMLElement).getByRole('button', { name: '显示 Key' }),
+    );
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('button', { name: '删除代理 1' }) as HTMLButtonElement).disabled,
+      ).toBe(true),
+    );
+
+    // A different control mutates the list while the reveal is still in flight: the
+    // first row is gone, so index 0 now belongs to the second entry.
+    renumbered = true;
+    await user.click(within(card).getByRole('button', { name: '清空全部' }));
+    await waitFor(() => expect(screen.queryByText('http://***@a:1/')).toBeNull());
+
+    reveal.state.release!();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(screen.queryByText('http://user:pw@host:1')).toBeNull();
+    expect(screen.getByText('http://***@b:2/')).toBeTruthy();
+  });
+
+  it('drops the copy checkmark when a delete renumbers the rows under it', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    override(navigator, 'clipboard', { writeText });
+    let removed = false;
+    const list = (hints: string[]) => ({
+      ...configPayload,
+      providers: {
+        ...configPayload.providers,
+        openrouter: {
+          enabled: true,
+          hasKey: true,
+          keyCount: hints.length,
+          keyMeta: hints.map((hint, i) => ({ id: `k${i}`, hint })),
+        },
+      },
+    });
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json(list(removed ? ['…2222', '…3333'] : ['…1111', '…2222', '…3333'])),
+      ),
+      http.post(`${gateway}/api/providers/reveal`, async ({ request }) => {
+        const body = (await request.json()) as { index: number };
+        return HttpResponse.json({ value: `sk-copied-${body.index}` });
+      }),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        if (body.removeKeyIndex === 0) removed = true;
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    render(<SettingsView />);
+
+    const second = await screen.findByText('…2222');
+    await user.click(
+      within(second.parentElement as HTMLElement).getByRole('button', { name: '复制 API Key' }),
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('sk-copied-1'));
+
+    const first = screen.getByText('…1111');
+    await user.click(
+      within(first.parentElement as HTMLElement).getByRole('button', { name: '删除 Key 1' }),
+    );
+
+    const survivor = await screen.findByText('…3333');
+    await waitFor(() => expect(survivor.parentElement).not.toBeNull());
+    const survivorCopy = within(survivor.parentElement as HTMLElement).getByRole('button', {
+      name: '复制 API Key',
+    });
+    expect(survivorCopy.querySelector('.lucide-check')).toBeNull();
   });
 });
 

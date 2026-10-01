@@ -143,6 +143,21 @@ function parseKeyLines(value: string): string[] {
     .filter(Boolean);
 }
 
+// A fetched secret belongs to the exact masked row it was fetched for. Those rows carry
+// positional ids (k0, p0, ...), so a delete slides the survivors onto the same cache key:
+// matching on the hint makes a stale entry inert at render time, which no effect clearing
+// a cache can guarantee before the next paint.
+type RevealedSecret = { hint: string; value: string };
+
+function matchedSecret(
+  cache: Record<string | number, RevealedSecret>,
+  cacheKey: string | number,
+  hint: string,
+): RevealedSecret | undefined {
+  const entry = cache[cacheKey];
+  return entry && entry.hint === hint ? entry : undefined;
+}
+
 function OpenCodeZenExtras({
   extra,
   onChanged,
@@ -164,8 +179,9 @@ function OpenCodeZenExtras({
   const [goKeys, setGoKeys] = useState('');
   const [proxies, setProxies] = useState('');
   const [proxyMeta, setProxyMeta] = useState(extra.proxyMeta ?? []);
-  const [revealedProxy, setRevealedProxy] = useState<Record<number, string>>({});
+  const [revealedProxy, setRevealedProxy] = useState<Record<number, RevealedSecret>>({});
   const [copiedProxy, setCopiedProxy] = useState<number | null>(null);
+  const [revealingProxy, setRevealingProxy] = useState<number | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [retry, setRetry] = useState('');
   const [models, setModels] = useState('');
@@ -176,9 +192,9 @@ function OpenCodeZenExtras({
   useEffect(() => setPrefer(extra.prefer ?? 'go'), [extra.prefer]);
   useEffect(() => {
     setProxyMeta(extra.proxyMeta ?? []);
-    // proxyMeta ids are positional (p0, p1, ...), so a revealed plaintext belongs to
-    // one slot. Reloading can renumber the slots, so drop the cache with the rows.
-    setRevealedProxy({});
+    // proxyMeta ids are positional (p0, p1, ...), so the copy checkmark has to be
+    // dropped with the rows it was pinned to. A revealed plaintext needs no clearing
+    // pass: it is matched against its hint wherever it is rendered.
     setCopiedProxy(null);
   }, [extra.proxyMeta]);
 
@@ -217,8 +233,8 @@ function OpenCodeZenExtras({
     return data.value;
   }
 
-  async function toggleProxyReveal(index: number): Promise<void> {
-    if (revealedProxy[index] !== undefined) {
+  async function toggleProxyReveal(index: number, hint: string): Promise<void> {
+    if (matchedSecret(revealedProxy, index, hint) !== undefined) {
       setRevealedProxy((prev) => {
         const next = { ...prev };
         delete next[index];
@@ -226,17 +242,23 @@ function OpenCodeZenExtras({
       });
       return;
     }
+    // Reveal locks its row until the answer lands: the request addresses a position, so
+    // a delete in between would hand the plaintext to whichever row moved into it.
+    setRevealingProxy(index);
     try {
       const value = await fetchProxySecret(index);
-      setRevealedProxy((prev) => ({ ...prev, [index]: value }));
+      setRevealedProxy((prev) => ({ ...prev, [index]: { hint, value } }));
     } catch {
       onToast({ kind: 'error', text: t('settings.copyFailed') });
+    } finally {
+      setRevealingProxy((current) => (current === index ? null : current));
     }
   }
 
-  async function copyProxySecret(index: number): Promise<void> {
+  async function copyProxySecret(index: number, hint: string): Promise<void> {
     try {
-      const value = revealedProxy[index] ?? (await fetchProxySecret(index));
+      const cached = matchedSecret(revealedProxy, index, hint);
+      const value = cached?.value ?? (await fetchProxySecret(index));
       if (!(await copyToClipboard(value))) {
         onToast({ kind: 'error', text: t('settings.copyFailed') });
         return;
@@ -435,20 +457,22 @@ function OpenCodeZenExtras({
           {t('settings.opencode.saveProxies')}
         </button>
         {proxyMeta.map((row, idx) => {
-          const isRevealed = revealedProxy[idx] !== undefined;
+          const secret = matchedSecret(revealedProxy, idx, row.hint);
+          const isRevealed = secret !== undefined;
+          const locked = busy !== null || revealingProxy !== null;
           return (
             <div
               key={row.id}
               className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
             >
               <code className="flex-1 truncate font-mono text-xs text-foreground">
-                {isRevealed ? revealedProxy[idx] : row.hint}
+                {isRevealed ? secret.value : row.hint}
               </code>
               <span className="sr-only">{t('settings.opencode.proxies.row', { n: idx + 1 })}</span>
               <button
                 type="button"
-                disabled={busy !== null}
-                onClick={() => void toggleProxyReveal(idx)}
+                disabled={locked}
+                onClick={() => void toggleProxyReveal(idx, row.hint)}
                 aria-label={isRevealed ? t('settings.hideKey') : t('settings.showKey')}
                 className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               >
@@ -460,8 +484,8 @@ function OpenCodeZenExtras({
               </button>
               <button
                 type="button"
-                disabled={busy !== null}
-                onClick={() => void copyProxySecret(idx)}
+                disabled={locked}
+                onClick={() => void copyProxySecret(idx, row.hint)}
                 aria-label={t('settings.copy.proxy')}
                 className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               >
@@ -473,7 +497,7 @@ function OpenCodeZenExtras({
               </button>
               <button
                 type="button"
-                disabled={busy !== null}
+                disabled={locked}
                 onClick={() =>
                   void run('proxies', async () => {
                     await postExtra({}, { topLevel: { removeProxyIndex: idx } });
@@ -596,7 +620,8 @@ export function SettingsView({
   const [newKeyDailyTokens, setNewKeyDailyTokens] = useState('');
   const [newKeyExpires, setNewKeyExpires] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState<Record<string, string>>({});
+  const [revealed, setRevealed] = useState<Record<string, RevealedSecret>>({});
+  const [revealingKey, setRevealingKey] = useState<string | null>(null);
 
   const [customSectionOpen, setCustomSectionOpen] = useState(true);
   const [customSources, setCustomSources] = useState<CustomSourceDef[]>([]);
@@ -767,11 +792,12 @@ export function SettingsView({
       .catch(() => {});
   }, []);
 
-  // keyMeta ids are positional (k0, k1, ...), so a cached plaintext belongs to one
-  // slot. Any change to the key lists shifts those slots, and a stale entry would
-  // otherwise keep showing the wrong secret after an add or delete. Custom source
-  // rows carry their own positional ids, so their lists shift the same way and have
-  // to join the signature.
+  // keyMeta ids are positional (k0, k1, ...), so the copy checkmark is pinned to a slot
+  // rather than to a key. Any change to the key lists shifts those slots, and a stale
+  // checkmark would otherwise sit on whoever moved in. Custom source rows carry their
+  // own positional ids, so their lists shift the same way and have to join the
+  // signature. Revealed plaintexts need no clearing pass: they are matched against their
+  // hint wherever they are rendered.
   const keyMetaSignature = useMemo(
     () =>
       [
@@ -785,7 +811,7 @@ export function SettingsView({
     [cfg],
   );
   useEffect(() => {
-    setRevealed({});
+    setCopied(null);
   }, [keyMetaSignature]);
 
   useEffect(() => {
@@ -1491,7 +1517,7 @@ export function SettingsView({
   }
 
   async function toggleReveal(target: KeyRowTarget): Promise<void> {
-    if (revealed[target.cacheKey] !== undefined) {
+    if (matchedSecret(revealed, target.cacheKey, target.hint) !== undefined) {
       setRevealed((prev) => {
         const next = { ...prev };
         delete next[target.cacheKey];
@@ -1499,11 +1525,16 @@ export function SettingsView({
       });
       return;
     }
+    // Reveal locks its row until the answer lands: the request addresses a position, so
+    // a delete in between would hand the plaintext to whichever row moved into it.
+    setRevealingKey(target.cacheKey);
     try {
       const value = await revealProviderKey(target);
-      setRevealed((prev) => ({ ...prev, [target.cacheKey]: value }));
+      setRevealed((prev) => ({ ...prev, [target.cacheKey]: { hint: target.hint, value } }));
     } catch {
       setToast({ kind: 'error', text: t('settings.copyFailed') });
+    } finally {
+      setRevealingKey((current) => (current === target.cacheKey ? null : current));
     }
   }
 
@@ -2418,21 +2449,23 @@ export function SettingsView({
                         <>
                           {(state?.keyMeta ?? []).map((row, idx) => {
                             const cacheKey = `${p.id}:key:${idx}`;
-                            const isRevealed = revealed[cacheKey] !== undefined;
+                            const secret = matchedSecret(revealed, cacheKey, row.hint);
+                            const isRevealed = secret !== undefined;
+                            const locked = saveState === 'saving' || revealingKey !== null;
                             return (
                               <div
                                 key={row.id}
                                 className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
                               >
                                 <code className="flex-1 truncate font-mono text-xs text-foreground">
-                                  {isRevealed ? revealed[cacheKey] : row.hint}
+                                  {isRevealed ? secret.value : row.hint}
                                 </code>
                                 <span className="sr-only">
                                   {t('settings.sources.keyRow', { n: idx + 1, hint: row.hint })}
                                 </span>
                                 <button
                                   type="button"
-                                  disabled={saveState === 'saving'}
+                                  disabled={locked}
                                   onClick={() =>
                                     void toggleReveal({
                                       provider: p.id,
@@ -2454,7 +2487,7 @@ export function SettingsView({
                                 </button>
                                 <button
                                   type="button"
-                                  disabled={saveState === 'saving'}
+                                  disabled={locked}
                                   onClick={() =>
                                     void copySecret({
                                       provider: p.id,
@@ -2475,7 +2508,7 @@ export function SettingsView({
                                 <button
                                   type="button"
                                   onClick={() => void removeProviderKey(p.id, idx)}
-                                  disabled={saveState === 'saving'}
+                                  disabled={locked}
                                   aria-label={t('settings.sources.removeKey', { n: idx + 1 })}
                                   className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                                 >
@@ -2761,21 +2794,23 @@ export function SettingsView({
                           </div>
                           {(src.keyMeta ?? []).map((row, idx) => {
                             const cacheKey = `${src.id}:key:${idx}`;
-                            const isRevealed = revealed[cacheKey] !== undefined;
+                            const secret = matchedSecret(revealed, cacheKey, row.hint);
+                            const isRevealed = secret !== undefined;
+                            const locked = customSaveState === 'saving' || revealingKey !== null;
                             return (
                               <div
                                 key={row.id}
                                 className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
                               >
                                 <code className="flex-1 truncate font-mono text-xs text-foreground">
-                                  {isRevealed ? revealed[cacheKey] : row.hint}
+                                  {isRevealed ? secret.value : row.hint}
                                 </code>
                                 <span className="sr-only">
                                   {t('settings.custom.keyRow', { n: idx + 1, hint: row.hint })}
                                 </span>
                                 <button
                                   type="button"
-                                  disabled={customSaveState === 'saving'}
+                                  disabled={locked}
                                   onClick={() =>
                                     void toggleReveal({
                                       provider: 'custom',
@@ -2798,7 +2833,7 @@ export function SettingsView({
                                 </button>
                                 <button
                                   type="button"
-                                  disabled={customSaveState === 'saving'}
+                                  disabled={locked}
                                   onClick={() =>
                                     void copySecret({
                                       provider: 'custom',
@@ -2820,7 +2855,7 @@ export function SettingsView({
                                 <button
                                   type="button"
                                   onClick={() => void removeSourceKey(src.id, idx)}
-                                  disabled={customSaveState === 'saving'}
+                                  disabled={locked}
                                   aria-label={t('settings.custom.removeKey', { n: idx + 1 })}
                                   className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                                 >
