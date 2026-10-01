@@ -67,6 +67,8 @@ function copyViaExecCommand(text: string): boolean {
   area.style.top = '0';
   area.style.left = '0';
   area.style.opacity = '0';
+  area.style.fontSize = '16px';
+  const active = document.activeElement as HTMLElement | null;
   const selection = document.getSelection();
   const previous = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
   try {
@@ -83,5 +85,6 @@ function copyViaExecCommand(text: string): boolean {
       selection?.removeAllRanges();
       selection?.addRange(previous);
     }
+    if (active && typeof active.focus === 'function') active.focus({ preventScroll: true });
   }
 }

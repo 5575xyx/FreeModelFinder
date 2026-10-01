@@ -107,6 +107,7 @@ describe('copyToClipboard', () => {
     expect(probe.area?.style.opacity).toBe('0');
     expect(probe.area?.style.top).toBe('0px');
     expect(probe.area?.style.left).toBe('0px');
+    expect(probe.area?.style.fontSize).toBe('16px');
   });
 
   it('focuses the textarea and selects the whole value before copying', async () => {
@@ -175,6 +176,21 @@ describe('copyToClipboard', () => {
 
     expect(selection.rangeCount).toBe(1);
     expect(selection.getRangeAt(0).commonAncestorContainer).toBe(marker);
+  });
+
+  it('restores the previously focused element', async () => {
+    setClipboard(undefined);
+    const probe = captureExecCommand();
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    cleanups.push(() => input.remove());
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    await copyToClipboard('focus');
+
+    expect(probe.active).toBe(probe.area);
+    expect(document.activeElement).toBe(input);
   });
 
   it('resolves false when the document has no body', async () => {
