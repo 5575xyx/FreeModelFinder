@@ -146,4 +146,48 @@ describe('opencode hasKey seam', () => {
     const provider = response.json().providers.opencode;
     assert.equal(provider.anonymous, true);
   });
+
+  it('exposes redacted proxyMeta without the plaintext password', async () => {
+    const current = registry.getConfig();
+    registry.updateConfig({
+      ...current,
+      providers: {
+        ...current.providers,
+        opencode: {
+          enabled: false,
+          credentials: { apiKey: '', extra: { proxies: [] } },
+        },
+      },
+    });
+
+    const post = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: {
+        provider: 'opencode',
+        enabled: true,
+        extra: {
+          anonymous: true,
+          proxies: ['http://user:secret@host:8080', 'socks5://10.0.0.1:1080', 'direct'],
+        },
+      },
+    });
+    assert.equal(post.statusCode, 200);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    const provider = response.json().providers.opencode;
+
+    assert.equal(provider.proxyCount, 3);
+    assert.deepEqual(
+      provider.proxyMeta.map((row: { id: string; hint: string }) => row.id),
+      ['p0', 'p1', 'p2'],
+    );
+    assert.doesNotMatch(JSON.stringify(provider.proxyMeta), /secret/);
+    assert.match(provider.proxyMeta[0].hint, /\*\*\*/);
+  });
 });

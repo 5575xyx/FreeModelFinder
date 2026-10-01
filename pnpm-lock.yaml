@@ -144,6 +144,9 @@ importers:
       '@freemodelfinder/core':
         specifier: workspace:*
         version: link:../core
+      '@freemodelfinder/zen':
+        specifier: workspace:*
+        version: link:../zen
       fastify:
         specifier: 5.10.0
         version: 5.10.0

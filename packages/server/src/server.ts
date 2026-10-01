@@ -20,6 +20,7 @@ import {
   type CredentialAccountEntry,
   type GatewayKeyEntry,
 } from '@freemodelfinder/core';
+import { redactProxy } from '@freemodelfinder/zen';
 import { registerOpenAIRoutes } from './routes/openai.js';
 import { registerAnthropicRoutes } from './routes/anthropic.js';
 import { registerGeminiRoutes } from './routes/gemini.js';
@@ -304,6 +305,14 @@ function buildKeyMeta(keys: readonly string[]): Array<{ id: string; hint: string
       id: `k${i}`,
       hint: `…${k.length >= 4 ? k.slice(-4) : k.length >= 2 ? k.slice(-2) : k}`,
     }));
+}
+
+function buildProxyMeta(proxies: unknown): Array<{ id: string; hint: string }> {
+  if (!Array.isArray(proxies)) return [];
+  return proxies.map((raw, index) => ({
+    id: `p${index}`,
+    hint: redactProxy(typeof raw === 'string' ? raw : ''),
+  }));
 }
 
 function providerKeyPool(cred: { apiKey?: string; apiKeys?: string[] } | undefined): string[] {
@@ -672,6 +681,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
                       proxyCount: Array.isArray(extra['proxies'])
                         ? (extra['proxies'] as unknown[]).length
                         : 0,
+                      proxyMeta: buildProxyMeta(extra['proxies']),
                     }
                   : {}),
               },
