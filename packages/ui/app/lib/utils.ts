@@ -58,24 +58,30 @@ function copyViaExecCommand(text: string): boolean {
   if (typeof document === 'undefined' || typeof document.execCommand !== 'function') {
     return false;
   }
+  const body = document.body;
+  if (!body) return false;
   const area = document.createElement('textarea');
   area.value = text;
   area.setAttribute('readonly', '');
   area.style.position = 'fixed';
+  area.style.top = '0';
+  area.style.left = '0';
   area.style.opacity = '0';
-  document.body.appendChild(area);
   const selection = document.getSelection();
   const previous = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
   try {
+    body.appendChild(area);
+    area.focus();
+    area.setSelectionRange(0, area.value.length);
     area.select();
     return document.execCommand('copy');
   } catch {
     return false;
   } finally {
     area.remove();
-    if (previous && selection) {
-      selection.removeAllRanges();
-      selection.addRange(previous);
+    if (previous) {
+      selection?.removeAllRanges();
+      selection?.addRange(previous);
     }
   }
 }
