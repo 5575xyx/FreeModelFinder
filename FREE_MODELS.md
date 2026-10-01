@@ -2,24 +2,15 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-09-30（Asia/Shanghai）** · **104** 个免费模型入口 · **13/15** 个 Provider 正常。
+> 最近目录审计：**2026-10-01（Asia/Shanghai）** · **104** 个免费模型入口 · **13/15** 个 Provider 正常。
 
-[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-09-30.md)
+[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-01.md)
 
 这份列表每天由 GitHub Actions 通过各 Provider 的模型目录接口刷新，并应用 FreeModelFinder 核心层的免费规则。它不执行真实推理，不代表无限额度、永久免费或生产级可用。同一上游模型通过多个 Provider 提供时会分别计数，因为对应的账号资格、额度和 Gateway 模型 ID 不同。
 
 ## 今日变化
 
-与 2026-09-29 相比，在成功比较的 12 个 Provider 中：**新增 0 个，移除 6 个**。
-
-### 移除
-
-- `qianfan:ernie-lite-128k`
-- `qianfan:ernie-lite-8k`
-- `qianfan:ernie-lite-8k-0922`
-- `qianfan:ernie-speed-128k`
-- `qianfan:ernie-speed-8k`
-- `qianfan:ernie-tiny`
+与 2026-09-30 相比，成功比较的 13 个 Provider 模型清单没有变化。
 
 ## Provider 汇总
 

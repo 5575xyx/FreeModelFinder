@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-09-30",
-  "generatedAt": "2026-09-30T01:20:29.332Z",
-  "reportPath": "reports/provider-free-model-audit-2026-09-30.md",
+  "date": "2026-10-01",
+  "generatedAt": "2026-10-01T01:20:07.881Z",
+  "reportPath": "reports/provider-free-model-audit-2026-10-01.md",
   "totalModels": 104,
   "providers": [
     {
@@ -689,46 +689,9 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-29",
+    "comparedWith": "2026-09-30",
     "added": [],
-    "removed": [
-      {
-        "provider": "qianfan",
-        "id": "ernie-lite-128k",
-        "displayName": "ERNIE Lite 128K",
-        "contextWindow": 128000
-      },
-      {
-        "provider": "qianfan",
-        "id": "ernie-lite-8k",
-        "displayName": "ERNIE Lite 8K",
-        "contextWindow": 8000
-      },
-      {
-        "provider": "qianfan",
-        "id": "ernie-lite-8k-0922",
-        "displayName": "ERNIE Lite 8K 0922",
-        "contextWindow": 8000
-      },
-      {
-        "provider": "qianfan",
-        "id": "ernie-speed-128k",
-        "displayName": "ERNIE Speed 128K",
-        "contextWindow": 128000
-      },
-      {
-        "provider": "qianfan",
-        "id": "ernie-speed-8k",
-        "displayName": "ERNIE Speed 8K",
-        "contextWindow": 8000
-      },
-      {
-        "provider": "qianfan",
-        "id": "ernie-tiny",
-        "displayName": "ERNIE Tiny",
-        "contextWindow": null
-      }
-    ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "zhipu",
@@ -741,7 +704,8 @@
       "qianfan",
       "kilo",
       "agnes",
-      "agnes-intl"
+      "agnes-intl",
+      "opencode"
     ]
   }
 }
