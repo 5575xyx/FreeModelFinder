@@ -173,6 +173,72 @@ describe('SettingsView', () => {
     expect(writes[0]).toMatchObject({ provider: 'openrouter', removeKeyIndex: 0 });
   });
 
+  it('removes one saved proxy via removeProxyIndex', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            opencode: {
+              enabled: true,
+              hasKey: true,
+              anonymous: true,
+              proxyCount: 2,
+              proxyMeta: [
+                { id: 'p0', hint: 'http://***@a:1/' },
+                { id: 'p1', hint: 'http://***@b:2/' },
+              ],
+            },
+          },
+        }),
+      ),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    const row = await screen.findByText('http://***@a:1/');
+    const controls = row.parentElement;
+    expect(controls).not.toBeNull();
+    await user.click(within(controls!).getByRole('button', { name: '删除代理 1' }));
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    expect(writes[0]).toMatchObject({ provider: 'opencode', removeProxyIndex: 0 });
+  });
+
+  it('clears the whole proxy list with an empty array', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () =>
+        HttpResponse.json({
+          ...configPayload,
+          providers: {
+            ...configPayload.providers,
+            opencode: {
+              enabled: true,
+              hasKey: true,
+              anonymous: true,
+              proxyCount: 1,
+              proxyMeta: [{ id: 'p0', hint: 'direct' }],
+            },
+          },
+        }),
+      ),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView />);
+    await user.click(await screen.findByRole('button', { name: '清空全部' }));
+    await waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    expect(writes[0]).toMatchObject({ provider: 'opencode', extra: { proxies: [] } });
+  });
+
   it('removes a custom source key via removeSourceKey', async () => {
     const writes: Array<Record<string, unknown>> = [];
     server.use(

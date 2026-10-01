@@ -62,6 +62,7 @@ type ConfigRes = {
       prefer?: string;
       goKeyCount?: number;
       proxyCount?: number;
+      proxyMeta?: Array<{ id: string; hint: string }>;
       dynamicModels?: boolean;
       keyCount?: number;
       keyMeta?: Array<{ id: string; hint: string }>;
@@ -138,7 +139,13 @@ function OpenCodeZenExtras({
   onChanged,
   onToast,
 }: {
-  extra: { anonymous: boolean; prefer?: string; goKeyCount?: number; proxyCount?: number };
+  extra: {
+    anonymous: boolean;
+    prefer?: string;
+    goKeyCount?: number;
+    proxyCount?: number;
+    proxyMeta?: Array<{ id: string; hint: string }>;
+  };
   onChanged: () => void;
   onToast: (toast: Toast) => void;
 }) {
@@ -147,6 +154,7 @@ function OpenCodeZenExtras({
   const [prefer, setPrefer] = useState(extra.prefer ?? 'go');
   const [goKeys, setGoKeys] = useState('');
   const [proxies, setProxies] = useState('');
+  const [proxyMeta, setProxyMeta] = useState(extra.proxyMeta ?? []);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [retry, setRetry] = useState('');
   const [models, setModels] = useState('');
@@ -155,8 +163,12 @@ function OpenCodeZenExtras({
 
   useEffect(() => setAnonymous(extra.anonymous), [extra.anonymous]);
   useEffect(() => setPrefer(extra.prefer ?? 'go'), [extra.prefer]);
+  useEffect(() => setProxyMeta(extra.proxyMeta ?? []), [extra.proxyMeta]);
 
-  async function postExtra(patch: Record<string, unknown>, enabled?: boolean): Promise<void> {
+  async function postExtra(
+    patch: Record<string, unknown>,
+    options: { topLevel?: Record<string, unknown>; enabled?: boolean } = {},
+  ): Promise<void> {
     const res = await fetch(
       `${GATEWAY}/api/providers`,
       withUiHeaders({
@@ -164,7 +176,8 @@ function OpenCodeZenExtras({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           provider: 'opencode',
-          ...(enabled !== undefined ? { enabled } : {}),
+          ...(options.enabled !== undefined ? { enabled: options.enabled } : {}),
+          ...(options.topLevel ?? {}),
           extra: patch,
         }),
       }),
@@ -257,7 +270,9 @@ function OpenCodeZenExtras({
             onChange={(e) => {
               const next = e.target.checked;
               setAnonymous(next);
-              void run('anonymous', () => postExtra({ anonymous: next }, next ? true : undefined));
+              void run('anonymous', () =>
+                postExtra({ anonymous: next }, { enabled: next ? true : undefined }),
+              );
             }}
             aria-label={t('settings.opencode.anonymous')}
           />
@@ -356,6 +371,42 @@ function OpenCodeZenExtras({
           {busy === 'proxies' && <Loader2 size={12} strokeWidth={2} className="animate-spin" />}
           {t('settings.opencode.saveProxies')}
         </button>
+        {proxyMeta.map((row, idx) => (
+          <div
+            key={row.id}
+            className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
+          >
+            <code className="flex-1 truncate font-mono text-xs text-foreground">{row.hint}</code>
+            <span className="sr-only">{t('settings.opencode.proxies.row', { n: idx + 1 })}</span>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() =>
+                void run('proxies', async () => {
+                  await postExtra({}, { topLevel: { removeProxyIndex: idx } });
+                })
+              }
+              aria-label={t('settings.opencode.proxies.remove', { n: idx + 1 })}
+              className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
+              <Trash2 size={13} strokeWidth={1.75} />
+            </button>
+          </div>
+        ))}
+        {proxyMeta.length > 0 && (
+          <button
+            type="button"
+            disabled={busy !== null}
+            onClick={() =>
+              void run('proxies', async () => {
+                await postExtra({ proxies: [] });
+              })
+            }
+            className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+          >
+            {t('settings.opencode.proxies.clear')}
+          </button>
+        )}
       </div>
 
       <div className="space-y-2 rounded-md border border-border/60 bg-surface-muted/30 p-2.5">
@@ -2332,6 +2383,7 @@ export function SettingsView({
                             prefer: state?.prefer,
                             goKeyCount: state?.goKeyCount,
                             proxyCount: state?.proxyCount,
+                            proxyMeta: state?.proxyMeta,
                           }}
                           onChanged={refreshConfig}
                           onToast={setToast}
