@@ -27,7 +27,7 @@ import { StatCard } from './StatCard';
 import { ModelChangesBanner } from './ModelChangesBanner';
 import { ClineAccountsPanel } from './ClineAccountsPanel';
 import { ModelMultiSelect, type ModelOption } from './ModelMultiSelect';
-import { classNames, GATEWAY, withUiHeaders } from '../lib/utils';
+import { classNames, copyToClipboard, GATEWAY, withUiHeaders } from '../lib/utils';
 import { modelValue } from '../lib/models';
 import { SETTINGS_PROVIDERS, providerHintKey, providerLabelKey } from '../lib/platforms';
 import { useI18n } from '../i18n';
@@ -1292,13 +1292,13 @@ export function SettingsView({
   }
 
   async function copyText(text: string, id: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(id);
-      setTimeout(() => setCopied((c) => (c === id ? null : c)), 1400);
-    } catch {
+    const ok = await copyToClipboard(text);
+    if (!ok) {
       setToast({ kind: 'error', text: t('settings.copyFailed') });
+      return;
     }
+    setCopied(id);
+    setTimeout(() => setCopied((c) => (c === id ? null : c)), 1400);
   }
 
   const gatewayBaseUrl = (gateway?.publicBaseUrl || GATEWAY).replace(/\/$/, '');
@@ -1880,7 +1880,7 @@ export function SettingsView({
                             </span>
                           )}
                           <code className="flex-1 truncate font-mono text-xs text-foreground">
-                            {visibleKey ? entry.key : '•'.repeat(Math.min(entry.key.length, 36))}
+                            {visibleKey ? entry.key : '•'.repeat(36)}
                           </code>
                           <button
                             type="button"

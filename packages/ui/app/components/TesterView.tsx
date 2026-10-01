@@ -18,7 +18,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { formatContext, modelValue, type ModelItem } from '../lib/models';
 import { fileToDataURL, isImageDataUrlWithinLimit } from '../lib/image';
-import { classNames, GATEWAY, withUiHeaders } from '../lib/utils';
+import { classNames, copyToClipboard, GATEWAY, withUiHeaders } from '../lib/utils';
 import { useI18n } from '../i18n';
 
 export type Msg = {
@@ -469,13 +469,9 @@ function MessageRow({ message, isStreamingLast }: { message: Msg; isStreamingLas
 
   async function copy() {
     if (!message.content) return;
-    try {
-      await navigator.clipboard.writeText(message.content);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard access can be unavailable inside hardened desktop webviews.
-    }
+    if (!(await copyToClipboard(message.content))) return;
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
   }
 
   return (

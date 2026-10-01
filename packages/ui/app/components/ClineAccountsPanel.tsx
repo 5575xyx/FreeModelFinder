@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Copy, ExternalLink, Loader2, LogOut, Plus, RotateCcw } from 'lucide-react';
 import { Badge, Dot } from './Badge';
-import { GATEWAY, classNames, formatNumber, withUiHeaders } from '../lib/utils';
+import { GATEWAY, classNames, copyToClipboard, formatNumber, withUiHeaders } from '../lib/utils';
 import { useI18n } from '../i18n';
 
 export const CLINE_POLL_INTERVAL_MS = 2_500;
@@ -385,12 +385,12 @@ export function ClineAccountsPanel({
   }
 
   async function copyCode(code: string): Promise<void> {
-    try {
-      await navigator.clipboard?.writeText(code);
-      if (aliveRef.current) setCopied(true);
-    } catch {
+    const ok = await copyToClipboard(code);
+    if (!ok) {
       if (aliveRef.current) setActionError(t('settings.copyFailed'));
+      return;
     }
+    if (aliveRef.current) setCopied(true);
   }
 
   const busy = busyId !== null;

@@ -1,10 +1,41 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SettingsView } from '../SettingsView';
 import { matchesCapability, type ModelOption } from '../ModelMultiSelect';
 import { configPayload, gateway, server } from '../../../test/server';
+
+const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+const execCommandDescriptor = Object.getOwnPropertyDescriptor(document, 'execCommand');
+
+function override(target: object, key: string, value: unknown) {
+  Object.defineProperty(target, key, { configurable: true, writable: true, value });
+}
+
+function restore(target: object, key: string, descriptor: PropertyDescriptor | undefined) {
+  if (descriptor) {
+    Object.defineProperty(target, key, descriptor);
+  } else {
+    delete (target as Record<string, unknown>)[key];
+  }
+}
+
+function recordExecCommand(succeeds: boolean): Array<string | null> {
+  const staged: Array<string | null> = [];
+  override(
+    document,
+    'execCommand',
+    vi.fn((command: string) => {
+      const area = Array.from(document.querySelectorAll('textarea')).find(
+        (el) => el.readOnly && el.style.position === 'fixed',
+      );
+      if (command === 'copy') staged.push(area?.value ?? null);
+      return command === 'copy' && succeeds;
+    }),
+  );
+  return staged;
+}
 
 describe('SettingsView', () => {
   it('saves provider and custom-source keys', async () => {
@@ -444,6 +475,39 @@ describe('SettingsView', () => {
     await waitFor(() => expect(writes.length).toBeGreaterThan(0));
     expect(writes[0]).toMatchObject({ provider: 'opencode', enabled: true });
     expect(writes[0]).not.toHaveProperty('apiKey');
+  });
+});
+
+describe('SettingsView copy buttons', () => {
+  afterEach(() => {
+    restore(navigator, 'clipboard', clipboardDescriptor);
+    restore(document, 'execCommand', execCommandDescriptor);
+  });
+
+  it('copies the base URL through execCommand when the clipboard API is unavailable', async () => {
+    const user = userEvent.setup();
+    override(navigator, 'clipboard', undefined);
+    const staged = recordExecCommand(true);
+    render(<SettingsView />);
+
+    await user.click(await screen.findByRole('button', { name: '复制 Base URL' }));
+
+    expect(staged).toEqual([gateway]);
+    const button = screen.getByRole('button', { name: '复制 Base URL' });
+    expect(button.querySelector('svg.text-success')).not.toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('warns only after the clipboard API and execCommand have both failed', async () => {
+    const user = userEvent.setup();
+    override(navigator, 'clipboard', { writeText: vi.fn().mockRejectedValue(new Error('denied')) });
+    const staged = recordExecCommand(false);
+    render(<SettingsView />);
+
+    await user.click(await screen.findByRole('button', { name: '复制 Base URL' }));
+
+    expect(staged).toEqual([gateway]);
+    expect(await screen.findByText('复制失败，请手动选中复制')).toBeTruthy();
   });
 });
 
