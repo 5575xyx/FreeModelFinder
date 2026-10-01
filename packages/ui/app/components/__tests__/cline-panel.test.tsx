@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ClineAccountsPanel } from '../ClineAccountsPanel';
 import { SettingsView } from '../SettingsView';
 import { configPayload, gateway, server } from '../../../test/server';
@@ -11,6 +11,54 @@ const accountsUrl = `${gateway}/api/cline/accounts`;
 const startUrl = `${gateway}/api/cline/login/start`;
 const pollUrl = `${gateway}/api/cline/login/poll`;
 const providersUrl = `${gateway}/api/providers`;
+
+const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+const execCommandDescriptor = Object.getOwnPropertyDescriptor(document, 'execCommand');
+
+function override(target: object, key: string, value: unknown) {
+  Object.defineProperty(target, key, { configurable: true, writable: true, value });
+}
+
+function restore(target: object, key: string, descriptor: PropertyDescriptor | undefined) {
+  if (descriptor) {
+    Object.defineProperty(target, key, descriptor);
+  } else {
+    delete (target as Record<string, unknown>)[key];
+  }
+}
+
+function recordExecCommand(succeeds: boolean): Array<string | null> {
+  const staged: Array<string | null> = [];
+  override(
+    document,
+    'execCommand',
+    vi.fn((command: string) => {
+      const area = Array.from(document.querySelectorAll('textarea')).find(
+        (el) => el.readOnly && el.style.position === 'fixed',
+      );
+      if (command === 'copy') staged.push(area?.value ?? null);
+      return command === 'copy' && succeeds;
+    }),
+  );
+  return staged;
+}
+
+const LOGIN_CODE = 'ABCD-EFGH';
+
+function pendingLoginFlow() {
+  server.use(
+    http.get(accountsUrl, () => HttpResponse.json({ accounts: [] })),
+    http.post(startUrl, () =>
+      HttpResponse.json({
+        flowId: 'flow-1',
+        code: LOGIN_CODE,
+        userUrl: 'https://example.com/activate?user_code=ABCD-EFGH',
+        expiresAt: Date.now() + 300_000,
+      }),
+    ),
+    http.post(pollUrl, () => HttpResponse.json({ status: 'pending' })),
+  );
+}
 
 const activeAccount = {
   id: 'acc-active',
@@ -449,6 +497,56 @@ describe('ClineAccountsPanel', () => {
     );
     expect(within(row).getByRole('button', { name: '登出' })).toBeTruthy();
   }, 10_000);
+});
+
+describe('cline login code copy', () => {
+  afterEach(() => {
+    restore(navigator, 'clipboard', clipboardDescriptor);
+    restore(document, 'execCommand', execCommandDescriptor);
+  });
+
+  it('copies the code through execCommand when the clipboard API is unavailable', async () => {
+    pendingLoginFlow();
+    const user = userEvent.setup();
+    override(navigator, 'clipboard', undefined);
+    const staged = recordExecCommand(true);
+    render(<ClineAccountsPanel />);
+
+    await user.click(await screen.findByRole('button', { name: '登录 Cline 账号' }));
+    await user.click(await screen.findByRole('button', { name: '复制验证码' }));
+
+    expect(staged).toEqual([LOGIN_CODE]);
+    expect(await screen.findByRole('button', { name: '已复制验证码' })).toBeTruthy();
+    expect(screen.queryByText(/操作失败/)).toBeNull();
+  });
+
+  it('reports a failure instead of a false success when the code never reached the clipboard', async () => {
+    pendingLoginFlow();
+    const user = userEvent.setup();
+    override(navigator, 'clipboard', undefined);
+    recordExecCommand(false);
+    render(<ClineAccountsPanel />);
+
+    await user.click(await screen.findByRole('button', { name: '登录 Cline 账号' }));
+    await user.click(await screen.findByRole('button', { name: '复制验证码' }));
+
+    expect(await screen.findByText('操作失败：复制失败，请手动选中复制')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '已复制验证码' })).toBeNull();
+  });
+
+  it('reports a failure when the clipboard API rejects and execCommand gives up', async () => {
+    pendingLoginFlow();
+    const user = userEvent.setup();
+    override(navigator, 'clipboard', { writeText: vi.fn().mockRejectedValue(new Error('denied')) });
+    recordExecCommand(false);
+    render(<ClineAccountsPanel />);
+
+    await user.click(await screen.findByRole('button', { name: '登录 Cline 账号' }));
+    await user.click(await screen.findByRole('button', { name: '复制验证码' }));
+
+    expect(await screen.findByText('操作失败：复制失败，请手动选中复制')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '已复制验证码' })).toBeNull();
+  });
 });
 
 describe('cline card state', () => {
