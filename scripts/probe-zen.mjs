@@ -17,6 +17,7 @@ const CATALOG = '/data/zen.models.catalog.json';
 const ZEN = 'https://opencode.ai/zen';
 const TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS ?? 20_000);
 const FULL_BODY = process.env.PROBE_FULL === '1';
+const ALL_PROTOCOLS = process.env.PROBE_ALL_PROTOCOLS === '1';
 const BODY_LIMIT = Number(process.env.PROBE_BODY ?? (FULL_BODY ? 4000 : 200));
 const MODELS = (process.env.PROBE_MODELS ?? '').split(',').filter(Boolean);
 
@@ -171,19 +172,22 @@ console.log(
 console.log(`probing ${targets.length} model(s), timeout ${TIMEOUT_MS}ms\n`);
 
 for (const model of targets) {
-  const protocol = protocols[model] ?? 'chat';
-  for (const withTools of [true, false]) {
-    const result = await probe(protocol, model, withTools);
-    const tag = `${model} [${protocol}] tools=${withTools ? 'on ' : 'off'}`;
-    if (result.error) {
-      console.log(`✗ ${tag.padEnd(46)} ${result.error}`);
-    } else if (FULL_BODY) {
-      console.log(`✓ ${tag.padEnd(46)} status ${result.status} in ${result.ms}ms`);
-      console.log(result.first);
-    } else {
-      console.log(
-        `✓ ${tag.padEnd(46)} status ${result.status} in ${result.ms}ms  ${result.first.replace(/\s+/g, ' ').slice(0, 90)}`,
-      );
+  const catalogProtocol = protocols[model] ?? 'chat';
+  const candidates = ALL_PROTOCOLS ? ['chat', 'responses', 'anthropic'] : [catalogProtocol];
+  for (const protocol of candidates) {
+    for (const withTools of [true, false]) {
+      const result = await probe(protocol, model, withTools);
+      const tag = `${model} [${protocol}] tools=${withTools ? 'on ' : 'off'}`;
+      if (result.error) {
+        console.log(`✗ ${tag.padEnd(46)} ${result.error}`);
+      } else if (FULL_BODY) {
+        console.log(`✓ ${tag.padEnd(46)} status ${result.status} in ${result.ms}ms`);
+        console.log(result.first);
+      } else {
+        console.log(
+          `✓ ${tag.padEnd(46)} status ${result.status} in ${result.ms}ms  ${result.first.replace(/\s+/g, ' ').slice(0, 90)}`,
+        );
+      }
     }
   }
 }
