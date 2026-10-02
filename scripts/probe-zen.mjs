@@ -16,6 +16,8 @@ import https from 'node:https';
 const CATALOG = '/data/zen.models.catalog.json';
 const ZEN = 'https://opencode.ai/zen';
 const TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS ?? 20_000);
+const FULL_BODY = process.env.PROBE_FULL === '1';
+const BODY_LIMIT = Number(process.env.PROBE_BODY ?? (FULL_BODY ? 4000 : 200));
 const MODELS = (process.env.PROBE_MODELS ?? '').split(',').filter(Boolean);
 
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
@@ -126,12 +128,18 @@ function probe(protocol, model, withTools) {
       resolve({ protocol, model, withTools, ms: Date.now() - started, ...outcome });
     };
     const req = https.request(url, { method: 'POST', headers }, (res) => {
-      let first = '';
+      let collected = '';
       res.on('data', (chunk) => {
-        if (!first) first = chunk.toString('utf8').slice(0, Number(process.env.PROBE_BODY ?? 200));
-        res.destroy();
-        finish({ status: res.statusCode, first });
+        if (collected.length < BODY_LIMIT) collected += chunk.toString('utf8');
       });
+      const done = () => {
+        res.destroy();
+        finish({ status: res.statusCode, first: collected.slice(0, BODY_LIMIT) });
+      };
+      res.on('end', done);
+      res.on('close', () =>
+        finish({ status: res.statusCode, first: collected.slice(0, BODY_LIMIT) }),
+      );
     });
     req.on('error', (error) => finish({ error: `${error.code ?? ''} ${error.message}`.trim() }));
     req.setTimeout(TIMEOUT_MS, () => {
@@ -169,6 +177,9 @@ for (const model of targets) {
     const tag = `${model} [${protocol}] tools=${withTools ? 'on ' : 'off'}`;
     if (result.error) {
       console.log(`✗ ${tag.padEnd(46)} ${result.error}`);
+    } else if (FULL_BODY) {
+      console.log(`✓ ${tag.padEnd(46)} status ${result.status} in ${result.ms}ms`);
+      console.log(result.first);
     } else {
       console.log(
         `✓ ${tag.padEnd(46)} status ${result.status} in ${result.ms}ms  ${result.first.replace(/\s+/g, ' ').slice(0, 90)}`,
