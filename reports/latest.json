@@ -1,19 +1,24 @@
 {
   "schemaVersion": 2,
-  "date": "2026-10-01",
-  "generatedAt": "2026-10-01T01:20:07.881Z",
-  "reportPath": "reports/provider-free-model-audit-2026-10-01.md",
-  "totalModels": 104,
+  "date": "2026-10-02",
+  "generatedAt": "2026-10-02T01:43:16.781Z",
+  "reportPath": "reports/provider-free-model-audit-2026-10-02.md",
+  "totalModels": 106,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 16,
+      "count": 17,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
       "models": [
+        {
+          "id": "apodex/apodex-1.1-mini:free",
+          "displayName": "Apodex: Apodex 1.1 Mini (free)",
+          "contextWindow": 262144
+        },
         {
           "id": "cohere/north-mini-code:free",
           "displayName": "Cohere: North Mini Code (free)",
@@ -625,7 +630,7 @@
       "id": "opencode",
       "display": "OpenCode Zen",
       "status": "ok",
-      "count": 11,
+      "count": 12,
       "freeType": "实时零价模型（匿名通道）",
       "freeBasis": "实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public）",
       "risk": "匿名通道与免费层有速率和并发限制；部分免费模型只在 Go tier 提供；上游目录与定价可能随时变化",
@@ -638,6 +643,11 @@
         {
           "id": "opencode:deepseek-v4-flash-free",
           "displayName": "deepseek-v4-flash-free",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:fledge-alpha-free",
+          "displayName": "fledge-alpha-free",
           "contextWindow": null
         },
         {
@@ -689,8 +699,21 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-09-30",
-    "added": [],
+    "comparedWith": "2026-10-01",
+    "added": [
+      {
+        "provider": "openrouter",
+        "id": "apodex/apodex-1.1-mini:free",
+        "displayName": "Apodex: Apodex 1.1 Mini (free)",
+        "contextWindow": 262144
+      },
+      {
+        "provider": "opencode",
+        "id": "opencode:fledge-alpha-free",
+        "displayName": "fledge-alpha-free",
+        "contextWindow": null
+      }
+    ],
     "removed": [],
     "comparedProviders": [
       "openrouter",
