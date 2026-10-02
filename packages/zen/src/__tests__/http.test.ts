@@ -16,6 +16,13 @@ before(async () => {
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       if (req.url === '/hang') return;
+      if (req.url === '/slow-headers') {
+        setTimeout(() => {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end('{}');
+        }, 120);
+        return;
+      }
       if (req.url === '/stream') {
         res.writeHead(200, { 'content-type': 'text/event-stream' });
         res.write('data: one\n\n');
@@ -106,6 +113,31 @@ describe('zen http client', () => {
         proxy: direct,
         connectTimeoutMs: 30,
       }),
+    );
+  });
+
+  it('survives a slow first byte once the socket is connected', async () => {
+    const client = createNodeHttpClient();
+    const res = await client.send({
+      url: `http://127.0.0.1:${port}/slow-headers`,
+      method: 'GET',
+      proxy: direct,
+      connectTimeoutMs: 30,
+    });
+    assert.equal(res.status, 200);
+    res.body.resume();
+  });
+  it('gives up on a connected peer that stays silent past the first byte window', async () => {
+    const client = createNodeHttpClient();
+    await assert.rejects(
+      client.send({
+        url: `http://127.0.0.1:${port}/hang`,
+        method: 'GET',
+        proxy: direct,
+        connectTimeoutMs: 500,
+        firstByteTimeoutMs: 30,
+      }),
+      /first byte timeout/i,
     );
   });
 

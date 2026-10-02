@@ -15,6 +15,12 @@ export interface ZenHttpRequest {
   signal?: AbortSignal;
   connectTimeoutMs?: number;
   attemptTimeoutMs?: number;
+  /**
+   * Inactivity budget for an already connected socket, measured from response
+   * headers to the first body byte. Defaults well above connectTimeoutMs so a
+   * model that spends seconds thinking is not mistaken for a dead connection.
+   */
+  firstByteTimeoutMs?: number;
 }
 
 export interface ZenHttpResponse {
@@ -26,6 +32,8 @@ export interface ZenHttpResponse {
 export interface ZenHttpClient {
   send(request: ZenHttpRequest): Promise<ZenHttpResponse>;
 }
+
+export const FIRST_BYTE_TIMEOUT_MS = 30_000;
 
 export function resolveAgent(proxy: ProxySpec, targetUrl: string): Agent | undefined {
   if (proxy.kind === 'direct') return undefined;
@@ -68,6 +76,7 @@ export function createNodeHttpClient(): ZenHttpClient {
               ? signals[0]
               : AbortSignal.any(signals);
         const connectMs = request.connectTimeoutMs ?? 0;
+        const firstByteMs = request.firstByteTimeoutMs ?? FIRST_BYTE_TIMEOUT_MS;
         const req = transport.request(
           url,
           {
@@ -77,7 +86,6 @@ export function createNodeHttpClient(): ZenHttpClient {
             signal,
           },
           (response) => {
-            if (connectMs > 0) req.setTimeout(0);
             resolve({
               status: response.statusCode ?? 0,
               headers: response.headers,
@@ -86,8 +94,26 @@ export function createNodeHttpClient(): ZenHttpClient {
           },
         );
         if (connectMs > 0) {
-          req.setTimeout(connectMs, () => {
-            req.destroy(new Error(`upstream connect timeout after ${connectMs}ms`));
+          // One timer, one callback, re-armed as the request progresses: Node
+          // fires req.setTimeout on socket inactivity, so arming a second
+          // callback on the same socket would let whichever registered first
+          // win. The Go reference only wraps the dialer, so the window widens
+          // once the socket is up: a model may spend seconds thinking before
+          // its first byte, which is not a connection failure.
+          let connected = false;
+          const fail = (): void => {
+            req.destroy(
+              connected
+                ? new Error(`upstream first byte timeout after ${firstByteMs}ms`)
+                : new Error(`upstream connect timeout after ${connectMs}ms`),
+            );
+          };
+          req.setTimeout(connectMs, fail);
+          req.on('socket', (socket) => {
+            socket.once(url.protocol === 'https:' ? 'secureConnect' : 'connect', () => {
+              connected = true;
+              req.setTimeout(firstByteMs, fail);
+            });
           });
         }
         req.on('error', reject);
