@@ -128,7 +128,7 @@ function probe(protocol, model, withTools) {
     const req = https.request(url, { method: 'POST', headers }, (res) => {
       let first = '';
       res.on('data', (chunk) => {
-        if (!first) first = chunk.toString('utf8').slice(0, 200);
+        if (!first) first = chunk.toString('utf8').slice(0, Number(process.env.PROBE_BODY ?? 200));
         res.destroy();
         finish({ status: res.statusCode, first });
       });
