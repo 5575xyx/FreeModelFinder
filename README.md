@@ -33,7 +33,7 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-10-02（Asia/Shanghai）更新：106 个免费模型入口，覆盖 13/15 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-10-03（Asia/Shanghai）更新：107 个免费模型入口，覆盖 13/15 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 未配置密钥：Google Gemini、GitHub Models。
 
@@ -53,19 +53,18 @@
 | Kilo Code                | 🟢 正常   |         21 | 聚合免费模型             |
 | Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型             |
 | Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型             |
-| OpenCode Zen             | 🟢 正常   |         12 | 实时零价模型（匿名通道） |
+| OpenCode Zen             | 🟢 正常   |         13 | 实时零价模型（匿名通道） |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-02.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-03.md)
 
 ### 今日变化
 
-与 2026-10-01 相比，在成功比较的 13 个 Provider 中：**新增 2 个，移除 0 个**。
+与 2026-10-02 相比，在成功比较的 13 个 Provider 中：**新增 1 个，移除 0 个**。
 
 <details>
-<summary>查看新增的 2 个模型</summary>
+<summary>查看新增的 1 个模型</summary>
 
-- `openrouter:apodex/apodex-1.1-mini:free`
-- `opencode:opencode:fledge-alpha-free`
+- `opencode:opencode:ling-3.1-flash-free`
 
 </details>
 
@@ -239,12 +238,13 @@
 </details>
 
 <details>
-<summary><strong>OpenCode Zen · 12 个模型</strong></summary>
+<summary><strong>OpenCode Zen · 13 个模型</strong></summary>
 
 - `opencode:opencode:big-pickle` — big-pickle
 - `opencode:opencode:deepseek-v4-flash-free` — deepseek-v4-flash-free
 - `opencode:opencode:fledge-alpha-free` — fledge-alpha-free
 - `opencode:opencode:ling-3.0-flash-fin-free` — ling-3.0-flash-fin-free
+- `opencode:opencode:ling-3.1-flash-free` — ling-3.1-flash-free
 - `opencode:opencode:longcat-2.5-preview-free` — longcat-2.5-preview-free
 - `opencode:opencode:mimo-v2.5-free` — mimo-v2.5-free
 - `opencode:opencode:mimo-v2.6-flash-free` — mimo-v2.6-flash-free
