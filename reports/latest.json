@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-10-03",
-  "generatedAt": "2026-10-03T01:14:10.672Z",
-  "reportPath": "reports/provider-free-model-audit-2026-10-03.md",
+  "date": "2026-10-04",
+  "generatedAt": "2026-10-04T00:43:39.188Z",
+  "reportPath": "reports/provider-free-model-audit-2026-10-04.md",
   "totalModels": 107,
   "providers": [
     {
@@ -704,15 +704,8 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-10-02",
-    "added": [
-      {
-        "provider": "opencode",
-        "id": "opencode:ling-3.1-flash-free",
-        "displayName": "ling-3.1-flash-free",
-        "contextWindow": null
-      }
-    ],
+    "comparedWith": "2026-10-03",
+    "added": [],
     "removed": [],
     "comparedProviders": [
       "openrouter",
