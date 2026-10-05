@@ -33,7 +33,7 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-10-04（Asia/Shanghai）更新：107 个免费模型入口，覆盖 13/15 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-10-05（Asia/Shanghai）更新：107 个免费模型入口，覆盖 13/15 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 未配置密钥：Google Gemini、GitHub Models。
 
@@ -55,11 +55,11 @@
 | Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型             |
 | OpenCode Zen             | 🟢 正常   |         13 | 实时零价模型（匿名通道） |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-04.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-05.md)
 
 ### 今日变化
 
-与 2026-10-03 相比，成功比较的 13 个 Provider 模型清单没有变化。
+与 2026-10-04 相比，成功比较的 13 个 Provider 模型清单没有变化。
 
 ### 展开完整模型列表
 
