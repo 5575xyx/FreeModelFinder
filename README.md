@@ -33,38 +33,47 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-10-05（Asia/Shanghai）更新：107 个免费模型入口，覆盖 13/15 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-10-06（Asia/Shanghai）更新：104 个免费模型入口，覆盖 13/15 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 未配置密钥：Google Gemini、GitHub Models。
 
 | Provider                 | 状态      | 免费模型数 | 免费类型                 |
 | ------------------------ | --------- | ---------: | ------------------------ |
-| OpenRouter               | 🟢 正常   |         17 | 零价格模型               |
+| OpenRouter               | 🟢 正常   |         16 | 零价格模型               |
 | Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier           |
 | Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号             |
 | SiliconFlow              | 🟢 正常   |          5 | 免费白名单               |
 | ModelScope               | 🟢 正常   |         16 | 账号免费额度             |
-| NVIDIA NIM               | 🟢 正常   |         10 | 免费开发端点             |
+| NVIDIA NIM               | 🟢 正常   |          9 | 免费开发端点             |
 | GitHub Models            | ⚪ 未接入 |     未接入 | 原型开发额度             |
 | Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production    |
 | Hugging Face             | 🟢 正常   |          2 | 实时零价端点             |
 | SenseNova                | 🟢 正常   |          7 | 实时零价模型             |
 | Baidu Qianfan            | 🟢 正常   |          0 | 官方免费白名单交集       |
-| Kilo Code                | 🟢 正常   |         21 | 聚合免费模型             |
+| Kilo Code                | 🟢 正常   |         20 | 聚合免费模型             |
 | Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型             |
 | Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型             |
 | OpenCode Zen             | 🟢 正常   |         13 | 实时零价模型（匿名通道） |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-05.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-06.md)
 
 ### 今日变化
 
-与 2026-10-04 相比，成功比较的 13 个 Provider 模型清单没有变化。
+与 2026-10-05 相比，在成功比较的 13 个 Provider 中：**新增 0 个，移除 3 个**。
+
+<details>
+<summary>查看移除的 3 个模型</summary>
+
+- `openrouter:qwen/qwen3.8-27b:free`
+- `nvidia:nvidia/riva-translate-4b-instruct-v1.1`
+- `kilo:qwen/qwen3.8-27b:free`
+
+</details>
 
 ### 展开完整模型列表
 
 <details>
-<summary><strong>OpenRouter · 17 个模型</strong></summary>
+<summary><strong>OpenRouter · 16 个模型</strong></summary>
 
 - `openrouter:apodex/apodex-1.1-mini:free` — Apodex: Apodex 1.1 Mini (free)
 - `openrouter:cohere/north-mini-code:free` — Cohere: North Mini Code (free)
@@ -80,7 +89,6 @@
 - `openrouter:openrouter/free` — Free Models Router
 - `openrouter:poolside/laguna-s-2.1:free` — Poolside: Laguna S 2.1 (free)
 - `openrouter:poolside/laguna-xs-2.1:free` — Poolside: Laguna XS 2.1 (free)
-- `openrouter:qwen/qwen3.8-27b:free` — Qwen: Qwen3.8 27B (free)
 - `openrouter:thinkingmachines/inkling-small:free` — Thinking Machines: Inkling Small (free)
 - `openrouter:thinkingmachines/inkling:free` — Thinking Machines: Inkling (free)
 
@@ -128,7 +136,7 @@
 </details>
 
 <details>
-<summary><strong>NVIDIA NIM · 10 个模型</strong></summary>
+<summary><strong>NVIDIA NIM · 9 个模型</strong></summary>
 
 - `nvidia:google/diffusiongemma-26b-a4b-it`
 - `nvidia:google/gemma-4-31b-it`
@@ -138,7 +146,6 @@
 - `nvidia:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
 - `nvidia:nvidia/nemotron-3-super-120b-a12b`
 - `nvidia:nvidia/nemotron-3-ultra-550b-a55b`
-- `nvidia:nvidia/riva-translate-4b-instruct-v1.1`
 - `nvidia:openai/gpt-oss-20b`
 
 </details>
@@ -179,7 +186,7 @@
 </details>
 
 <details>
-<summary><strong>Kilo Code · 21 个模型</strong></summary>
+<summary><strong>Kilo Code · 20 个模型</strong></summary>
 
 - `kilo:cohere/north-mini-code:free` — Cohere: North Mini Code (free)
 - `kilo:dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
@@ -199,7 +206,6 @@
 - `kilo:openrouter/pareto-code` — OpenRouter Pareto Code Router
 - `kilo:poolside/laguna-s-2.1:free` — Poolside: Laguna S 2.1 (free)
 - `kilo:poolside/laguna-xs-2.1:free` — Poolside: Laguna XS 2.1 (free)
-- `kilo:qwen/qwen3.8-27b:free` — Qwen: Qwen3.8 27B (free)
 - `kilo:stepfun/step-3.7-flash:free` — StepFun: Step 3.7 Flash (free)
 - `kilo:thinkingmachines/inkling-small:free` — Thinking Machines: Inkling Small (free)
 
