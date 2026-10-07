@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "date": "2026-10-06",
-  "generatedAt": "2026-10-06T02:20:57.185Z",
-  "reportPath": "reports/provider-free-model-audit-2026-10-06.md",
-  "totalModels": 104,
+  "date": "2026-10-07",
+  "generatedAt": "2026-10-07T01:37:48.312Z",
+  "reportPath": "reports/provider-free-model-audit-2026-10-07.md",
+  "totalModels": 105,
   "providers": [
     {
       "id": "openrouter",
@@ -615,7 +615,7 @@
       "id": "opencode",
       "display": "OpenCode Zen",
       "status": "ok",
-      "count": 13,
+      "count": 14,
       "freeType": "实时零价模型（匿名通道）",
       "freeBasis": "实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public）",
       "risk": "匿名通道与免费层有速率和并发限制；部分免费模型只在 Go tier 提供；上游目录与定价可能随时变化",
@@ -628,6 +628,11 @@
         {
           "id": "opencode:deepseek-v4-flash-free",
           "displayName": "deepseek-v4-flash-free",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:exo-free",
+          "displayName": "exo-free",
           "contextWindow": null
         },
         {
@@ -689,28 +694,16 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-10-05",
-    "added": [],
-    "removed": [
+    "comparedWith": "2026-10-06",
+    "added": [
       {
-        "provider": "openrouter",
-        "id": "qwen/qwen3.8-27b:free",
-        "displayName": "Qwen: Qwen3.8 27B (free)",
-        "contextWindow": 262144
-      },
-      {
-        "provider": "nvidia",
-        "id": "nvidia/riva-translate-4b-instruct-v1.1",
-        "displayName": "nvidia/riva-translate-4b-instruct-v1.1",
+        "provider": "opencode",
+        "id": "opencode:exo-free",
+        "displayName": "exo-free",
         "contextWindow": null
-      },
-      {
-        "provider": "kilo",
-        "id": "qwen/qwen3.8-27b:free",
-        "displayName": "Qwen: Qwen3.8 27B (free)",
-        "contextWindow": 262144
       }
     ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "zhipu",

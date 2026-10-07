@@ -2,21 +2,19 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-10-06（Asia/Shanghai）** · **104** 个免费模型入口 · **13/15** 个 Provider 正常。
+> 最近目录审计：**2026-10-07（Asia/Shanghai）** · **105** 个免费模型入口 · **13/15** 个 Provider 正常。
 
-[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-06.md)
+[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-07.md)
 
 这份列表每天由 GitHub Actions 通过各 Provider 的模型目录接口刷新，并应用 FreeModelFinder 核心层的免费规则。它不执行真实推理，不代表无限额度、永久免费或生产级可用。同一上游模型通过多个 Provider 提供时会分别计数，因为对应的账号资格、额度和 Gateway 模型 ID 不同。
 
 ## 今日变化
 
-与 2026-10-05 相比，在成功比较的 13 个 Provider 中：**新增 0 个，移除 3 个**。
+与 2026-10-06 相比，在成功比较的 13 个 Provider 中：**新增 1 个，移除 0 个**。
 
-### 移除
+### 新增
 
-- `openrouter:qwen/qwen3.8-27b:free`
-- `nvidia:nvidia/riva-translate-4b-instruct-v1.1`
-- `kilo:qwen/qwen3.8-27b:free`
+- `opencode:opencode:exo-free`
 
 ## Provider 汇总
 
@@ -36,7 +34,7 @@
 | Kilo Code                | 🟢 正常   |         20 | 聚合免费模型             | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                                                                                  |
 | Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型             | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                                                |
 | Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型             | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                                                |
-| OpenCode Zen             | 🟢 正常   |         13 | 实时零价模型（匿名通道） | 实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public） |
+| OpenCode Zen             | 🟢 正常   |         14 | 实时零价模型（匿名通道） | 实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public） |
 
 ## 完整列表
 
@@ -279,6 +277,7 @@
 | --------------------------------------------------- | ------------------------------- | ---------: |
 | `opencode:opencode:big-pickle`                      | big-pickle                      |          — |
 | `opencode:opencode:deepseek-v4-flash-free`          | deepseek-v4-flash-free          |          — |
+| `opencode:opencode:exo-free`                        | exo-free                        |          — |
 | `opencode:opencode:fledge-alpha-free`               | fledge-alpha-free               |          — |
 | `opencode:opencode:ling-3.0-flash-fin-free`         | ling-3.0-flash-fin-free         |          — |
 | `opencode:opencode:ling-3.1-flash-free`             | ling-3.1-flash-free             |          — |
