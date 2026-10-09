@@ -2,26 +2,33 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-10-08（Asia/Shanghai）** · **103** 个免费模型入口 · **13/15** 个 Provider 正常。
+> 最近目录审计：**2026-10-09（Asia/Shanghai）** · **99** 个免费模型入口 · **13/15** 个 Provider 正常。
 
-[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-08.md)
+[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-09.md)
 
 这份列表每天由 GitHub Actions 通过各 Provider 的模型目录接口刷新，并应用 FreeModelFinder 核心层的免费规则。它不执行真实推理，不代表无限额度、永久免费或生产级可用。同一上游模型通过多个 Provider 提供时会分别计数，因为对应的账号资格、额度和 Gateway 模型 ID 不同。
 
 ## 今日变化
 
-与 2026-10-07 相比，在成功比较的 13 个 Provider 中：**新增 0 个，移除 2 个**。
+与 2026-10-08 相比，在成功比较的 13 个 Provider 中：**新增 1 个，移除 5 个**。
+
+### 新增
+
+- `opencode:opencode:step-5-preview-free`
 
 ### 移除
 
-- `opencode:opencode:deepseek-v4-flash-free`
-- `opencode:opencode:mimo-v2.5-free`
+- `openrouter:inclusionai/ling-3.0-flash-sante:free`
+- `sensenova:deepseek-v4-pro`
+- `kilo:inclusionai/ling-3.0-flash-sante:free`
+- `kilo:stepfun/step-3.7-flash:free`
+- `opencode:opencode:fledge-alpha-free`
 
 ## Provider 汇总
 
 | Provider                 | 状态      | 免费模型数 | 免费类型                 | 免费依据                                                                                                                                      |
 | ------------------------ | --------- | ---------: | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenRouter               | 🟢 正常   |         16 | 零价格模型               | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型                                                           |
+| OpenRouter               | 🟢 正常   |         15 | 零价格模型               | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型                                                           |
 | Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier           | 账号实时目录与 Free Tier 白名单取交集，只保留支持 `generateContent` 的型号                                                                    |
 | Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号             | 只列入官方免费 Flash 清单                                                                                                                     |
 | SiliconFlow              | 🟢 正常   |          5 | 免费白名单               | 平台免费型号白名单与实时模型目录取交集                                                                                                        |
@@ -30,9 +37,9 @@
 | GitHub Models            | ⚪ 未接入 |     未接入 | 原型开发额度             | 目录中的文本输出模型使用账号自带原型开发额度                                                                                                  |
 | Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production    | 只保留 Trial Key 与 Production Key 都明确免费的 `north-mini-code-1-0`                                                                         |
 | Hugging Face             | 🟢 正常   |          2 | 实时零价端点             | 实时端点明确报告 `is_free`，或输入输出价格均为 0                                                                                              |
-| SenseNova                | 🟢 正常   |          7 | 实时零价模型             | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单                                                                   |
+| SenseNova                | 🟢 正常   |          6 | 实时零价模型             | 实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单                                                                   |
 | Baidu Qianfan            | 🟢 正常   |          0 | 官方免费白名单交集       | 实时目录取交集，仅收录官方公告永久免费的白名单型号；当前 Speed / Lite / Tiny 等旧免费型号已全部退役，暂无可用型号，新免费型号加入白名单即恢复 |
-| Kilo Code                | 🟢 正常   |         20 | 聚合免费模型             | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                                                                                  |
+| Kilo Code                | 🟢 正常   |         18 | 聚合免费模型             | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                                                                                  |
 | Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型             | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                                                |
 | Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型             | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                                                |
 | OpenCode Zen             | 🟢 正常   |         12 | 实时零价模型（匿名通道） | 实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public） |
@@ -46,24 +53,23 @@
 - 免费依据：实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型
 - 主要风险：免费账号通常共享日请求额度；上游目录和限额会变
 
-| Gateway 模型 ID                                                 | 显示名称                                 | 上下文窗口 |
-| --------------------------------------------------------------- | ---------------------------------------- | ---------: |
-| `openrouter:apodex/apodex-1.1-mini:free`                        | Apodex: Apodex 1.1 Mini (free)           |     262.1K |
-| `openrouter:cohere/north-mini-code:free`                        | Cohere: North Mini Code (free)           |       256K |
-| `openrouter:dots-studio/dots-3-note-preview:free`               | Dots Studio: Dots3-Note Preview (free)   |       512K |
-| `openrouter:google/gemma-4-26b-a4b-it:free`                     | Google: Gemma 4 26B A4B (free)           |     262.1K |
-| `openrouter:google/gemma-4-31b-it:free`                         | Google: Gemma 4 31B (free)               |     262.1K |
-| `openrouter:inclusionai/ling-3.0-flash-sante:free`              | inclusionAI: Ling 3.0 Flash Sante (free) |     262.1K |
-| `openrouter:liquid/lfm-2.5-2.6b:free`                           | LiquidAI: LFM2.5-2.6B (free)             |      65.5K |
-| `openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | NVIDIA: Nemotron 3 Nano Omni (free)      |       256K |
-| `openrouter:nvidia/nemotron-3-super-120b-a12b:free`             | NVIDIA: Nemotron 3 Super (free)          |     262.1K |
-| `openrouter:nvidia/nemotron-3-ultra-550b-a55b:free`             | NVIDIA: Nemotron 3 Ultra (free)          |         1M |
-| `openrouter:nvidia/nemotron-3.5-lightning:free`                 | NVIDIA: Nemotron 3.5 Lightning (free)    |         1M |
-| `openrouter:openrouter/free`                                    | Free Models Router                       |       200K |
-| `openrouter:poolside/laguna-s-2.1:free`                         | Poolside: Laguna S 2.1 (free)            |     262.1K |
-| `openrouter:poolside/laguna-xs-2.1:free`                        | Poolside: Laguna XS 2.1 (free)           |     262.1K |
-| `openrouter:thinkingmachines/inkling-small:free`                | Thinking Machines: Inkling Small (free)  |         1M |
-| `openrouter:thinkingmachines/inkling:free`                      | Thinking Machines: Inkling (free)        |         1M |
+| Gateway 模型 ID                                                 | 显示名称                                | 上下文窗口 |
+| --------------------------------------------------------------- | --------------------------------------- | ---------: |
+| `openrouter:apodex/apodex-1.1-mini:free`                        | Apodex: Apodex 1.1 Mini (free)          |     262.1K |
+| `openrouter:cohere/north-mini-code:free`                        | Cohere: North Mini Code (free)          |       256K |
+| `openrouter:dots-studio/dots-3-note-preview:free`               | Dots Studio: Dots3-Note Preview (free)  |       512K |
+| `openrouter:google/gemma-4-26b-a4b-it:free`                     | Google: Gemma 4 26B A4B (free)          |     262.1K |
+| `openrouter:google/gemma-4-31b-it:free`                         | Google: Gemma 4 31B (free)              |     262.1K |
+| `openrouter:liquid/lfm-2.5-2.6b:free`                           | LiquidAI: LFM2.5-2.6B (free)            |      65.5K |
+| `openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | NVIDIA: Nemotron 3 Nano Omni (free)     |       256K |
+| `openrouter:nvidia/nemotron-3-super-120b-a12b:free`             | NVIDIA: Nemotron 3 Super (free)         |     262.1K |
+| `openrouter:nvidia/nemotron-3-ultra-550b-a55b:free`             | NVIDIA: Nemotron 3 Ultra (free)         |         1M |
+| `openrouter:nvidia/nemotron-3.5-lightning:free`                 | NVIDIA: Nemotron 3.5 Lightning (free)   |         1M |
+| `openrouter:openrouter/free`                                    | Free Models Router                      |       200K |
+| `openrouter:poolside/laguna-s-2.1:free`                         | Poolside: Laguna S 2.1 (free)           |     262.1K |
+| `openrouter:poolside/laguna-xs-2.1:free`                        | Poolside: Laguna XS 2.1 (free)          |     262.1K |
+| `openrouter:thinkingmachines/inkling-small:free`                | Thinking Machines: Inkling Small (free) |         1M |
+| `openrouter:thinkingmachines/inkling:free`                      | Thinking Machines: Inkling (free)       |         1M |
 
 ### Google Gemini
 
@@ -189,7 +195,6 @@
 | ------------------------------------ | ------------------------ | ---------: |
 | `sensenova:deepseek-flash`           | deepseek-flash           |          — |
 | `sensenova:deepseek-v4-flash`        | deepseek-v4-flash        |          — |
-| `sensenova:deepseek-v4-pro`          | deepseek-v4-pro          |          — |
 | `sensenova:deepseek-v4.1-flash`      | deepseek-v4.1-flash      |          — |
 | `sensenova:glm-5.2`                  | glm-5.2                  |          — |
 | `sensenova:kimi-k3`                  | kimi-k3                  |          — |
@@ -217,7 +222,6 @@
 | `kilo:dots-studio/dots-3-note-preview:free`               | Dots Studio: Dots3-Note Preview (free)     |       512K |
 | `kilo:google/lyria-3-clip-preview`                        | Google: Lyria 3 Clip Preview               |         1M |
 | `kilo:google/lyria-3-pro-preview`                         | Google: Lyria 3 Pro Preview                |         1M |
-| `kilo:inclusionai/ling-3.0-flash-sante:free`              | inclusionAI: Ling 3.0 Flash Sante (free)   |     262.1K |
 | `kilo:kilo-auto/free`                                     | Auto Free                                  |       256K |
 | `kilo:liquid/lfm-2.5-2.6b:free`                           | LiquidAI: LFM2.5-2.6B (free)               |      65.5K |
 | `kilo:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | NVIDIA: Nemotron 3 Nano Omni (free)        |       256K |
@@ -231,7 +235,6 @@
 | `kilo:openrouter/pareto-code`                             | OpenRouter Pareto Code Router              |         2M |
 | `kilo:poolside/laguna-s-2.1:free`                         | Poolside: Laguna S 2.1 (free)              |     262.1K |
 | `kilo:poolside/laguna-xs-2.1:free`                        | Poolside: Laguna XS 2.1 (free)             |     262.1K |
-| `kilo:stepfun/step-3.7-flash:free`                        | StepFun: Step 3.7 Flash (free)             |     262.1K |
 | `kilo:thinkingmachines/inkling-small:free`                | Thinking Machines: Inkling Small (free)    |         1M |
 
 ### Agnes AI (China)
@@ -278,7 +281,6 @@
 | --------------------------------------------------- | ------------------------------- | ---------: |
 | `opencode:opencode:big-pickle`                      | big-pickle                      |          — |
 | `opencode:opencode:exo-free`                        | exo-free                        |          — |
-| `opencode:opencode:fledge-alpha-free`               | fledge-alpha-free               |          — |
 | `opencode:opencode:ling-3.0-flash-fin-free`         | ling-3.0-flash-fin-free         |          — |
 | `opencode:opencode:ling-3.1-flash-free`             | ling-3.1-flash-free             |          — |
 | `opencode:opencode:longcat-2.5-preview-free`        | longcat-2.5-preview-free        |          — |
@@ -288,3 +290,4 @@
 | `opencode:opencode:nemotron-3-ultra-free`           | nemotron-3-ultra-free           |          — |
 | `opencode:opencode:nemotron-3.5-lightning-free`     | nemotron-3.5-lightning-free     |          — |
 | `opencode:opencode:space-bunny-free`                | space-bunny-free                |          — |
+| `opencode:opencode:step-5-preview-free`             | step-5-preview-free             |          — |

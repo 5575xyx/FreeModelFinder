@@ -33,13 +33,13 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-10-08（Asia/Shanghai）更新：103 个免费模型入口，覆盖 13/15 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-10-09（Asia/Shanghai）更新：99 个免费模型入口，覆盖 13/15 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 未配置密钥：Google Gemini、GitHub Models。
 
 | Provider                 | 状态      | 免费模型数 | 免费类型                 |
 | ------------------------ | --------- | ---------: | ------------------------ |
-| OpenRouter               | 🟢 正常   |         16 | 零价格模型               |
+| OpenRouter               | 🟢 正常   |         15 | 零价格模型               |
 | Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier           |
 | Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号             |
 | SiliconFlow              | 🟢 正常   |          5 | 免费白名单               |
@@ -48,38 +48,47 @@
 | GitHub Models            | ⚪ 未接入 |     未接入 | 原型开发额度             |
 | Cohere                   | 🟢 正常   |          1 | 免费 Trial/Production    |
 | Hugging Face             | 🟢 正常   |          2 | 实时零价端点             |
-| SenseNova                | 🟢 正常   |          7 | 实时零价模型             |
+| SenseNova                | 🟢 正常   |          6 | 实时零价模型             |
 | Baidu Qianfan            | 🟢 正常   |          0 | 官方免费白名单交集       |
-| Kilo Code                | 🟢 正常   |         20 | 聚合免费模型             |
+| Kilo Code                | 🟢 正常   |         18 | 聚合免费模型             |
 | Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型             |
 | Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型             |
 | OpenCode Zen             | 🟢 正常   |         12 | 实时零价模型（匿名通道） |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-08.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-09.md)
 
 ### 今日变化
 
-与 2026-10-07 相比，在成功比较的 13 个 Provider 中：**新增 0 个，移除 2 个**。
+与 2026-10-08 相比，在成功比较的 13 个 Provider 中：**新增 1 个，移除 5 个**。
 
 <details>
-<summary>查看移除的 2 个模型</summary>
+<summary>查看新增的 1 个模型</summary>
 
-- `opencode:opencode:deepseek-v4-flash-free`
-- `opencode:opencode:mimo-v2.5-free`
+- `opencode:opencode:step-5-preview-free`
+
+</details>
+
+<details>
+<summary>查看移除的 5 个模型</summary>
+
+- `openrouter:inclusionai/ling-3.0-flash-sante:free`
+- `sensenova:deepseek-v4-pro`
+- `kilo:inclusionai/ling-3.0-flash-sante:free`
+- `kilo:stepfun/step-3.7-flash:free`
+- `opencode:opencode:fledge-alpha-free`
 
 </details>
 
 ### 展开完整模型列表
 
 <details>
-<summary><strong>OpenRouter · 16 个模型</strong></summary>
+<summary><strong>OpenRouter · 15 个模型</strong></summary>
 
 - `openrouter:apodex/apodex-1.1-mini:free` — Apodex: Apodex 1.1 Mini (free)
 - `openrouter:cohere/north-mini-code:free` — Cohere: North Mini Code (free)
 - `openrouter:dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
 - `openrouter:google/gemma-4-26b-a4b-it:free` — Google: Gemma 4 26B A4B (free)
 - `openrouter:google/gemma-4-31b-it:free` — Google: Gemma 4 31B (free)
-- `openrouter:inclusionai/ling-3.0-flash-sante:free` — inclusionAI: Ling 3.0 Flash Sante (free)
 - `openrouter:liquid/lfm-2.5-2.6b:free` — LiquidAI: LFM2.5-2.6B (free)
 - `openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` — NVIDIA: Nemotron 3 Nano Omni (free)
 - `openrouter:nvidia/nemotron-3-super-120b-a12b:free` — NVIDIA: Nemotron 3 Super (free)
@@ -165,11 +174,10 @@
 </details>
 
 <details>
-<summary><strong>SenseNova · 7 个模型</strong></summary>
+<summary><strong>SenseNova · 6 个模型</strong></summary>
 
 - `sensenova:deepseek-flash`
 - `sensenova:deepseek-v4-flash`
-- `sensenova:deepseek-v4-pro`
 - `sensenova:deepseek-v4.1-flash`
 - `sensenova:glm-5.2`
 - `sensenova:kimi-k3`
@@ -185,13 +193,12 @@
 </details>
 
 <details>
-<summary><strong>Kilo Code · 20 个模型</strong></summary>
+<summary><strong>Kilo Code · 18 个模型</strong></summary>
 
 - `kilo:cohere/north-mini-code:free` — Cohere: North Mini Code (free)
 - `kilo:dots-studio/dots-3-note-preview:free` — Dots Studio: Dots3-Note Preview (free)
 - `kilo:google/lyria-3-clip-preview` — Google: Lyria 3 Clip Preview
 - `kilo:google/lyria-3-pro-preview` — Google: Lyria 3 Pro Preview
-- `kilo:inclusionai/ling-3.0-flash-sante:free` — inclusionAI: Ling 3.0 Flash Sante (free)
 - `kilo:kilo-auto/free` — Auto Free
 - `kilo:liquid/lfm-2.5-2.6b:free` — LiquidAI: LFM2.5-2.6B (free)
 - `kilo:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` — NVIDIA: Nemotron 3 Nano Omni (free)
@@ -205,7 +212,6 @@
 - `kilo:openrouter/pareto-code` — OpenRouter Pareto Code Router
 - `kilo:poolside/laguna-s-2.1:free` — Poolside: Laguna S 2.1 (free)
 - `kilo:poolside/laguna-xs-2.1:free` — Poolside: Laguna XS 2.1 (free)
-- `kilo:stepfun/step-3.7-flash:free` — StepFun: Step 3.7 Flash (free)
 - `kilo:thinkingmachines/inkling-small:free` — Thinking Machines: Inkling Small (free)
 
 </details>
@@ -240,7 +246,6 @@
 
 - `opencode:opencode:big-pickle` — big-pickle
 - `opencode:opencode:exo-free` — exo-free
-- `opencode:opencode:fledge-alpha-free` — fledge-alpha-free
 - `opencode:opencode:ling-3.0-flash-fin-free` — ling-3.0-flash-fin-free
 - `opencode:opencode:ling-3.1-flash-free` — ling-3.1-flash-free
 - `opencode:opencode:longcat-2.5-preview-free` — longcat-2.5-preview-free
@@ -250,6 +255,7 @@
 - `opencode:opencode:nemotron-3-ultra-free` — nemotron-3-ultra-free
 - `opencode:opencode:nemotron-3.5-lightning-free` — nemotron-3.5-lightning-free
 - `opencode:opencode:space-bunny-free` — space-bunny-free
+- `opencode:opencode:step-5-preview-free` — step-5-preview-free
 
 </details>
 

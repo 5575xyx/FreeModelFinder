@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-10-08",
-  "generatedAt": "2026-10-08T02:01:40.551Z",
-  "reportPath": "reports/provider-free-model-audit-2026-10-08.md",
-  "totalModels": 103,
+  "date": "2026-10-09",
+  "generatedAt": "2026-10-09T02:15:34.608Z",
+  "reportPath": "reports/provider-free-model-audit-2026-10-09.md",
+  "totalModels": 99,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 16,
+      "count": 15,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -37,11 +37,6 @@
         {
           "id": "google/gemma-4-31b-it:free",
           "displayName": "Google: Gemma 4 31B (free)",
-          "contextWindow": 262144
-        },
-        {
-          "id": "inclusionai/ling-3.0-flash-sante:free",
-          "displayName": "inclusionAI: Ling 3.0 Flash Sante (free)",
           "contextWindow": 262144
         },
         {
@@ -361,7 +356,7 @@
       "id": "sensenova",
       "display": "SenseNova",
       "status": "ok",
-      "count": 7,
+      "count": 6,
       "freeType": "实时零价模型",
       "freeBasis": "实时目录中输入、输出价格都为 0 的文本模型；接口不可用时使用审核过的免费清单",
       "risk": "免费配额和型号可能变化；当前网关只处理文本，即使模型本身支持多模态",
@@ -374,11 +369,6 @@
         {
           "id": "deepseek-v4-flash",
           "displayName": "deepseek-v4-flash",
-          "contextWindow": null
-        },
-        {
-          "id": "deepseek-v4-pro",
-          "displayName": "deepseek-v4-pro",
           "contextWindow": null
         },
         {
@@ -417,7 +407,7 @@
       "id": "kilo",
       "display": "Kilo Code",
       "status": "ok",
-      "count": 20,
+      "count": 18,
       "freeType": "聚合免费模型",
       "freeBasis": "白名单 + 零价格双重验证，覆盖 17+ 个免费模型",
       "risk": "免费层约 200 请求/小时；部分模型与 OpenRouter 重叠",
@@ -441,11 +431,6 @@
           "id": "google/lyria-3-pro-preview",
           "displayName": "Google: Lyria 3 Pro Preview",
           "contextWindow": 1048576
-        },
-        {
-          "id": "inclusionai/ling-3.0-flash-sante:free",
-          "displayName": "inclusionAI: Ling 3.0 Flash Sante (free)",
-          "contextWindow": 262144
         },
         {
           "id": "kilo-auto/free",
@@ -510,11 +495,6 @@
         {
           "id": "poolside/laguna-xs-2.1:free",
           "displayName": "Poolside: Laguna XS 2.1 (free)",
-          "contextWindow": 262144
-        },
-        {
-          "id": "stepfun/step-3.7-flash:free",
-          "displayName": "StepFun: Step 3.7 Flash (free)",
           "contextWindow": 262144
         },
         {
@@ -631,11 +611,6 @@
           "contextWindow": null
         },
         {
-          "id": "opencode:fledge-alpha-free",
-          "displayName": "fledge-alpha-free",
-          "contextWindow": null
-        },
-        {
           "id": "opencode:ling-3.0-flash-fin-free",
           "displayName": "ling-3.0-flash-fin-free",
           "contextWindow": null
@@ -679,24 +654,54 @@
           "id": "opencode:space-bunny-free",
           "displayName": "space-bunny-free",
           "contextWindow": null
+        },
+        {
+          "id": "opencode:step-5-preview-free",
+          "displayName": "step-5-preview-free",
+          "contextWindow": null
         }
       ]
     }
   ],
   "changes": {
-    "comparedWith": "2026-10-07",
-    "added": [],
-    "removed": [
+    "comparedWith": "2026-10-08",
+    "added": [
       {
         "provider": "opencode",
-        "id": "opencode:deepseek-v4-flash-free",
-        "displayName": "deepseek-v4-flash-free",
+        "id": "opencode:step-5-preview-free",
+        "displayName": "step-5-preview-free",
+        "contextWindow": null
+      }
+    ],
+    "removed": [
+      {
+        "provider": "openrouter",
+        "id": "inclusionai/ling-3.0-flash-sante:free",
+        "displayName": "inclusionAI: Ling 3.0 Flash Sante (free)",
+        "contextWindow": 262144
+      },
+      {
+        "provider": "sensenova",
+        "id": "deepseek-v4-pro",
+        "displayName": "deepseek-v4-pro",
         "contextWindow": null
       },
       {
+        "provider": "kilo",
+        "id": "inclusionai/ling-3.0-flash-sante:free",
+        "displayName": "inclusionAI: Ling 3.0 Flash Sante (free)",
+        "contextWindow": 262144
+      },
+      {
+        "provider": "kilo",
+        "id": "stepfun/step-3.7-flash:free",
+        "displayName": "StepFun: Step 3.7 Flash (free)",
+        "contextWindow": 262144
+      },
+      {
         "provider": "opencode",
-        "id": "opencode:mimo-v2.5-free",
-        "displayName": "mimo-v2.5-free",
+        "id": "opencode:fledge-alpha-free",
+        "displayName": "fledge-alpha-free",
         "contextWindow": null
       }
     ],
