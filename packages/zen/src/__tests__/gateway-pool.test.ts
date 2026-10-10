@@ -79,10 +79,28 @@ describe('zen anonymous pool', () => {
     assert.ok(second);
   });
 
-  it('marks a failing anonymous node and skips it while cooling', () => {
+  it('cools an anonymous node on a recoverable rate-limit 429', () => {
+    const pool = new ZenAnonymousPool(proxies, client);
+    const node = pool.nodes()[0]!;
+    pool.markFailure(node, 429, undefined, 30_000);
+    assert.equal(pool.inCooldown(node, Date.now()), true);
+  });
+
+  it('does not cool an anonymous node on a permanent 403 refusal without retry-after', () => {
+    // A region-locked or free-tier-refusal 403 will not clear itself, so
+    // cooling the single anonymous node only makes the whole lane colder.
     const pool = new ZenAnonymousPool(proxies, client);
     const node = pool.nodes()[0]!;
     pool.markFailure(node, 403, undefined, undefined);
+    assert.equal(pool.inCooldown(node, Date.now()), false);
+    pool.markFailure(node, 401, undefined, undefined);
+    assert.equal(pool.inCooldown(node, Date.now()), false);
+  });
+
+  it('still cools an anonymous node on a 403 that carries retry-after', () => {
+    const pool = new ZenAnonymousPool(proxies, client);
+    const node = pool.nodes()[0]!;
+    pool.markFailure(node, 403, undefined, 30_000);
     assert.equal(pool.inCooldown(node, Date.now()), true);
   });
 

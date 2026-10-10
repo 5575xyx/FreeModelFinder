@@ -254,6 +254,14 @@ export class ZenAnonymousPool {
     if (status !== undefined || (error !== undefined && error !== null)) {
       this.lastFailure = { status: status ?? 0, error };
     }
+    // A region-locked 403/401 carries no retry-after because retrying the same
+    // egress IP can never succeed. Cooling the lone anonymous node on such a
+    // permanent refusal only extends the window in which every model on the lane
+    // is forced onto a cold node, so it is suppressed here. Key pools keep the
+    // Go reference behaviour (401/403/429 all cool) since a key failure is
+    // scoped to one key, not the whole lane.
+    const isPermanentRefusal = (status === 403 || status === 401) && (retryAfterMs ?? 0) <= 0;
+    if (isPermanentRefusal) return;
     if (!shouldCooldown(status, error)) return;
     applyCooldown(node, this.cooldownBaseMs, retryAfterMs);
   }
