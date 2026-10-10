@@ -33,7 +33,7 @@
 
 <!-- AUDIT-SUMMARY-START -->
 
-> **目录审计于 2026-10-09（Asia/Shanghai）更新：99 个免费模型入口，覆盖 13/15 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
+> **目录审计于 2026-10-10（Asia/Shanghai）更新：97 个免费模型入口，覆盖 13/15 个 Provider。** 这里统计的是通过免费规则过滤的 Provider 模型入口，同一模型出现在多个 Provider 时会分别计数；本次未发送真实推理请求。
 
 > 未配置密钥：Google Gemini、GitHub Models。
 
@@ -51,31 +51,21 @@
 | SenseNova                | 🟢 正常   |          6 | 实时零价模型             |
 | Baidu Qianfan            | 🟢 正常   |          0 | 官方免费白名单交集       |
 | Kilo Code                | 🟢 正常   |         18 | 聚合免费模型             |
-| Agnes AI (China)         | 🟢 正常   |          6 | 官方免费模型             |
-| Agnes AI (International) | 🟢 正常   |          7 | 官方免费模型             |
+| Agnes AI (China)         | 🟢 正常   |          5 | 官方免费模型             |
+| Agnes AI (International) | 🟢 正常   |          6 | 官方免费模型             |
 | OpenCode Zen             | 🟢 正常   |         12 | 实时零价模型（匿名通道） |
 
-[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-09.md)
+[查看稳定的完整免费模型清单](FREE_MODELS.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-10.md)
 
 ### 今日变化
 
-与 2026-10-08 相比，在成功比较的 13 个 Provider 中：**新增 1 个，移除 5 个**。
+与 2026-10-09 相比，在成功比较的 13 个 Provider 中：**新增 0 个，移除 2 个**。
 
 <details>
-<summary>查看新增的 1 个模型</summary>
+<summary>查看移除的 2 个模型</summary>
 
-- `opencode:opencode:step-5-preview-free`
-
-</details>
-
-<details>
-<summary>查看移除的 5 个模型</summary>
-
-- `openrouter:inclusionai/ling-3.0-flash-sante:free`
-- `sensenova:deepseek-v4-pro`
-- `kilo:inclusionai/ling-3.0-flash-sante:free`
-- `kilo:stepfun/step-3.7-flash:free`
-- `opencode:opencode:fledge-alpha-free`
+- `agnes:agnes-video-v2.0`
+- `agnes-intl:agnes-video-v2.0`
 
 </details>
 
@@ -217,19 +207,18 @@
 </details>
 
 <details>
-<summary><strong>Agnes AI (China) · 6 个模型</strong></summary>
+<summary><strong>Agnes AI (China) · 5 个模型</strong></summary>
 
 - `agnes:agnes-2.5-flash`
 - `agnes:agnes-3.0-flash`
 - `agnes:agnes-image-2.1-flash`
 - `agnes:agnes-image-2.5-flash`
 - `agnes:agnes-video-2.5-flash`
-- `agnes:agnes-video-v2.0`
 
 </details>
 
 <details>
-<summary><strong>Agnes AI (International) · 7 个模型</strong></summary>
+<summary><strong>Agnes AI (International) · 6 个模型</strong></summary>
 
 - `agnes-intl:agnes-2.5-flash`
 - `agnes-intl:agnes-3.0-flash`
@@ -237,7 +226,6 @@
 - `agnes-intl:agnes-image-2.1-flash`
 - `agnes-intl:agnes-image-2.5-flash`
 - `agnes-intl:agnes-video-2.5-flash`
-- `agnes-intl:agnes-video-v2.0`
 
 </details>
 

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "date": "2026-10-09",
-  "generatedAt": "2026-10-09T02:15:34.608Z",
-  "reportPath": "reports/provider-free-model-audit-2026-10-09.md",
-  "totalModels": 99,
+  "date": "2026-10-10",
+  "generatedAt": "2026-10-10T01:47:59.916Z",
+  "reportPath": "reports/provider-free-model-audit-2026-10-10.md",
+  "totalModels": 97,
   "providers": [
     {
       "id": "openrouter",
@@ -508,7 +508,7 @@
       "id": "agnes",
       "display": "Agnes AI (China)",
       "status": "ok",
-      "count": 6,
+      "count": 5,
       "freeType": "官方免费模型",
       "freeBasis": "官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）",
       "risk": "免费层 20 RPM；图像和视频模型有额外限制",
@@ -537,11 +537,6 @@
           "id": "agnes-video-2.5-flash",
           "displayName": "agnes-video-2.5-flash",
           "contextWindow": null
-        },
-        {
-          "id": "agnes-video-v2.0",
-          "displayName": "agnes-video-v2.0",
-          "contextWindow": null
         }
       ]
     },
@@ -549,7 +544,7 @@
       "id": "agnes-intl",
       "display": "Agnes AI (International)",
       "status": "ok",
-      "count": 7,
+      "count": 6,
       "freeType": "官方免费模型",
       "freeBasis": "官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-*、agnes-video-*）",
       "risk": "免费层 20 RPM；图像和视频模型有额外限制",
@@ -582,11 +577,6 @@
         {
           "id": "agnes-video-2.5-flash",
           "displayName": "agnes-video-2.5-flash",
-          "contextWindow": null
-        },
-        {
-          "id": "agnes-video-v2.0",
-          "displayName": "agnes-video-v2.0",
           "contextWindow": null
         }
       ]
@@ -664,44 +654,19 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-10-08",
-    "added": [
-      {
-        "provider": "opencode",
-        "id": "opencode:step-5-preview-free",
-        "displayName": "step-5-preview-free",
-        "contextWindow": null
-      }
-    ],
+    "comparedWith": "2026-10-09",
+    "added": [],
     "removed": [
       {
-        "provider": "openrouter",
-        "id": "inclusionai/ling-3.0-flash-sante:free",
-        "displayName": "inclusionAI: Ling 3.0 Flash Sante (free)",
-        "contextWindow": 262144
-      },
-      {
-        "provider": "sensenova",
-        "id": "deepseek-v4-pro",
-        "displayName": "deepseek-v4-pro",
+        "provider": "agnes",
+        "id": "agnes-video-v2.0",
+        "displayName": "agnes-video-v2.0",
         "contextWindow": null
       },
       {
-        "provider": "kilo",
-        "id": "inclusionai/ling-3.0-flash-sante:free",
-        "displayName": "inclusionAI: Ling 3.0 Flash Sante (free)",
-        "contextWindow": 262144
-      },
-      {
-        "provider": "kilo",
-        "id": "stepfun/step-3.7-flash:free",
-        "displayName": "StepFun: Step 3.7 Flash (free)",
-        "contextWindow": 262144
-      },
-      {
-        "provider": "opencode",
-        "id": "opencode:fledge-alpha-free",
-        "displayName": "fledge-alpha-free",
+        "provider": "agnes-intl",
+        "id": "agnes-video-v2.0",
+        "displayName": "agnes-video-v2.0",
         "contextWindow": null
       }
     ],
