@@ -34,7 +34,7 @@ export const ZenConfigSchema = z.object({
   performance: z
     .object({
       attemptTimeoutSeconds: z.number().int().min(0).default(0),
-      connectTimeoutSeconds: z.number().int().min(0).default(5),
+      connectTimeoutSeconds: z.number().int().min(0).default(15),
       failureCooldownSeconds: z.number().int().min(0).default(15),
       maxIdleConns: z.number().int().min(0).default(2048),
       maxIdleConnsPerHost: z.number().int().min(0).default(256),

@@ -12,7 +12,7 @@ describe('zen config', () => {
     assert.equal(cfg.retry.maxAttempts, 3);
     assert.equal(cfg.retry.timeoutSeconds, 300);
     assert.equal(cfg.performance.failureCooldownSeconds, 15);
-    assert.equal(cfg.performance.connectTimeoutSeconds, 5);
+    assert.equal(cfg.performance.connectTimeoutSeconds, 15);
     assert.equal(cfg.models.refreshSeconds, 300);
   });
 

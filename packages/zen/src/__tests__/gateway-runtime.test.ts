@@ -236,7 +236,7 @@ describe('zen gateway runtime', () => {
     assert.ok(client.requests.length >= 1);
     const sent = JSON.parse(client.requests[0]!.body!) as Record<string, unknown>;
     assert.equal(sent['stream'], true);
-    assert.equal(client.requests[0]!.connectTimeoutMs, 5000);
+    assert.equal(client.requests[0]!.connectTimeoutMs, 15000);
   });
 
   it('applies the configured per-attempt timeout to upstream requests', async () => {
@@ -258,7 +258,7 @@ describe('zen gateway runtime', () => {
     await gateway.chat({ model: 'free-model', messages: [{ role: 'user', content: 'hi' }] });
 
     assert.equal(client.requests[0]!.attemptTimeoutMs, 2000);
-    assert.equal(client.requests[0]!.connectTimeoutMs, 5000);
+    assert.equal(client.requests[0]!.connectTimeoutMs, 15000);
     gateway.stop();
   });
 
