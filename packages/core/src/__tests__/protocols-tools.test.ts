@@ -341,6 +341,39 @@ describe('openai stream tool deltas', () => {
     }) as { choices: Array<{ delta: Record<string, unknown> }> };
     assert.equal(payload.choices[0]?.delta.reasoning, 'thinking…');
   });
+
+  it('forwards usage on the finish chunk', () => {
+    const usage = {
+      prompt_tokens: 3,
+      completion_tokens: 4,
+      total_tokens: 7,
+      prompt_tokens_details: { cached_tokens: 1 },
+    };
+    const payload = streamChunkToOpenAI({
+      id: 'x',
+      model: 'm',
+      created: 1,
+      delta: 'hi',
+      finish_reason: 'stop',
+      usage,
+    }) as { usage: typeof usage; choices: Array<{ finish_reason: string }> };
+    assert.equal(payload.choices[0]?.finish_reason, 'stop');
+    assert.deepEqual(payload.usage, usage);
+  });
+
+  it('emits a trailing usage frame with empty choices', () => {
+    const usage = { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 };
+    const payload = streamChunkToOpenAI({
+      id: 'x',
+      model: 'm',
+      created: 1,
+      delta: '',
+      finish_reason: null,
+      usage,
+    }) as { usage: typeof usage; choices: unknown[] };
+    assert.deepEqual(payload.choices, []);
+    assert.deepEqual(payload.usage, usage);
+  });
 });
 
 describe('toOpenAIMessages tool fields', () => {

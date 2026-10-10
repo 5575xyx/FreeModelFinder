@@ -192,6 +192,8 @@ export const zh: Dict = {
   'tester.msg.copy': '复制',
   'tester.msg.copied': '已复制',
   'tester.msg.waiting': '等待模型响应',
+  'tester.msg.usage': '输入 {input} · 输出 {output} · 总 {total} tokens',
+  'tester.msg.usageCached': '输入 {input} · 输出 {output} · 总 {total} tokens · 缓存命中 {cached}',
   'tester.attach.aria': '附加图片',
   'tester.attach.tooLarge': '图片超过 10MB，未添加',
   'tester.attach.readError': '图片读取失败',
@@ -738,6 +740,9 @@ export const en: Dict = {
   'tester.msg.copy': 'Copy',
   'tester.msg.copied': 'Copied',
   'tester.msg.waiting': 'Waiting for model response',
+  'tester.msg.usage': '{input} input · {output} output · {total} total tokens',
+  'tester.msg.usageCached':
+    '{input} input · {output} output · {total} total · {cached} cached tokens',
   'tester.attach.aria': 'Attach images',
   'tester.attach.tooLarge': 'Image exceeds 10MB and was not added',
   'tester.attach.readError': 'Failed to read image',

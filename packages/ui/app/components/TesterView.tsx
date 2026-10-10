@@ -28,6 +28,12 @@ export type Msg = {
   uploadImages?: string[];
   videoId?: string;
   videoProvider?: string;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
 };
 
 type ExamplePrompt = {
@@ -584,6 +590,23 @@ function MessageRow({ message, isStreamingLast }: { message: Msg; isStreamingLas
               {copied ? <Check size={12} /> : <Copy size={12} />}
               {copied ? t('tester.msg.copied') : t('tester.msg.copy')}
             </button>
+          </div>
+        )}
+
+        {!isUser && message.usage && (
+          <div className="mt-1.5 px-2 text-[11px] text-muted-foreground">
+            {message.usage.prompt_tokens_details?.cached_tokens
+              ? t('tester.msg.usageCached', {
+                  input: String(message.usage.prompt_tokens ?? 0),
+                  output: String(message.usage.completion_tokens ?? 0),
+                  total: String(message.usage.total_tokens ?? 0),
+                  cached: String(message.usage.prompt_tokens_details.cached_tokens ?? 0),
+                })
+              : t('tester.msg.usage', {
+                  input: String(message.usage.prompt_tokens ?? 0),
+                  output: String(message.usage.completion_tokens ?? 0),
+                  total: String(message.usage.total_tokens ?? 0),
+                })}
           </div>
         )}
       </div>

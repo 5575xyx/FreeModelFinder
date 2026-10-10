@@ -298,14 +298,17 @@ export class ClineProvider extends BaseProvider {
     try {
       for await (const frame of this.parseSSE(response, accountId, req.model)) {
         if (frame.usage) usage = frame.usage;
-        yield {
+        const finish = frame.finish ?? null;
+        const chunk: StreamChunk = {
           id: frame.id ?? `cline-${Date.now()}`,
           model: req.model,
           created: frame.created ?? Math.floor(Date.now() / 1000),
           delta: frame.delta,
-          finish_reason: frame.finish ?? null,
+          finish_reason: finish,
           ...(frame.toolCalls ? { tool_calls: frame.toolCalls } : {}),
         };
+        if (finish != null && usage) chunk.usage = usage;
+        yield chunk;
       }
     } catch (error) {
       runtime.recordUsage('cline', accountId, req.model, {

@@ -412,6 +412,12 @@ export default function Home() {
               error?: string | { message?: string };
               fmf_image_response?: { data?: Array<{ url?: string; b64_json?: string }> };
               fmf_video_response?: { video_id?: string; provider?: string };
+              usage?: {
+                prompt_tokens?: number;
+                completion_tokens?: number;
+                total_tokens?: number;
+                prompt_tokens_details?: { cached_tokens?: number };
+              };
             };
             if (json.error) {
               const message =
@@ -452,6 +458,22 @@ export default function Home() {
                 return copy;
               });
               continue;
+            }
+
+            if (json.usage) {
+              setMessages((current) => {
+                const copy = [...current];
+                const existing = copy[assistantIndex];
+                if (existing) {
+                  copy[assistantIndex] = {
+                    ...existing,
+                    role: existing.role,
+                    content: existing.content,
+                    usage: json.usage as NonNullable<Msg['usage']>,
+                  };
+                }
+                return copy;
+              });
             }
 
             const delta = json.choices?.[0]?.delta?.content ?? '';

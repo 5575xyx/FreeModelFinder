@@ -157,7 +157,7 @@ export function streamChunkToOpenAI(chunk: StreamChunk) {
   }
   if (chunk.tool_calls && chunk.tool_calls.length > 0) delta.tool_calls = chunk.tool_calls;
   if (chunk.reasoning) delta.reasoning = chunk.reasoning;
-  return {
+  const payload: Record<string, unknown> = {
     id: chunk.id,
     object: 'chat.completion.chunk',
     created: chunk.created,
@@ -170,4 +170,19 @@ export function streamChunkToOpenAI(chunk: StreamChunk) {
       },
     ],
   };
+  // A trailing frame that only carries usage (OpenAI include_usage) should be
+  // emitted with an empty choices array, exactly like OpenAI does, so clients
+  // that special-case the usage frame still parse it correctly.
+  if (chunk.usage) {
+    payload.usage = chunk.usage;
+    if (
+      !chunk.delta &&
+      !chunk.tool_calls?.length &&
+      !chunk.reasoning &&
+      chunk.finish_reason == null
+    ) {
+      payload.choices = [];
+    }
+  }
+  return payload;
 }

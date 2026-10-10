@@ -3,6 +3,7 @@ import {
   createZenGateway,
   normalizeZenConfig,
   type ZenChatRequest,
+  type ZenChatResponse,
   type ZenGateway,
   type ZenGatewayOptions,
   type ZenHttpClient,
@@ -161,8 +162,16 @@ export class ZenProvider extends BaseProvider {
   async *stream(req: ChatRequest): AsyncIterable<StreamChunk> {
     const gateway = this.gatewayInstance();
     await this.ensureRefreshed(gateway);
+    let lastUsage: ZenChatResponse['usage'];
     for await (const chunk of gateway.stream(req as unknown as ZenChatRequest)) {
-      yield chunk;
+      if (chunk.usage) lastUsage = chunk.usage;
+      const finish = chunk.finish_reason ?? null;
+      if (finish != null && lastUsage) {
+        this.observeUsage(req.model, lastUsage);
+        yield { ...chunk, usage: lastUsage } as unknown as StreamChunk;
+      } else {
+        yield chunk as unknown as StreamChunk;
+      }
     }
   }
 

@@ -386,14 +386,17 @@ export class GeminiProvider extends BaseProvider {
           const toolCalls = parseFunctionCallDeltas(deltaParts, toolIndex);
           toolIndex += toolCalls.length;
           const mapped = mapFinish(cand?.finishReason);
-          yield {
+          const finish_reason = toolCalls.length > 0 && mapped === 'stop' ? 'tool_calls' : mapped;
+          const chunk: StreamChunk = {
             id: streamId,
             model: req.model,
             created: Math.floor(Date.now() / 1000),
             delta,
             ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-            finish_reason: toolCalls.length > 0 && mapped === 'stop' ? 'tool_calls' : mapped,
+            finish_reason,
           };
+          if (finish_reason != null && latestUsage) chunk.usage = latestUsage;
+          yield chunk;
         } catch {
           // ignore
         }

@@ -234,14 +234,17 @@ export class CustomProvider extends BaseProvider {
           if (json.usage) this.observeUsage(req.model, json.usage);
           const choice = json.choices[0];
           const parsed = parseOpenAIDelta(choice?.delta);
-          yield {
+          const finish_reason = mapFinishReason(choice?.finish_reason);
+          const chunk: StreamChunk = {
             id: json.id,
             model: req.model,
             created: json.created,
             delta: parsed.content || parsed.reasoning || '',
-            finish_reason: mapFinishReason(choice?.finish_reason),
+            finish_reason,
             ...(parsed.tool_calls ? { tool_calls: parsed.tool_calls } : {}),
           };
+          if (json.usage) chunk.usage = json.usage;
+          yield chunk;
         } catch {
           // ignore malformed line
         }
