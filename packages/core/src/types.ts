@@ -88,6 +88,14 @@ export const ToolChoiceSchema = z.union([
 ]);
 export type ToolChoice = z.infer<typeof ToolChoiceSchema>;
 
+export const ReasoningEffortSchema = z.enum(['none', 'low', 'medium', 'high', 'max']);
+export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;
+
+export const ThinkingSchema = z
+  .object({ type: z.literal('enabled'), budget_tokens: z.number().int().positive() })
+  .strict();
+export type ThinkingConfig = z.infer<typeof ThinkingSchema>;
+
 export const ChatMessageSchema = z.object({
   role: RoleSchema,
   content: z.string(),
@@ -110,6 +118,8 @@ export const ChatRequestSchema = z.object({
   tools: z.array(ToolDefinitionSchema).optional(),
   tool_choice: ToolChoiceSchema.nullable().optional(),
   parallel_tool_calls: z.boolean().optional(),
+  thinking: ThinkingSchema.optional(),
+  reasoning_effort: ReasoningEffortSchema.nullable().optional(),
   raw: z.unknown().optional(),
   rawProtocol: z.enum(['openai', 'anthropic', 'gemini']).optional(),
 });

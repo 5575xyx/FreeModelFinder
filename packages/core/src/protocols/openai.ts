@@ -2,7 +2,9 @@ import type {
   ChatMessage,
   ChatRequest,
   ChatResponse,
+  ReasoningEffort,
   StreamChunk,
+  ThinkingConfig,
   ToolCall,
   ToolChoice,
   ToolDefinition,
@@ -40,6 +42,8 @@ export interface OpenAIChatCompletionRequest {
   tools?: ToolDefinition[];
   tool_choice?: ToolChoice | null;
   parallel_tool_calls?: boolean;
+  thinking?: ThinkingConfig;
+  reasoning_effort?: ReasoningEffort | null;
 }
 
 function normalizeContent(c: OpenAIChatCompletionRequest['messages'][number]['content']): string {
@@ -119,6 +123,8 @@ export function openAIToChatRequest(req: OpenAIChatCompletionRequest): ChatReque
     ...(req.tools && req.tools.length > 0 ? { tools: req.tools } : {}),
     tool_choice: req.tool_choice,
     parallel_tool_calls: req.parallel_tool_calls,
+    thinking: req.thinking,
+    reasoning_effort: req.reasoning_effort,
     raw: req,
     rawProtocol: 'openai',
   };
