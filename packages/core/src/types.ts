@@ -369,6 +369,8 @@ export interface AppConfig {
   autoRoute?: AutoRouteSettings;
   onboarding?: OnboardingState;
   credentials?: Partial<Record<CredentialPlatform, CredentialPoolConfig>>;
+  /** External alias -> real model id (composed form, e.g. "opencode:mimo-v2.6-flash-free"). */
+  modelAliases?: Record<string, string>;
 }
 
 // ── Multimodal Generation Types ──────────────────────────────────
