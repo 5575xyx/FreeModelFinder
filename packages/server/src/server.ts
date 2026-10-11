@@ -439,6 +439,31 @@ function findMatchingGatewayKey(
   return null;
 }
 
+/**
+ * Sanitises a client-supplied model allowlist: non-strings and blanks are
+ * dropped, duplicates removed (case-insensitively, since comparison is too).
+ *
+ * Original casing is preserved so the value echoed back to the UI matches the
+ * dropdown option it came from. An empty array is always returned rather than
+ * undefined — [] and an omitted field both mean "unrestricted", and [] is the
+ * shape the UI reads back.
+ */
+function sanitizeModelAllowlist(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of value) {
+    if (typeof raw !== 'string') continue;
+    const id = raw.trim();
+    if (!id) continue;
+    const dedupe = id.toLowerCase();
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    out.push(id);
+  }
+  return out;
+}
+
 function normalizeHttpsOrigin(value: string, label: string): string {
   let url: URL;
   try {
@@ -1713,6 +1738,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           expiresAt: k.expiresAt ?? null,
           dailyRequestLimit: k.dailyRequestLimit ?? null,
           dailyTokenLimit: k.dailyTokenLimit ?? null,
+          modelAllowlist: k.modelAllowlist ?? [],
         })),
         requireAuth: !!gw.requireAuth,
         port: opts.mode === 'server' ? opts.gatewayPort : cfg.port,
@@ -1733,10 +1759,23 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         expiresAt?: number | null;
         dailyRequestLimit?: number | null;
         dailyTokenLimit?: number | null;
+        modelAllowlist?: unknown;
       };
     }>('/api/gateway', async (req, reply) => {
-      const { action, requireAuth, id, label, expiresAt, dailyRequestLimit, dailyTokenLimit } =
-        req.body ?? {};
+      const {
+        action,
+        requireAuth,
+        id,
+        label,
+        expiresAt,
+        dailyRequestLimit,
+        dailyTokenLimit,
+        modelAllowlist,
+      } = req.body ?? {};
+      // `hasAllowlist` distinguishes "clear it" ([]) from "leave it alone" (omitted),
+      // which is the whole point of accepting [] on update.
+      const allowlist = sanitizeModelAllowlist(modelAllowlist);
+      const hasAllowlist = modelAllowlist !== undefined;
       if (opts.mode === 'server' && (action === 'revoke' || requireAuth === false)) {
         return reply.code(409).send({
           error: 'gateway authentication is mandatory in server mode; rotate the key instead',
@@ -1767,6 +1806,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             ...(typeof dailyTokenLimit === 'number' && dailyTokenLimit > 0
               ? { dailyTokenLimit }
               : {}),
+            ...(allowlist.length ? { modelAllowlist: allowlist } : {}),
           };
           keys.push(entry);
           if (action === 'generate') requireAuthNext = cur.requireAuth ?? true;
@@ -1790,6 +1830,9 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
               typeof dailyTokenLimit === 'number' && dailyTokenLimit > 0
                 ? dailyTokenLimit
                 : undefined;
+            if (hasAllowlist) {
+              entry.modelAllowlist = allowlist.length ? allowlist : undefined;
+            }
           }
         }
         if (action === 'update' && typeof requireAuth === 'boolean' && !id) {
@@ -1834,6 +1877,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           expiresAt: k.expiresAt ?? null,
           dailyRequestLimit: k.dailyRequestLimit ?? null,
           dailyTokenLimit: k.dailyTokenLimit ?? null,
+          modelAllowlist: k.modelAllowlist ?? [],
         })),
         requireAuth: !!gw.requireAuth,
         mode: opts.mode,

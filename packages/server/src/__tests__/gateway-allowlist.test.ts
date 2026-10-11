@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import {
   ProviderRegistry,
+  updateConfig,
   type AppConfig,
   type ChatResponse,
   type GatewayKeyEntry,
@@ -12,6 +13,43 @@ import { keyModelAllowlist } from '../routes/openai.js';
 import { createServer } from '../server.js';
 
 const apps: FastifyInstance[] = [];
+
+const UI_HEADERS = { origin: 'http://127.0.0.1:11435', 'x-fmf-client': 'ui' };
+
+type GatewayKeyView = {
+  id: string;
+  key: string;
+  label: string | null;
+  createdAt: number;
+  expiresAt: number | null;
+  dailyRequestLimit: number | null;
+  dailyTokenLimit: number | null;
+  modelAllowlist: string[];
+};
+
+async function gatewayApi(
+  app: FastifyInstance,
+  body?: Record<string, unknown>,
+): Promise<{ statusCode: number; json: () => { keys: GatewayKeyView[] } }> {
+  return app.inject({
+    method: body ? 'POST' : 'GET',
+    url: '/api/gateway',
+    headers: UI_HEADERS,
+    ...(body ? { payload: body } : {}),
+  }) as unknown as { statusCode: number; json: () => { keys: GatewayKeyView[] } };
+}
+
+/**
+ * `POST /api/gateway` mutates through core's `updateConfig`, which reads the
+ * config FROM DISK — not from the registry passed to `createServer`. Without a
+ * matching baseline on disk the handler would edit a stale config and the test
+ * would silently exercise the wrong keys.
+ */
+async function appWithBaseline(gateway: AppConfig['gateway']): Promise<FastifyInstance> {
+  const config = baseConfig(gateway);
+  await updateConfig(() => config);
+  return await appWith(config);
+}
 
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
@@ -156,12 +194,14 @@ async function gemini(
 
 /** The parsed `data:` payloads of an SSE body, in order. */
 function ssePayloads(body: string): Array<Record<string, unknown>> {
-  return body
-    .split(/\r?\n\r?\n/)
-    .map((frame) => frame.startsWith('data: ') ? frame.slice('data: '.length).trim() : '')
-    // The OpenAI stream terminates with `data: [DONE]`, which is not JSON.
-    .filter((json) => json.startsWith('{'))
-    .map((json) => JSON.parse(json) as Record<string, unknown>);
+  return (
+    body
+      .split(/\r?\n\r?\n/)
+      .map((frame) => (frame.startsWith('data: ') ? frame.slice('data: '.length).trim() : ''))
+      // The OpenAI stream terminates with `data: [DONE]`, which is not JSON.
+      .filter((json) => json.startsWith('{'))
+      .map((json) => JSON.parse(json) as Record<string, unknown>)
+  );
 }
 
 /**
@@ -626,10 +666,7 @@ describe('protocol coverage: the allowlist is enforced on every gateway route', 
 
     const denied = await anthropic(app, 'custom:fx:plain');
     assert.equal(denied.statusCode, 403);
-    assert.equal(
-      (denied.json() as { error: { code: string } }).error.code,
-      'model_not_allowed',
-    );
+    assert.equal((denied.json() as { error: { code: string } }).error.code, 'model_not_allowed');
     assert.deepEqual(hooks.dispatchLog, [], 'a denied model must never reach a provider');
 
     const allowed = await anthropic(app, 'custom:fx:fast');
@@ -726,10 +763,9 @@ describe('protocol coverage: the allowlist is enforced on every gateway route', 
     // the decoy that sits just outside the list.
     const hooks = { dispatchLog: [] as string[] };
     const app = await appWith(
-      autoRouteConfig(
-        { requireAuth: true, keys: [key(['custom:fx:fast', 'custom:fx:plain'])] },
-        ['openrouter:gpt-4o-mini'],
-      ),
+      autoRouteConfig({ requireAuth: true, keys: [key(['custom:fx:fast', 'custom:fx:plain'])] }, [
+        'openrouter:gpt-4o-mini',
+      ]),
       CATALOG,
       coolDown('custom:fx:fast'),
       hooks,
@@ -748,10 +784,9 @@ describe('protocol coverage: the allowlist is enforced on every gateway route', 
   it('keeps a Gemini failover inside the allowlist', async () => {
     const hooks = { dispatchLog: [] as string[] };
     const app = await appWith(
-      autoRouteConfig(
-        { requireAuth: true, keys: [key(['custom:fx:fast', 'custom:fx:plain'])] },
-        ['openrouter:gpt-4o-mini'],
-      ),
+      autoRouteConfig({ requireAuth: true, keys: [key(['custom:fx:fast', 'custom:fx:plain'])] }, [
+        'openrouter:gpt-4o-mini',
+      ]),
       CATALOG,
       coolDown('custom:fx:fast'),
       hooks,
@@ -759,8 +794,7 @@ describe('protocol coverage: the allowlist is enforced on every gateway route', 
 
     const res = await gemini(app, 'custom:fx:fast');
     assert.equal(res.statusCode, 200);
-    const notices = (res.json() as { fmf_route_notices?: Array<{ to: string }> })
-      .fmf_route_notices;
+    const notices = (res.json() as { fmf_route_notices?: Array<{ to: string }> }).fmf_route_notices;
     assert.ok(notices?.length, 'the switch must be announced');
     assert.equal(notices?.[0]?.to, 'custom:fx:plain');
     assert.deepEqual(hooks.dispatchLog, ['fx:plain']);
@@ -769,10 +803,9 @@ describe('protocol coverage: the allowlist is enforced on every gateway route', 
   it('keeps a Gemini streaming failover inside the allowlist', async () => {
     const hooks = { dispatchLog: [] as string[] };
     const app = await appWith(
-      autoRouteConfig(
-        { requireAuth: true, keys: [key(['custom:fx:fast', 'custom:fx:plain'])] },
-        ['openrouter:gpt-4o-mini'],
-      ),
+      autoRouteConfig({ requireAuth: true, keys: [key(['custom:fx:fast', 'custom:fx:plain'])] }, [
+        'openrouter:gpt-4o-mini',
+      ]),
       CATALOG,
       coolDown('custom:fx:fast'),
       hooks,
@@ -794,10 +827,9 @@ describe('protocol coverage: the allowlist is enforced on every gateway route', 
   it('keeps an OpenAI streaming failover inside the allowlist', async () => {
     const hooks = { dispatchLog: [] as string[] };
     const app = await appWith(
-      autoRouteConfig(
-        { requireAuth: true, keys: [key(['custom:fx:fast', 'custom:fx:plain'])] },
-        ['openrouter:gpt-4o-mini'],
-      ),
+      autoRouteConfig({ requireAuth: true, keys: [key(['custom:fx:fast', 'custom:fx:plain'])] }, [
+        'openrouter:gpt-4o-mini',
+      ]),
       CATALOG,
       coolDown('custom:fx:fast'),
       hooks,
@@ -819,5 +851,151 @@ describe('protocol coverage: the allowlist is enforced on every gateway route', 
       ['fx:plain'],
       'the decoy outside the allowlist must never be dispatched',
     );
+  });
+});
+
+describe('gateway API: managing a key model allowlist', () => {
+  it('always reports an allowlist array, empty when unconfigured', async () => {
+    const app = await appWithBaseline({ requireAuth: true, keys: [key()] });
+
+    const res = await gatewayApi(app);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json().keys[0]?.modelAllowlist, [], 'absent must read back as []');
+
+    // A key whose allowlist was cleared is indistinguishable from an unconfigured one.
+    const cleared = await gatewayApi(app, {
+      action: 'update',
+      id: 'k1',
+      modelAllowlist: [],
+    });
+    assert.deepEqual(cleared.json().keys[0]?.modelAllowlist, []);
+  });
+
+  it('persists an allowlist when a key is created with one', async () => {
+    const app = await appWithBaseline({ requireAuth: true, keys: [] });
+
+    const created = await gatewayApi(app, {
+      action: 'create',
+      modelAllowlist: ['custom:fx:fast', 'custom:fx:plain'],
+    });
+    assert.equal(created.statusCode, 200);
+    const entry = created.json().keys[0];
+    assert.equal(entry?.modelAllowlist?.length, 2);
+
+    // And it survives the round trip through disk: the GET reads the persisted config.
+    const res = await gatewayApi(app);
+    assert.deepEqual(
+      res.json().keys[0]?.modelAllowlist,
+      ['custom:fx:fast', 'custom:fx:plain'],
+      'the persisted value must round-trip',
+    );
+  });
+
+  it('drops invalid entries and de-duplicates on create', async () => {
+    const app = await appWithBaseline({ requireAuth: true, keys: [] });
+
+    const res = await gatewayApi(app, {
+      action: 'create',
+      modelAllowlist: ['custom:fx:fast', 42, '', '   ', null, 'custom:fx:fast', 'Custom:FX:Fast'],
+    });
+    assert.deepEqual(
+      res.json().keys[0]?.modelAllowlist,
+      ['custom:fx:fast'],
+      'non-strings, blanks, and case duplicates must be removed',
+    );
+
+    const allInvalid = await gatewayApi(app, {
+      action: 'create',
+      modelAllowlist: [42, '', null],
+    });
+    assert.deepEqual(
+      allInvalid.json().keys[1]?.modelAllowlist,
+      [],
+      'a wholly invalid list must mean unrestricted',
+    );
+  });
+
+  it('enforces an allowlist that was written through the API', async () => {
+    const app = await appWithBaseline({ requireAuth: true, keys: [] });
+
+    const created = await gatewayApi(app, { action: 'create', modelAllowlist: ['custom:fx:fast'] });
+    const id = created.json().keys[0]?.id;
+    const newKey = created.json().keys[0]?.key;
+    assert.ok(id && newKey, 'the create must return a usable id and key');
+
+    // The API write must flow straight through to the enforcement path.
+    const outside = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${newKey}` },
+      payload: { model: 'custom:fx:plain', messages: [{ role: 'user', content: 'hi' }] },
+    });
+    assert.equal(outside.statusCode, 403);
+    assert.equal((outside.json() as { error: { code: string } }).error.code, 'model_not_allowed');
+
+    const inside = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${newKey}` },
+      payload: { model: 'custom:fx:fast', messages: [{ role: 'user', content: 'hi' }] },
+    });
+    assert.equal(inside.statusCode, 200);
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/v1/models',
+      headers: { authorization: `Bearer ${newKey}` },
+    });
+    assert.deepEqual(
+      (list.json() as { data: Array<{ id: string }> }).data.map((m) => m.id),
+      ['fx:fast'],
+      'only the allowed model is visible to the new key',
+    );
+  });
+
+  it('updates a key allowlist, clears it with an empty array, and leaves it alone when omitted', async () => {
+    const app = await appWithBaseline({
+      requireAuth: true,
+      keys: [key(['custom:fx:fast'])],
+    });
+    const get = async () => await gatewayApi(app);
+
+    const initial = await get();
+    assert.deepEqual(initial.json().keys[0]?.modelAllowlist, ['custom:fx:fast']);
+
+    const updated = await gatewayApi(app, {
+      action: 'update',
+      id: 'k1',
+      modelAllowlist: ['custom:fx:plain'],
+    });
+    assert.deepEqual(updated.json().keys[0]?.modelAllowlist, ['custom:fx:plain']);
+
+    // Omitting the field must NOT clear it — the UI sends only what it edited.
+    const untouched = await gatewayApi(app, { action: 'update', id: 'k1', label: 'renamed' });
+    assert.deepEqual(untouched.json().keys[0]?.label, 'renamed');
+    assert.deepEqual(
+      untouched.json().keys[0]?.modelAllowlist,
+      ['custom:fx:plain'],
+      'an omitted allowlist must be left alone',
+    );
+
+    // An explicit [] clears it, which is how the UI lifts a restriction.
+    const cleared = await gatewayApi(app, {
+      action: 'update',
+      id: 'k1',
+      modelAllowlist: [],
+    });
+    assert.deepEqual(cleared.json().keys[0]?.modelAllowlist, []);
+
+    // The restriction really is gone: the model that was refused now works.
+    const previouslyDenied = await chat(app, 'custom:fx:plain');
+    assert.equal(
+      previouslyDenied.statusCode,
+      200,
+      'clearing the allowlist must lift the restriction',
+    );
+
+    // And it is gone from disk, not just from memory.
+    assert.deepEqual((await get()).json().keys[0]?.modelAllowlist, []);
   });
 });
