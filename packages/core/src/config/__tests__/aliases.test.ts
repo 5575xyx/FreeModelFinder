@@ -95,6 +95,17 @@ describe('validateModelAliases', () => {
   });
 
   it('rejects an alias cycle', () => {
-    assert.match(expectError({ a: 'b', b: 'a' }), /points back to/);
+    assert.match(expectError({ a: 'b', b: 'a' }), /duplicates an existing alias target/);
+  });
+
+  it('rejects two aliases pointing at the same model', () => {
+    assert.match(
+      expectError({ fast: 'openrouter:gpt-4o-mini', cheap: 'openrouter:gpt-4o-mini' }),
+      /duplicates an existing alias target/,
+    );
+  });
+
+  it('rejects an alias that points to itself', () => {
+    assert.match(expectError({ a: 'a' }), /cannot point to itself/);
   });
 });

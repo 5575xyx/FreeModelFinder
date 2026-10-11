@@ -14,6 +14,12 @@ export type AliasValidationResult =
  * Validation is fail-fast: the first offending entry aborts the whole map, so
  * a rejected map reports exactly one error and nothing else about it.
  *
+ * The mapping is one alias per model: an alias whose target is already claimed
+ * by another alias is rejected, because the reverse lookup that renders a model
+ * back to a client returns a single name per model and would otherwise pick an
+ * arbitrary one of the aliases. Aliases that point at themselves and alias
+ * cycles are rejected for the same reason - resolution would never terminate.
+ *
  * @param knownIds Model ids an alias must not shadow. Callers must pass BOTH
  * the composed and the bare form of every catalog entry, e.g.
  * `new Set(models.flatMap((m) => [m.id, bareModelId(m.provider, m.id)]))`,
@@ -25,6 +31,7 @@ export function validateModelAliases(input: unknown, knownIds: Set<string>): Ali
     return { ok: false, error: 'modelAliases must be an object' };
   }
   const out: Record<string, string> = {};
+  const targets = new Set<string>();
   for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
     const alias = rawKey.trim();
     if (!alias) return { ok: false, error: 'alias name must not be empty' };
@@ -47,10 +54,17 @@ export function validateModelAliases(input: unknown, knownIds: Set<string>): Ali
     if (target === 'auto' || target === 'default') {
       return { ok: false, error: `alias "${alias}" cannot point to "${target}"` };
     }
-    if (Object.hasOwn(out, target)) {
-      return { ok: false, error: `alias "${alias}" points back to "${target}"` };
+    if (target === alias) {
+      return { ok: false, error: `alias "${alias}" cannot point to itself` };
+    }
+    if (Object.hasOwn(out, target) || targets.has(target)) {
+      return {
+        ok: false,
+        error: `alias "${alias}" duplicates an existing alias target "${target}"`,
+      };
     }
     out[alias] = target;
+    targets.add(target);
   }
   return { ok: true, aliases: out };
 }
