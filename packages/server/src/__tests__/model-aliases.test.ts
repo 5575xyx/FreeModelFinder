@@ -49,16 +49,26 @@ function baseConfig(): AppConfig {
   };
 }
 
-async function appWith(config: AppConfig): Promise<FastifyInstance> {
+async function appWith(
+  config: AppConfig,
+  models: Array<{
+    id: string;
+    provider: 'custom' | 'openrouter';
+    displayName: string;
+    free: boolean;
+  }> = [
+    { id: 'custom:fx:plain', provider: 'custom', displayName: 'Plain', free: true },
+    { id: 'custom:fx:fast', provider: 'custom', displayName: 'Fast', free: true },
+  ],
+): Promise<FastifyInstance> {
   const registry = new ProviderRegistry(config);
   registry.listAllModels = async () => ({
-    models: [
-      { id: 'custom:fx:plain', provider: 'custom', displayName: 'Plain', free: true },
-      { id: 'custom:fx:fast', provider: 'custom', displayName: 'Fast', free: true },
-    ],
+    models,
     succeededProviders: ['custom' as const],
     failedProviders: [],
   });
+  // Not exercised by the /v1/models tests; present so later dispatch tests can
+  // add cases here without rebuilding the harness.
   registry.resolveModel = (model) => {
     const bare = model.includes(':') ? model.slice(model.indexOf(':') + 1) : model;
     const id = bare.split(':').pop() ?? bare;
@@ -119,5 +129,59 @@ describe('/v1/models alias replacement', () => {
       body.data.every((m) => m.alias_of === undefined),
       true,
     );
+  });
+
+  it('keys capability_score and quota by the real id, not the alias', async () => {
+    const config = baseConfig();
+    config.modelAliases = { 'my-model': 'custom:fx:fast' };
+    config.autoRoute = {
+      enabled: false,
+      strategy: 'capability',
+      // Deliberately distinctive: a lookup keyed by the alias would miss the
+      // profile and silently fall back to the heuristic baseline (50 here).
+      profiles: [{ id: 'custom:fx:fast', provider: 'custom', capabilityScore: 99 }],
+    };
+    const app = await appWith(config);
+
+    const res = await app.inject({ method: 'GET', url: '/v1/models' });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as {
+      data: Array<{
+        id: string;
+        alias_of?: string;
+        capability_score: number;
+        quota: { model: string };
+      }>;
+    };
+
+    const aliased = body.data.find((m) => m.id === 'my-model');
+    assert.ok(aliased, 'alias must appear in the list');
+    assert.equal(aliased.alias_of, 'custom:fx:fast');
+    assert.equal(
+      aliased.capability_score,
+      99,
+      'capability_score must look up the routing profile by the real id',
+    );
+    // getModelQuota echoes composeModelId(provider, bare); for the custom
+    // provider that doubles the prefix. What matters is that it was keyed by the
+    // real id — with the alias it would have been 'custom:my-model'.
+    assert.equal(aliased.quota.model, 'custom:custom:fx:fast');
+  });
+
+  it('replaces a bare catalog id and reports the catalog id as alias_of', async () => {
+    const config = baseConfig();
+    config.modelAliases = { 'my-model': 'openrouter:gpt-4o-mini' };
+    const app = await appWith(config, [
+      { id: 'gpt-4o-mini', provider: 'openrouter', displayName: 'GPT-4o Mini', free: true },
+    ]);
+
+    const res = await app.inject({ method: 'GET', url: '/v1/models' });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { data: Array<{ id: string; alias_of?: string }> };
+    assert.equal(body.data.length, 1);
+    assert.equal(body.data[0]?.id, 'my-model');
+    // alias_of carries the CATALOG id, which for OpenAI-compatible providers is
+    // the bare form — not the composed alias target.
+    assert.equal(body.data[0]?.alias_of, 'gpt-4o-mini');
   });
 });
