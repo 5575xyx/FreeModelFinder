@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { ProviderRegistry, type AppConfig, type ChatResponse } from '@freemodelfinder/core';
+import {
+  ProviderRegistry,
+  type AppConfig,
+  type ChatResponse,
+  type ProviderId,
+} from '@freemodelfinder/core';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../server.js';
 
@@ -63,7 +68,7 @@ async function appWith(
   config: AppConfig,
   models: Array<{
     id: string;
-    provider: 'custom' | 'openrouter';
+    provider: ProviderId;
     displayName: string;
     free: boolean;
   }> = [
@@ -461,7 +466,7 @@ describe('/api/model-aliases', () => {
     assert.equal(res.statusCode, 400);
   });
 
-  it('rejects an alias that collides with a real model id', async () => {
+  it('reports the colon rule before the conflict rule for a prefixed alias', async () => {
     const app = await appWith(baseConfig());
     const res = await app.inject({
       method: 'POST',
@@ -470,6 +475,7 @@ describe('/api/model-aliases', () => {
       payload: { modelAliases: { 'custom:fx:fast': 'custom:fx:plain' } },
     });
     assert.equal(res.statusCode, 400);
+    assert.match((res.json() as { error: string }).error, /must not contain/);
   });
 
   it('rejects a non-object payload', async () => {
@@ -498,5 +504,53 @@ describe('/api/model-aliases', () => {
     });
     assert.equal(res.statusCode, 400);
     assert.match((res.json() as { error: string }).error, /conflicts/);
+  });
+
+  // A prefixed provider stores its catalog id WITH the provider prefix, so only
+  // the bareModelId form is colon-free and therefore eligible as an alias name.
+  // If server.ts ever stops feeding bareModelId(m.provider, m.id) into knownIds
+  // (see the caller obligation documented in aliases.ts), this alias would be
+  // accepted and would silently shadow the real cline model. Pins that.
+  it('rejects a colon-free alias that shadows the bare id of a prefixed model', async () => {
+    const app = await appWith(baseConfig(), [
+      { id: 'cline:z-ai/glm-5.3-flash', provider: 'cline', displayName: 'GLM', free: true },
+    ]);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+      payload: { modelAliases: { 'z-ai/glm-5.3-flash': 'custom:fx:plain' } },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.match((res.json() as { error: string }).error, /conflicts/);
+  });
+
+  it('rejects a body that omits modelAliases rather than clearing silently', async () => {
+    const app = await appWith(baseConfig());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+      payload: {},
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
+  it('clears every alias with an explicit empty map', async () => {
+    const config = baseConfig();
+    config.modelAliases = { old: 'custom:fx:fast' };
+    const app = await appWith(config);
+    await app.inject({
+      method: 'POST',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+      payload: { modelAliases: {} },
+    });
+    const get = await app.inject({
+      method: 'GET',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+    });
+    assert.deepEqual(get.json(), { modelAliases: {} });
   });
 });
