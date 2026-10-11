@@ -1,6 +1,8 @@
 export type ModelItem = {
   id: string;
   provider: string;
+  /** Present only when the gateway replaced this entry's id with an alias. */
+  alias_of?: string;
   display_name?: string;
   context_window?: number;
   capability_score?: number;
@@ -54,9 +56,14 @@ export type ModelsResponse = {
     failed_providers?: ProviderFailure[];
   };
 };
-export function modelValue(model: Pick<ModelItem, 'provider' | 'id'>): string {
-  if (model.provider === 'custom') return `${model.provider}:${model.id}`;
-  return model.id.startsWith(`${model.provider}:`) ? model.id : `${model.provider}:${model.id}`;
+export function modelValue(
+  model: Pick<ModelItem, 'provider' | 'id'> & { alias_of?: string },
+): string {
+  // The UI always dispatches the REAL model id, never the alias: aliases are an
+  // external-facing surface, and the UI already knows the real id via alias_of.
+  const realId = model.alias_of ?? model.id;
+  if (model.provider === 'custom') return `${model.provider}:${realId}`;
+  return realId.startsWith(`${model.provider}:`) ? realId : `${model.provider}:${realId}`;
 }
 export function splitModelValue(value: string): { provider: string; id: string } {
   const separator = value.indexOf(':');
