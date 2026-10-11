@@ -1197,8 +1197,38 @@ describe('ProviderRegistry model aliases', () => {
     assert.equal(registry.toClientFacingModel('other-model'), 'other-model');
   });
 
-  it('does not resolve auto or default through an alias named that way', () => {
-    const registry = new ProviderRegistry(configWithAliases({}));
+  it('keeps auto routing out of reach of an alias named "auto"', () => {
+    const registry = new ProviderRegistry(configWithAliases({ auto: 'openrouter:gpt-4o-mini' }));
     assert.throws(() => registry.resolveModel('auto'), /no model available for/);
+  });
+
+  it('does not resolve Object.prototype members even with an empty alias table', () => {
+    const registry = new ProviderRegistry(configWithAliases({}));
+    for (const name of ['toString', 'constructor', '__proto__', 'valueOf', 'hasOwnProperty']) {
+      const resolved = registry.resolveModel(name);
+      assert.equal(typeof resolved.modelId, 'string', `${name} must resolve to a real id`);
+      assert.equal(registry.resolveAlias(name), name, `${name} must not resolve as an alias`);
+    }
+  });
+
+  it('survives a hand-edited table with a non-string target', () => {
+    const registry = new ProviderRegistry(configWithAliases({ broken: 42 as unknown as string }));
+    assert.equal(registry.resolveAlias('broken'), 'broken');
+    assert.equal(registry.resolveModel('broken').modelId, 'broken');
+    assert.equal(registry.toClientFacingModel('openrouter:anything'), 'openrouter:anything');
+  });
+
+  it('rejects an alias cycle from a hand-edited config instead of overflowing the stack', () => {
+    const registry = new ProviderRegistry(configWithAliases({ a: 'b', b: 'a' }));
+    assert.throws(() => registry.resolveModel('a'), /alias cycle or an over-long chain/);
+  });
+
+  it('resolves an alias chain through to the real model', () => {
+    const registry = new ProviderRegistry(
+      configWithAliases({ short: 'mid', mid: 'openrouter:gpt-4o-mini' }),
+    );
+    const resolved = registry.resolveModel('short');
+    assert.equal(resolved.provider.id, 'openrouter');
+    assert.equal(resolved.modelId, 'gpt-4o-mini');
   });
 });
