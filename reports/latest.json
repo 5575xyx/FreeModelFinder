@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-10-10",
-  "generatedAt": "2026-10-10T01:47:59.916Z",
-  "reportPath": "reports/provider-free-model-audit-2026-10-10.md",
+  "date": "2026-10-11",
+  "generatedAt": "2026-10-11T01:03:01.464Z",
+  "reportPath": "reports/provider-free-model-audit-2026-10-11.md",
   "totalModels": 97,
   "providers": [
     {
@@ -654,22 +654,9 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-10-09",
+    "comparedWith": "2026-10-10",
     "added": [],
-    "removed": [
-      {
-        "provider": "agnes",
-        "id": "agnes-video-v2.0",
-        "displayName": "agnes-video-v2.0",
-        "contextWindow": null
-      },
-      {
-        "provider": "agnes-intl",
-        "id": "agnes-video-v2.0",
-        "displayName": "agnes-video-v2.0",
-        "contextWindow": null
-      }
-    ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "zhipu",
