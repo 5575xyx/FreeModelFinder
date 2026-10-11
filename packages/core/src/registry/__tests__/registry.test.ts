@@ -16,6 +16,14 @@ function configWithProviders(providers: AppConfig['providers']): AppConfig {
   };
 }
 
+function configWithAliases(aliases: Record<string, string>): AppConfig {
+  const config = configWithProviders({
+    openrouter: { enabled: true, credentials: { apiKey: 'k' } },
+  });
+  config.modelAliases = aliases;
+  return config;
+}
+
 describe('ProviderRegistry model catalog', () => {
   it('disposes cached providers it drops so their background work stops', () => {
     const registry = new ProviderRegistry(
@@ -1130,5 +1138,67 @@ describe('ProviderRegistry cline auto/failover two states', () => {
 
   it('bubbles a parseable 429 but never fails over when autoRoute is disabled', async () => {
     await exhaustAndProbe(false);
+  });
+});
+
+describe('ProviderRegistry model aliases', () => {
+  it('resolves an alias to its real provider and bare model id', () => {
+    const registry = new ProviderRegistry(
+      configWithAliases({ 'my-model': 'openrouter:gpt-4o-mini' }),
+    );
+    const resolved = registry.resolveModel('my-model');
+    assert.equal(resolved.provider.id, 'openrouter');
+    assert.equal(resolved.modelId, 'gpt-4o-mini');
+  });
+
+  it('resolves an alias whose target is a bare id through the openrouter fallback', () => {
+    const registry = new ProviderRegistry(configWithAliases({ 'my-model': 'gpt-4o-mini' }));
+    const resolved = registry.resolveModel('my-model');
+    assert.equal(resolved.provider.id, 'openrouter');
+    assert.equal(resolved.modelId, 'gpt-4o-mini');
+  });
+
+  it('keeps the original id working when an alias also points at it', () => {
+    const registry = new ProviderRegistry(
+      configWithAliases({ 'my-model': 'openrouter:gpt-4o-mini' }),
+    );
+    const resolved = registry.resolveModel('openrouter:gpt-4o-mini');
+    assert.equal(resolved.provider.id, 'openrouter');
+    assert.equal(resolved.modelId, 'gpt-4o-mini');
+  });
+
+  it('resolveAlias returns the target, or the input when there is no alias', () => {
+    const registry = new ProviderRegistry(
+      configWithAliases({ 'my-model': 'openrouter:gpt-4o-mini' }),
+    );
+    assert.equal(registry.resolveAlias('my-model'), 'openrouter:gpt-4o-mini');
+    assert.equal(registry.resolveAlias('openrouter:gpt-4o-mini'), 'openrouter:gpt-4o-mini');
+    assert.equal(registry.resolveAlias('unknown'), 'unknown');
+  });
+
+  it('toClientFacingModel maps a composed id back to its alias', () => {
+    const registry = new ProviderRegistry(
+      configWithAliases({ 'my-model': 'openrouter:gpt-4o-mini' }),
+    );
+    assert.equal(registry.toClientFacingModel('openrouter:gpt-4o-mini'), 'my-model');
+  });
+
+  it('toClientFacingModel matches a bare catalog id against a composed alias target', () => {
+    const registry = new ProviderRegistry(configWithAliases({ 'my-model': 'gpt-4o-mini' }));
+    assert.equal(registry.toClientFacingModel('openrouter:gpt-4o-mini'), 'my-model');
+    assert.equal(registry.toClientFacingModel('gpt-4o-mini'), 'my-model');
+  });
+
+  it('toClientFacingModel returns the input untouched when no alias points at it', () => {
+    const registry = new ProviderRegistry(
+      configWithAliases({ 'my-model': 'openrouter:gpt-4o-mini' }),
+    );
+    assert.equal(registry.toClientFacingModel('openrouter:other-model'), 'openrouter:other-model');
+    assert.equal(registry.toClientFacingModel('other-model'), 'other-model');
+  });
+
+  it('does not resolve auto or default through an alias named that way', () => {
+    const registry = new ProviderRegistry(configWithAliases({}));
+    assert.throws(() => registry.resolveModel('auto'), /no model available for/);
   });
 });

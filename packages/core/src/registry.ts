@@ -74,6 +74,12 @@ export function resetAutoPoolCursor(): void {
   resetStickyStore();
 }
 
+/** Drop a leading "provider:" segment so composed and bare ids compare equal. */
+function stripProviderPrefix(id: string): string {
+  const sep = id.indexOf(':');
+  return sep > 0 ? id.slice(sep + 1) : id;
+}
+
 export interface RegistryOptions {
   config?: AppConfig;
 }
@@ -136,6 +142,31 @@ export class ProviderRegistry {
 
   getAutoRouter(): AutoRouter {
     return this.autoRouter;
+  }
+
+  /**
+   * Forward alias lookup: external name -> real model id. Returns the input
+   * untouched when no alias matches. Route handlers call this BEFORE preflight
+   * so cooldown tables stay keyed by the real model id.
+   */
+  resolveAlias(modelId: string): string {
+    return this.config.modelAliases?.[modelId] ?? modelId;
+  }
+
+  /**
+   * Reverse lookup used for the client-facing name in /v1/models and in
+   * response payloads. Matching is done on the provider-stripped id because
+   * the catalog stores bare ids for OpenAI-compatible providers but composed
+   * ids for OpenCode/Cline, while response payloads are always composed.
+   */
+  toClientFacingModel(realId: string): string {
+    const aliases = this.config.modelAliases;
+    if (!aliases) return realId;
+    const bare = stripProviderPrefix(realId);
+    for (const [alias, target] of Object.entries(aliases)) {
+      if (stripProviderPrefix(target) === bare) return alias;
+    }
+    return realId;
   }
 
   drainNotices(): SwitchNotice[] {
@@ -361,6 +392,10 @@ export class ProviderRegistry {
       onPick?: (info: { sticky: boolean; pool: string[] }) => void;
     },
   ): { provider: BaseProvider; modelId: string; sticky?: boolean } {
+    const aliased = this.config.modelAliases?.[modelId];
+    if (aliased && aliased !== modelId) {
+      return this.resolveModel(aliased, opts);
+    }
     if (modelId === 'auto' || modelId === 'default') {
       if (modelId === 'default') {
         const preferred = this.config.defaultModel;
