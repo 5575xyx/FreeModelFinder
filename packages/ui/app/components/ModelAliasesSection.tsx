@@ -130,7 +130,7 @@ export function ModelAliasesSection() {
                     cur.map((r, i) => (i === index ? { ...r, alias: e.target.value } : r)),
                   )
                 }
-                className="h-9 flex-1 rounded-lg border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring"
+                className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring"
               />
               <select
                 value={row.target}
@@ -140,7 +140,7 @@ export function ModelAliasesSection() {
                     cur.map((r, i) => (i === index ? { ...r, target: e.target.value } : r)),
                   )
                 }
-                className="h-9 flex-1 rounded-lg border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring"
+                className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring"
               >
                 <option value="">{t('settings.aliases.targetPlaceholder')}</option>
                 {models.map((m) => (

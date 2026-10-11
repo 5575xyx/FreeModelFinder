@@ -53,7 +53,13 @@ const imageMessage = {
   ],
 };
 
-async function appWithVisionFailover(): Promise<{
+type VisionHarnessOpts = {
+  autoRoute?: AppConfig['autoRoute'];
+  gateway?: AppConfig['gateway'];
+  pool?: ModelInfo[];
+};
+
+async function appWithVisionFailover(opts: VisionHarnessOpts = {}): Promise<{
   app: FastifyInstance;
   chatModels: () => string[];
   lastRequest: () => ChatRequest | undefined;
@@ -62,7 +68,8 @@ async function appWithVisionFailover(): Promise<{
     version: 2,
     port: 11435,
     providers: {},
-    autoRoute: { enabled: false, strategy: 'capability' },
+    gateway: { requireAuth: false, ...opts.gateway },
+    autoRoute: opts.autoRoute ?? { enabled: false, strategy: 'capability' },
   };
   const registry = new ProviderRegistry(config);
   const chatModels: string[] = [];
@@ -107,7 +114,7 @@ async function appWithVisionFailover(): Promise<{
     return { provider: provider as never, modelId: bare };
   };
   registry.listAllModels = async () => ({
-    models: visionPool,
+    models: opts.pool ?? visionPool,
     succeededProviders: ['custom'],
     failedProviders: [],
   });
@@ -180,5 +187,122 @@ describe('vision model failover', () => {
     });
     assert.equal(res.statusCode, 200);
     assert.equal(chatModels().includes('text-only'), false);
+  });
+});
+
+describe('vision routing for an explicitly named model', () => {
+  it('redirects a named text-only model into the vision pool', async () => {
+    const { app, chatModels, lastRequest } = await appWithVisionFailover();
+    resetModalityCursors();
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'text-only', messages: [imageMessage], stream: false },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(
+      chatModels().includes('text-only'),
+      false,
+      `a text-only model must not receive images, saw ${JSON.stringify(chatModels())}`,
+    );
+    assert.ok(
+      chatModels().includes('vision-up'),
+      `expected the healthy vision model, saw ${JSON.stringify(chatModels())}`,
+    );
+    const parts = lastRequest()?.messages[0]?.contentParts;
+    assert.ok(
+      parts?.some((p) => p.type === 'image_url'),
+      'the image must reach the model that actually answered',
+    );
+  });
+
+  it('leaves a named model alone when it already declares image input', async () => {
+    const { app, chatModels } = await appWithVisionFailover();
+    resetModalityCursors();
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'vision-up', messages: [imageMessage], stream: false },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(chatModels(), ['vision-up']);
+  });
+
+  it('lets the visionModel pool exempt a model the id heuristic would reject', async () => {
+    const { app, chatModels } = await appWithVisionFailover({
+      autoRoute: {
+        enabled: false,
+        strategy: 'capability',
+        visionModel: ['text-only', 'vision-up'],
+      },
+    });
+    resetModalityCursors();
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'text-only', messages: [imageMessage], stream: false },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(chatModels(), ['text-only']);
+  });
+
+  it('keeps the named model rather than failing when nothing can see', async () => {
+    const { app, chatModels } = await appWithVisionFailover({
+      pool: [
+        {
+          id: 'text-only',
+          provider: 'custom',
+          displayName: 'Text Only',
+          free: true,
+          inputModalities: ['text'],
+        },
+      ],
+    });
+    resetModalityCursors();
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'text-only', messages: [imageMessage], stream: false },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(chatModels(), ['text-only']);
+  });
+
+  it('never redirects outside the caller key allowlist', async () => {
+    const { app, chatModels } = await appWithVisionFailover({
+      gateway: {
+        requireAuth: true,
+        keys: [
+          {
+            id: 'k1',
+            key: 'test-key',
+            createdAt: 0,
+            modelAllowlist: ['custom:text-only', 'custom:vision-up'],
+          },
+        ],
+      },
+    });
+    resetModalityCursors();
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-key' },
+      payload: { model: 'text-only', messages: [imageMessage], stream: false },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(
+      chatModels().includes('vision-down'),
+      false,
+      `the redirect left the allowlist: ${JSON.stringify(chatModels())}`,
+    );
+    assert.ok(
+      chatModels().includes('vision-up'),
+      `expected the allowed vision model, saw ${JSON.stringify(chatModels())}`,
+    );
   });
 });

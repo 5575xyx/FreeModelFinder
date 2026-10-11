@@ -542,6 +542,22 @@ describe('SettingsView', () => {
     expect(writes[0]).toMatchObject({ provider: 'opencode', enabled: true });
     expect(writes[0]).not.toHaveProperty('apiKey');
   });
+
+  it('switches the settings panel on tab click', async () => {
+    const user = userEvent.setup();
+    render(<SettingsView />);
+
+    const selected = () =>
+      screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-selected'));
+    expect(selected()).toEqual(['true', 'false', 'false', 'false', 'false']);
+
+    await user.click(screen.getByRole('tab', { name: '网关' }));
+
+    expect(selected()).toEqual(['false', 'true', 'false', 'false', 'false']);
+    // jsdom 不解析 CSS，hidden 类不产生 display:none，因此只能断言面板标记
+    expect(screen.getByLabelText('对外接口').className).not.toContain('hidden');
+    expect(screen.getByLabelText('自定义模型').className).toContain('hidden');
+  });
 });
 
 describe('SettingsView copy buttons', () => {

@@ -29,6 +29,7 @@ import { ModelChangesBanner } from './ModelChangesBanner';
 import { ClineAccountsPanel } from './ClineAccountsPanel';
 import { ModelAliasesSection } from './ModelAliasesSection';
 import { ModelMultiSelect, type ModelOption } from './ModelMultiSelect';
+import { SegmentedTabs, type SegmentedItem } from './SegmentedTabs';
 import { classNames, copyToClipboard, GATEWAY, withUiHeaders } from '../lib/utils';
 import { modelValue } from '../lib/models';
 import { SETTINGS_PROVIDERS, providerHintKey, providerLabelKey } from '../lib/platforms';
@@ -51,6 +52,8 @@ type CustomSourceDef = {
   models: CustomModelDef[];
   keyMeta?: Array<{ id: string; hint: string }>;
 };
+
+type SettingsTab = 'models' | 'gateway' | 'sources' | 'custom' | 'inspect';
 
 type ConfigRes = {
   port: number;
@@ -666,6 +669,15 @@ export function SettingsView({
   const [autoRoute, setAutoRoute] = useState<AutoRouteInfo | null>(null);
   const [autoRouteBusy, setAutoRouteBusy] = useState(false);
   const [autoRouteOpen, setAutoRouteOpen] = useState(true);
+  const [tab, setTab] = useState<SettingsTab>('models');
+
+  const tabItems: readonly SegmentedItem<SettingsTab>[] = [
+    { key: 'models', label: t('settings.tabs.models'), Icon: Sparkles },
+    { key: 'gateway', label: t('settings.tabs.gateway'), Icon: Terminal },
+    { key: 'sources', label: t('settings.tabs.sources'), Icon: PlugZap },
+    { key: 'custom', label: t('settings.tabs.custom'), Icon: Globe2 },
+    { key: 'inspect', label: t('settings.tabs.inspect'), Icon: Search },
+  ];
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const autoRouteBusyRef = useRef(false);
   const autoRouteSeqRef = useRef(0);
@@ -1623,6 +1635,13 @@ export function SettingsView({
         </div>
       )}
 
+      <SegmentedTabs
+        items={tabItems}
+        value={tab}
+        onChange={setTab}
+        ariaLabel={t('settings.tabs.aria')}
+      />
+
       <section
         aria-label={t('settings.aria.overview')}
         className="grid gap-3 rounded-lg border border-border/60 bg-section-a p-3 sm:grid-cols-3"
@@ -1665,7 +1684,10 @@ export function SettingsView({
 
       <section
         aria-label={t('settings.aria.currentModel')}
-        className="space-y-3 rounded-lg border border-border/60 bg-section-b p-3"
+        className={classNames(
+          'space-y-3 rounded-lg border border-border/60 bg-section-b p-3',
+          tab !== 'models' && 'hidden',
+        )}
       >
         <button
           type="button"
@@ -1778,7 +1800,10 @@ export function SettingsView({
 
       <section
         aria-label={t('settings.aria.autoRoute')}
-        className="space-y-3 rounded-lg border border-border/60 bg-section-c p-3"
+        className={classNames(
+          'space-y-3 rounded-lg border border-border/60 bg-section-c p-3',
+          tab !== 'models' && 'hidden',
+        )}
       >
         <button
           type="button"
@@ -2028,11 +2053,14 @@ export function SettingsView({
         )}
       </section>
 
-      <ModelAliasesSection />
+      {tab === 'models' && <ModelAliasesSection />}
 
       <section
         aria-label={t('settings.aria.gateway')}
-        className="space-y-3 rounded-lg border border-border/60 bg-section-a p-3"
+        className={classNames(
+          'space-y-3 rounded-lg border border-border/60 bg-section-a p-3',
+          tab !== 'gateway' && 'hidden',
+        )}
       >
         <button
           type="button"
@@ -2368,7 +2396,10 @@ export function SettingsView({
       </section>
       <section
         aria-label={t('settings.aria.sources')}
-        className="space-y-3 rounded-lg border border-border/60 bg-section-b p-3"
+        className={classNames(
+          'space-y-3 rounded-lg border border-border/60 bg-section-b p-3',
+          tab !== 'sources' && 'hidden',
+        )}
       >
         <button
           type="button"
@@ -2740,7 +2771,10 @@ export function SettingsView({
 
       <section
         aria-label={t('settings.aria.custom')}
-        className="space-y-3 rounded-lg border border-border/60 bg-section-a p-3"
+        className={classNames(
+          'space-y-3 rounded-lg border border-border/60 bg-section-a p-3',
+          tab !== 'custom' && 'hidden',
+        )}
       >
         <button
           type="button"
@@ -3247,7 +3281,10 @@ export function SettingsView({
 
       <section
         aria-label={t('settings.aria.inspect')}
-        className="space-y-3 rounded-lg border border-border/60 bg-section-c p-3"
+        className={classNames(
+          'space-y-3 rounded-lg border border-border/60 bg-section-c p-3',
+          tab !== 'inspect' && 'hidden',
+        )}
       >
         <button
           type="button"

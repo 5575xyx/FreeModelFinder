@@ -648,13 +648,13 @@ export function registerOpenAIRoutes(
       // different model would silently bypass the restriction.
       const allowedModels = keyModelAllowlist(resolveGatewayKey(reg, req));
 
-      // Auto-route: detect modality from request content when model is "auto"
+      // Auto-route: detect modality from request content
       let forcedImageModality = false;
       let visionCandidates: string[] = [];
+      const cfg = reg.getConfig();
+      const ar = cfg.autoRoute;
+      const detectedModality = detectRequestModality(body.messages);
       if (chatReq.model === 'auto' || chatReq.model === 'default') {
-        const cfg = reg.getConfig();
-        const ar = cfg.autoRoute;
-        const detectedModality = detectRequestModality(body.messages);
         if (detectedModality === 'vision') {
           const forced = asModelList(ar?.visionModel);
           let pool = forced;
@@ -707,6 +707,37 @@ export function registerOpenAIRoutes(
           const pool = asModelList(ar.textTiers[tier]);
           const picked = nextFromPool(`text:${tier}`, pool);
           if (picked) chatReq.model = picked;
+        }
+      } else if (detectedModality === 'vision') {
+        // A specific model was named but the request carries images that model
+        // cannot see. Mirror the auto route instead of letting a text-only model
+        // swallow the images: hand the request to the vision pool.
+        //
+        // Capability is judged on positive evidence only. `isVisionCapable`
+        // falls back to an id heuristic when a provider ships no metadata, and
+        // that heuristic misses real vision models such as gpt-4o-mini — so a
+        // model that merely fails the heuristic is kept. Listing it in
+        // autoRoute.visionModel declares it a vision model and exempts it.
+        const forced = asModelList(ar?.visionModel);
+        const { models } = await reg.listAllModels();
+        const named = models.find((m) => m.id === chatReq.model);
+        const canSee =
+          forced.includes(chatReq.model) || (named ? isVisionCapable(named, forced) : true);
+        if (!canSee) {
+          const discovered = models.filter((m) => isVisionCapable(m, forced));
+          // Allowlists hold composed ids while the catalog keeps provider-native
+          // ones, so build the composed form before comparing.
+          const pool = (forced.length ? forced : discovered.map((m) => m.id)).filter((id) => {
+            if (!allowedModels) return true;
+            const m = models.find((x) => x.id === id);
+            const composed = m ? composeModelId(m.provider, m.id) : id;
+            return allowedModels.has(composed.toLowerCase());
+          });
+          visionCandidates = rotatePool('vision', pool);
+          if (visionCandidates.length) chatReq.model = visionCandidates[0]!;
+          // Nothing that can see: keep the model the caller named rather than
+          // failing. Auto-route 400s here because it owns the choice; a named
+          // model is the caller's.
         }
       }
 

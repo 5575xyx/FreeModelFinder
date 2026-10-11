@@ -215,6 +215,13 @@ export const zh: Dict = {
   'settings.stat.default.hint.saved': '来自最近一次保存',
   'settings.stat.default.hint.autofill': '保存 Key 后自动生成',
 
+  'settings.tabs.aria': '设置分区',
+  'settings.tabs.models': '模型',
+  'settings.tabs.gateway': '网关',
+  'settings.tabs.sources': '来源',
+  'settings.tabs.custom': '自定义',
+  'settings.tabs.inspect': '诊断',
+
   'settings.section.currentModel': '当前模型',
   'settings.section.currentModel.count': '{n} 个可选',
   'settings.section.currentModel.empty': '暂无可用模型',
@@ -785,6 +792,13 @@ export const en: Dict = {
   'settings.stat.default.unset': 'Not set',
   'settings.stat.default.hint.saved': 'From the last save',
   'settings.stat.default.hint.autofill': 'Auto-generated after a key is saved',
+
+  'settings.tabs.aria': 'Settings sections',
+  'settings.tabs.models': 'Models',
+  'settings.tabs.gateway': 'Gateway',
+  'settings.tabs.sources': 'Sources',
+  'settings.tabs.custom': 'Custom',
+  'settings.tabs.inspect': 'Inspect',
 
   'settings.section.currentModel': 'Current model',
   'settings.section.currentModel.count': '{n} available',
