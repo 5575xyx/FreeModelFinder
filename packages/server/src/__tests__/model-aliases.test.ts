@@ -379,3 +379,124 @@ describe('alias routing and response echo', () => {
     assert.equal(body.model, 'my-video');
   });
 });
+
+// /api/* is gated by the local-UI origin check (server.ts:525), so management
+// requests must carry the same headers the dashboard sends — see
+// auto-route-api.test.ts.
+const localUiHeaders = {
+  origin: 'http://127.0.0.1:11435',
+  'x-fmf-client': 'ui',
+};
+
+describe('/api/model-aliases', () => {
+  it('returns an empty map when nothing is configured', async () => {
+    const app = await appWith(baseConfig());
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json(), { modelAliases: {} });
+  });
+
+  it('persists a valid alias map', async () => {
+    const app = await appWith(baseConfig());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+      payload: { modelAliases: { 'my-model': 'custom:fx:fast' } },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json(), { ok: true, modelAliases: { 'my-model': 'custom:fx:fast' } });
+
+    const get = await app.inject({
+      method: 'GET',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+    });
+    assert.deepEqual(get.json(), { modelAliases: { 'my-model': 'custom:fx:fast' } });
+  });
+
+  it('replaces the whole map so an omitted alias is deleted', async () => {
+    const config = baseConfig();
+    config.modelAliases = { 'old-alias': 'custom:fx:fast' };
+    const app = await appWith(config);
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+      payload: { modelAliases: { 'new-alias': 'custom:fx:plain' } },
+    });
+    const get = await app.inject({
+      method: 'GET',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+    });
+    assert.deepEqual(get.json(), { modelAliases: { 'new-alias': 'custom:fx:plain' } });
+  });
+
+  it('rejects an alias containing a colon', async () => {
+    const app = await appWith(baseConfig());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+      payload: { modelAliases: { 'my:model': 'custom:fx:fast' } },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.match((res.json() as { error: string }).error, /:/);
+  });
+
+  it('rejects the reserved alias name auto', async () => {
+    const app = await appWith(baseConfig());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+      payload: { modelAliases: { auto: 'custom:fx:fast' } },
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
+  it('rejects an alias that collides with a real model id', async () => {
+    const app = await appWith(baseConfig());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+      payload: { modelAliases: { 'custom:fx:fast': 'custom:fx:plain' } },
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
+  it('rejects a non-object payload', async () => {
+    const app = await appWith(baseConfig());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+      payload: { modelAliases: ['nope'] },
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
+  // The other collision test uses a colon-bearing alias, so it is rejected by
+  // the ':' rule before the conflict rule is ever reached. This one uses a bare
+  // catalog id to prove the conflict rule itself fires.
+  it('rejects a colon-free alias that shadows a catalog id', async () => {
+    const app = await appWith(baseConfig(), [
+      { id: 'gpt-4o-mini', provider: 'openrouter', displayName: 'GPT-4o Mini', free: true },
+    ]);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+      payload: { modelAliases: { 'gpt-4o-mini': 'custom:fx:plain' } },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.match((res.json() as { error: string }).error, /conflicts/);
+  });
+});

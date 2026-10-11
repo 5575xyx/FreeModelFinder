@@ -11,12 +11,14 @@ import {
   ProviderIdSchema,
   ProviderRegistry,
   asModelList,
+  bareModelId,
   composeModelId,
   getCredentialRuntime,
   isVisionCapable,
   loadConfig,
   redact,
   updateConfig,
+  validateModelAliases,
   type CredentialAccountEntry,
   type GatewayKeyEntry,
 } from '@freemodelfinder/core';
@@ -1585,6 +1587,30 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         router.resetPreference();
       }
       return { ok: true, cooldowns: router.listCooldowns() };
+    });
+
+    app.get('/api/model-aliases', async () => {
+      return { modelAliases: getRegistry().getConfig().modelAliases ?? {} };
+    });
+
+    app.post<{ Body: { modelAliases?: unknown } }>('/api/model-aliases', async (req, reply) => {
+      const reg = getRegistry();
+      const { models } = await reg.listAllModels();
+      const knownIds = new Set<string>();
+      for (const m of models) {
+        knownIds.add(m.id);
+        knownIds.add(bareModelId(m.provider, m.id));
+      }
+      const result = validateModelAliases(req.body?.modelAliases, knownIds);
+      if (!result.ok) {
+        return reply.code(400).send({ error: result.error });
+      }
+      const next = await updateConfig((cfg) => {
+        cfg.modelAliases = result.aliases;
+        return cfg;
+      });
+      reg.updateConfig(next, { preserveModels: true });
+      return { ok: true, modelAliases: next.modelAliases };
     });
 
     app.get<{
