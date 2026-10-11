@@ -74,6 +74,33 @@ export function resetAutoPoolCursor(): void {
   resetStickyStore();
 }
 
+/** Drop a leading "provider:" segment so composed and bare ids compare equal. */
+function stripProviderPrefix(id: string): string {
+  const sep = id.indexOf(':');
+  return sep > 0 ? id.slice(sep + 1) : id;
+}
+
+/** Longest alias chain we will walk; backstop for a hand-edited config.json. */
+const MAX_ALIAS_HOPS = 16;
+
+/**
+ * Own-property alias lookup.
+ *
+ * config.json is hand-editable and bypasses validateModelAliases, so a plain
+ * `table[key]` would resolve inherited Object.prototype members ("toString"
+ * returns a function) and a non-string value would flow straight into string
+ * methods. Both surface as a TypeError deep inside resolveModel — a 500 for a
+ * request that should have been routed or rejected with 400.
+ */
+function lookupAlias(
+  aliases: Record<string, string> | undefined,
+  alias: string,
+): string | undefined {
+  if (!aliases || alias in Object.prototype) return undefined;
+  const target = Object.hasOwn(aliases, alias) ? aliases[alias] : undefined;
+  return typeof target === 'string' && target.length > 0 ? target : undefined;
+}
+
 export interface RegistryOptions {
   config?: AppConfig;
 }
@@ -136,6 +163,38 @@ export class ProviderRegistry {
 
   getAutoRouter(): AutoRouter {
     return this.autoRouter;
+  }
+
+  /**
+   * Forward alias lookup: external name -> real model id. Returns the input
+   * untouched when no alias matches. Route handlers call this BEFORE preflight
+   * so cooldown tables stay keyed by the real model id.
+   */
+  resolveAlias(modelId: string): string {
+    return lookupAlias(this.config.modelAliases, modelId) ?? modelId;
+  }
+
+  /**
+   * Reverse lookup used for the client-facing name in /v1/models and in
+   * response payloads. Matching is done on the provider-stripped id because
+   * the catalog stores bare ids for OpenAI-compatible providers but composed
+   * ids for OpenCode/Cline, while response payloads are always composed.
+   */
+  toClientFacingModel(realId: string): string {
+    const aliases = this.config.modelAliases;
+    if (!aliases) return realId;
+    const bare = stripProviderPrefix(realId);
+    let fallback: string | undefined;
+    for (const [alias, target] of Object.entries(aliases)) {
+      // Hand-edited configs may hold non-string values; skip them instead of
+      // letting them reach string methods below.
+      if (typeof target !== 'string') continue;
+      // An exact hit is unambiguous; a bare match can collide across providers,
+      // so it is only a fallback.
+      if (target === realId) return alias;
+      if (fallback === undefined && stripProviderPrefix(target) === bare) fallback = alias;
+    }
+    return fallback ?? realId;
   }
 
   drainNotices(): SwitchNotice[] {
@@ -361,11 +420,25 @@ export class ProviderRegistry {
       onPick?: (info: { sticky: boolean; pool: string[] }) => void;
     },
   ): { provider: BaseProvider; modelId: string; sticky?: boolean } {
+    return this.resolveModelWithAlias(modelId, opts, 0);
+  }
+
+  private resolveModelWithAlias(
+    modelId: string,
+    opts:
+      | {
+          inputTokens?: number;
+          sessionKey?: string;
+          onPick?: (info: { sticky: boolean; pool: string[] }) => void;
+        }
+      | undefined,
+    aliasHops: number,
+  ): { provider: BaseProvider; modelId: string; sticky?: boolean } {
     if (modelId === 'auto' || modelId === 'default') {
       if (modelId === 'default') {
         const preferred = this.config.defaultModel;
         if (preferred && preferred !== 'auto' && preferred !== 'default') {
-          return this.resolveModel(preferred, opts);
+          return this.resolveModelWithAlias(preferred, opts, aliasHops + 1);
         }
       }
       const enabled = this.listEnabledProviders();
@@ -387,6 +460,13 @@ export class ProviderRegistry {
       throw new Error(
         'no model available for `auto`; wait for /v1/models to load or set a default model',
       );
+    }
+    const aliased = lookupAlias(this.config.modelAliases, modelId);
+    if (aliased !== undefined && aliased !== modelId) {
+      if (aliasHops >= MAX_ALIAS_HOPS) {
+        throw new Error(`alias "${modelId}" is part of an alias cycle or an over-long chain`);
+      }
+      return this.resolveModelWithAlias(aliased, opts, aliasHops + 1);
     }
     const sep = modelId.indexOf(':');
     if (sep > 0) {

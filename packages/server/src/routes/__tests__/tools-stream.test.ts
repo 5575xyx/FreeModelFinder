@@ -11,6 +11,9 @@ interface FakeProvider {
 function makeRegistry(provider: FakeProvider) {
   return {
     resolveModel: () => ({ provider, modelId: 'm' }),
+    // No aliases configured here, so both directions are the identity.
+    resolveAlias: (model: string) => model,
+    toClientFacingModel: (model: string) => model,
     getAutoRouter: () => ({
       isEnabled: () => false,
       preflight: async () => ({ switched: false }),

@@ -476,20 +476,27 @@ export function registerOpenAIRoutes(
     const router = reg.getAutoRouter();
     return reply.send({
       object: 'list',
-      data: models.map((m) => ({
-        id: m.id,
-        object: 'model',
-        owned_by: m.provider,
-        created: Math.floor(Date.now() / 1000),
-        display_name: m.displayName,
-        context_window: m.contextWindow,
-        provider: m.provider,
-        free: m.free,
-        description: m.description,
-        capabilities: m.capabilities,
-        capability_score: scoreModel(m, 'capability', router.getProfile(m.id)),
-        quota: reg.getModelQuota(m.provider, m.id),
-      })),
+      data: models.map((m) => {
+        // Externally the client only knows the alias; the real id travels along as
+        // alias_of so clients (e.g. the dashboard) can still dispatch the model.
+        const clientFacingId = reg.toClientFacingModel(m.id);
+        const aliased = clientFacingId !== m.id;
+        return {
+          id: clientFacingId,
+          ...(aliased ? { alias_of: m.id } : {}),
+          object: 'model',
+          owned_by: m.provider,
+          created: Math.floor(Date.now() / 1000),
+          display_name: m.displayName,
+          context_window: m.contextWindow,
+          provider: m.provider,
+          free: m.free,
+          description: m.description,
+          capabilities: m.capabilities,
+          capability_score: scoreModel(m, 'capability', router.getProfile(m.id)),
+          quota: reg.getModelQuota(m.provider, m.id),
+        };
+      }),
       fmf: {
         enabled_providers: reg.listEnabledProviders(),
         succeeded_providers: succeededProviders,
@@ -538,6 +545,10 @@ export function registerOpenAIRoutes(
       // replace chatReq.model: the pool-walk gate must look at what the client
       // asked for, not at the rewritten model.
       const requestedModel = String(body.model);
+      // Resolve an external alias to its target BEFORE preflight so cooldown
+      // lookups and markRateLimited are keyed by the resolved model rather than
+      // the external name.
+      chatReq.model = reg.resolveAlias(chatReq.model);
 
       // Auto-route: detect modality from request content when model is "auto"
       let forcedImageModality = false;
@@ -632,7 +643,7 @@ export function registerOpenAIRoutes(
             id: `chatcmpl-img-${Date.now()}`,
             object: 'chat.completion',
             created: Math.floor(Date.now() / 1000),
-            model: chatReq.model,
+            model: reg.toClientFacingModel(chatReq.model),
             choices: [
               {
                 index: 0,
@@ -705,7 +716,7 @@ export function registerOpenAIRoutes(
             id: `chatcmpl-vid-${Date.now()}`,
             object: 'chat.completion',
             created: Math.floor(Date.now() / 1000),
-            model: chatReq.model,
+            model: reg.toClientFacingModel(chatReq.model),
             choices: [
               {
                 index: 0,
@@ -791,7 +802,7 @@ export function registerOpenAIRoutes(
           const payload = chatResponseToOpenAI(response) as Record<string, unknown> & {
             model?: string;
           };
-          payload.model = finalModel;
+          payload.model = reg.toClientFacingModel(finalModel);
           if (notices.length > 0) {
             (payload as Record<string, unknown>).fmf_route_notices = notices;
           }
@@ -935,6 +946,14 @@ export function registerOpenAIRoutes(
                 for await (const chunk of provider.stream(dispatchReq)) {
                   wroteChunk = true;
                   const payload = streamChunkToOpenAI(chunk);
+                  // Echo the alias (when one is configured) instead of the
+                  // upstream's bare model id, without touching the
+                  // non-aliased path that clients already rely on.
+                  const chunkComposed = `${provider.id}:${realModelId}`;
+                  const chunkClientFacing = reg.toClientFacingModel(chunkComposed);
+                  if (chunkClientFacing !== chunkComposed) {
+                    (payload as Record<string, unknown>).model = chunkClientFacing;
+                  }
                   if (body.model === 'auto') {
                     const autoRoute: Record<string, unknown> = {
                       picked: `${provider.id}:${realModelId}`,

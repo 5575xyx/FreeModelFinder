@@ -176,7 +176,9 @@ export function TesterView({
               {models.length > 0 && <option value="auto">{t('tester.auto')}</option>}
               {models.map((item) => (
                 <option key={modelValue(item)} value={modelValue(item)}>
-                  {item.provider} · {item.display_name ?? item.id}
+                  {item.alias_of
+                    ? `${item.id} (${item.alias_of})`
+                    : `${item.provider} · ${item.display_name ?? item.id}`}
                 </option>
               ))}
             </select>
