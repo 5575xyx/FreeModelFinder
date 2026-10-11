@@ -1,5 +1,6 @@
 import type { ChatMessage, ChatRequest, ChatResponse, ToolCall, ToolDefinition } from '../types.js';
 import { createToolIdPairer, type ToolIdPairer } from './tool-id-pairing.js';
+import { fromAnthropicToolChoice } from './tool-choice.js';
 
 export interface AnthropicTool {
   name: string;
@@ -31,6 +32,8 @@ export interface AnthropicMessagesRequest {
   stream?: boolean;
   stop_sequences?: string[];
   tools?: AnthropicTool[];
+  tool_choice?: { type: 'auto' | 'any' | 'tool'; name?: string };
+  disable_parallel_tool_use?: boolean;
 }
 
 function contentToString(content: AnthropicMessagesRequest['messages'][number]['content']): string {
@@ -166,6 +169,7 @@ export function anthropicToChatRequest(req: AnthropicMessagesRequest): ChatReque
     stream: req.stream ?? false,
     stop: req.stop_sequences,
     ...(req.tools && req.tools.length > 0 ? { tools: anthropicToolsToDefinitions(req.tools) } : {}),
+    ...fromAnthropicToolChoice(req),
     raw: req,
     rawProtocol: 'anthropic',
   };

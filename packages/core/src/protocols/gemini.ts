@@ -1,4 +1,5 @@
 import type { ChatMessage, ChatRequest, ToolCall, ToolDefinition } from '../types.js';
+import { fromGeminiToolConfig } from './tool-choice.js';
 
 interface GeminiContentPart {
   text?: string;
@@ -23,6 +24,13 @@ export interface GeminiHttpRequest {
   }>;
   systemInstruction?: { parts: Array<{ text: string }> };
   tools?: GeminiToolDeclaration[];
+  toolConfig?: {
+    functionCallingConfig?: {
+      mode?: 'AUTO' | 'ANY' | 'NONE';
+      allowedFunctionNames?: string[];
+      parallelFunctionCalling?: boolean;
+    };
+  };
   generationConfig?: {
     temperature?: number;
     topP?: number;
@@ -133,6 +141,7 @@ export function geminiToChatRequest(
     stop: req.generationConfig?.stopSequences,
     stream,
     ...(tools.length > 0 ? { tools } : {}),
+    ...fromGeminiToolConfig(req),
     raw: req,
     rawProtocol: 'gemini',
   };

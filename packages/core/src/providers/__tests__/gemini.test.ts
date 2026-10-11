@@ -97,6 +97,46 @@ describe('gemini tools shaping', () => {
     await provider.chat(baseReq({ tools: [{ type: 'function', function: { name: 'noop' } }] }));
     assert.deepEqual(capture.body?.tools, [{ functionDeclarations: [{ name: 'noop' }] }]);
   });
+
+  it('sends tool_choice as a Gemini toolConfig mode', async () => {
+    for (const [choice, mode] of [
+      ['auto', 'AUTO'],
+      ['required', 'ANY'],
+      ['none', 'NONE'],
+    ] as const) {
+      const capture: Capture = {};
+      const provider = jsonProvider(textResponse('ok'), capture);
+      await provider.chat(baseReq({ tool_choice: choice }));
+      assert.deepEqual(capture.body?.toolConfig, { functionCallingConfig: { mode } });
+    }
+  });
+
+  it('names a forced function through allowedFunctionNames', async () => {
+    const capture: Capture = {};
+    const provider = jsonProvider(textResponse('ok'), capture);
+    await provider.chat(
+      baseReq({ tool_choice: { type: 'function', function: { name: 'get_weather' } } }),
+    );
+    assert.deepEqual(capture.body?.toolConfig, {
+      functionCallingConfig: { mode: 'ANY', allowedFunctionNames: ['get_weather'] },
+    });
+  });
+
+  it('forwards parallel_tool_calls into parallelFunctionCalling', async () => {
+    const capture: Capture = {};
+    const provider = jsonProvider(textResponse('ok'), capture);
+    await provider.chat(baseReq({ tool_choice: 'auto', parallel_tool_calls: false }));
+    assert.deepEqual(capture.body?.toolConfig, {
+      functionCallingConfig: { mode: 'AUTO', parallelFunctionCalling: false },
+    });
+  });
+
+  it('omits toolConfig when the client set no tool preference', async () => {
+    const capture: Capture = {};
+    const provider = jsonProvider(textResponse('ok'), capture);
+    await provider.chat(baseReq());
+    assert.equal('toolConfig' in (capture.body ?? {}), false);
+  });
 });
 
 describe('gemini functionCall response parsing', () => {

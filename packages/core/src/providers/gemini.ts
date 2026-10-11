@@ -10,6 +10,7 @@ import type {
   ToolDefinition,
 } from '../types.js';
 import { assertImageDataUrlWithinLimit } from '../vision.js';
+import { toGeminiToolConfig } from '../protocols/tool-choice.js';
 import { BaseProvider } from './base.js';
 
 interface GeminiContentPart {
@@ -245,6 +246,7 @@ export class GeminiProvider extends BaseProvider {
       contents,
       systemInstruction,
       ...(tools ? { tools } : {}),
+      ...toGeminiToolConfig(req.tool_choice, req.parallel_tool_calls),
       generationConfig: {
         temperature: req.temperature,
         topP: req.top_p,

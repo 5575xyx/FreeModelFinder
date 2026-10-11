@@ -82,6 +82,12 @@ export const ToolCallDeltaSchema = z.object({
 });
 export type ToolCallDelta = z.infer<typeof ToolCallDeltaSchema>;
 
+export const ToolChoiceSchema = z.union([
+  z.enum(['auto', 'none', 'required']),
+  z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) }),
+]);
+export type ToolChoice = z.infer<typeof ToolChoiceSchema>;
+
 export const ChatMessageSchema = z.object({
   role: RoleSchema,
   content: z.string(),
@@ -102,6 +108,8 @@ export const ChatRequestSchema = z.object({
   stream: z.boolean().optional().default(false),
   stop: z.union([z.string(), z.array(z.string())]).optional(),
   tools: z.array(ToolDefinitionSchema).optional(),
+  tool_choice: ToolChoiceSchema.nullable().optional(),
+  parallel_tool_calls: z.boolean().optional(),
   raw: z.unknown().optional(),
   rawProtocol: z.enum(['openai', 'anthropic', 'gemini']).optional(),
 });

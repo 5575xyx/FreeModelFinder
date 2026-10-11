@@ -4,6 +4,7 @@ import type {
   ChatResponse,
   StreamChunk,
   ToolCall,
+  ToolChoice,
   ToolDefinition,
 } from '../types.js';
 import { createToolIdPairer } from './tool-id-pairing.js';
@@ -37,6 +38,8 @@ export interface OpenAIChatCompletionRequest {
   stream?: boolean;
   stop?: string | string[];
   tools?: ToolDefinition[];
+  tool_choice?: ToolChoice | null;
+  parallel_tool_calls?: boolean;
 }
 
 function normalizeContent(c: OpenAIChatCompletionRequest['messages'][number]['content']): string {
@@ -114,6 +117,8 @@ export function openAIToChatRequest(req: OpenAIChatCompletionRequest): ChatReque
     stream: req.stream ?? false,
     stop: req.stop,
     ...(req.tools && req.tools.length > 0 ? { tools: req.tools } : {}),
+    tool_choice: req.tool_choice,
+    parallel_tool_calls: req.parallel_tool_calls,
     raw: req,
     rawProtocol: 'openai',
   };

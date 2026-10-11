@@ -308,4 +308,63 @@ describe('universal tool calling end to end', () => {
       await app.close();
     }
   });
+
+  it('carries tool_choice and parallel_tool_calls through every ingress protocol', async () => {
+    const { provider, lastReq } = toolProvider('custom', [toolChunk]);
+    const { app } = await createServer({
+      registry: registryWith(provider),
+      watchIntervalMs: 60 * 60 * 1000,
+    });
+    try {
+      // OpenAI ingress: the values must reach the provider untouched.
+      const openai = await app.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        payload: {
+          model: 'custom:fixture-model',
+          stream: true,
+          tools: [{ type: 'function', function: { name: 'get_weather' } }],
+          tool_choice: 'required',
+          parallel_tool_calls: false,
+          messages: [{ role: 'user', content: 'weather?' }],
+        },
+      });
+      assert.equal(openai.statusCode, 200);
+      assert.equal(lastReq()?.tool_choice, 'required');
+      assert.equal(lastReq()?.parallel_tool_calls, false);
+
+      // Anthropic ingress: its own shape must be translated, not dropped.
+      const anthropic = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'custom:fixture-model',
+          stream: true,
+          max_tokens: 64,
+          tools: [{ name: 'get_weather', input_schema: { type: 'object' } }],
+          tool_choice: { type: 'any' },
+          disable_parallel_tool_use: true,
+          messages: [{ role: 'user', content: 'weather?' }],
+        },
+      });
+      assert.equal(anthropic.statusCode, 200);
+      assert.equal(lastReq()?.tool_choice, 'required');
+      assert.equal(lastReq()?.parallel_tool_calls, false);
+
+      // Gemini ingress: toolConfig must be translated, not dropped.
+      const gemini = await app.inject({
+        method: 'POST',
+        url: '/v1beta/models/custom:fixture-model:streamGenerateContent',
+        payload: {
+          contents: [{ role: 'user', parts: [{ text: 'weather?' }] }],
+          tools: [{ functionDeclarations: [{ name: 'get_weather' }] }],
+          toolConfig: { functionCallingConfig: { mode: 'ANY' } },
+        },
+      });
+      assert.equal(gemini.statusCode, 200);
+      assert.equal(lastReq()?.tool_choice, 'required');
+    } finally {
+      await app.close();
+    }
+  });
 });
