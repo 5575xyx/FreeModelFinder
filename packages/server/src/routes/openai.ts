@@ -476,20 +476,27 @@ export function registerOpenAIRoutes(
     const router = reg.getAutoRouter();
     return reply.send({
       object: 'list',
-      data: models.map((m) => ({
-        id: m.id,
-        object: 'model',
-        owned_by: m.provider,
-        created: Math.floor(Date.now() / 1000),
-        display_name: m.displayName,
-        context_window: m.contextWindow,
-        provider: m.provider,
-        free: m.free,
-        description: m.description,
-        capabilities: m.capabilities,
-        capability_score: scoreModel(m, 'capability', router.getProfile(m.id)),
-        quota: reg.getModelQuota(m.provider, m.id),
-      })),
+      data: models.map((m) => {
+        // Externally the client only knows the alias; the real id travels along as
+        // alias_of so clients (e.g. the dashboard) can still dispatch the model.
+        const clientFacingId = reg.toClientFacingModel(m.id);
+        const aliased = clientFacingId !== m.id;
+        return {
+          id: clientFacingId,
+          ...(aliased ? { alias_of: m.id } : {}),
+          object: 'model',
+          owned_by: m.provider,
+          created: Math.floor(Date.now() / 1000),
+          display_name: m.displayName,
+          context_window: m.contextWindow,
+          provider: m.provider,
+          free: m.free,
+          description: m.description,
+          capabilities: m.capabilities,
+          capability_score: scoreModel(m, 'capability', router.getProfile(m.id)),
+          quota: reg.getModelQuota(m.provider, m.id),
+        };
+      }),
       fmf: {
         enabled_providers: reg.listEnabledProviders(),
         succeeded_providers: succeededProviders,
