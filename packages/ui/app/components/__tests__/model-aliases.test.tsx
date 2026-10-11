@@ -59,20 +59,38 @@ describe('ModelAliasesSection', () => {
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(screen.getByRole('alert').textContent).toContain('reserved');
+    expect((screen.getByDisplayValue('x') as HTMLInputElement).value).toBe('x');
   });
 
   it('removes a row without saving', async () => {
+    const writes: unknown[] = [];
     server.use(
       http.get(`${gateway}/api/model-aliases`, () =>
         HttpResponse.json({ modelAliases: { 'my-model': 'custom:fx:fast' } }),
       ),
+      http.post(`${gateway}/api/model-aliases`, async ({ request }) => {
+        writes.push(await request.json());
+        return HttpResponse.json({ ok: true });
+      }),
     );
     const user = userEvent.setup();
     render(<ModelAliasesSection />);
 
     await user.click(await screen.findByRole('button', { name: /模型别名/ }));
-    await user.click(await screen.findByRole('button', { name: '删除别名' }));
+    await user.click(await screen.findByRole('button', { name: /删除别名/ }));
 
     await waitFor(() => expect(screen.queryByDisplayValue('my-model')).toBeNull());
+    expect(writes).toHaveLength(0);
+  });
+
+  it('surfaces a load error when the initial fetch fails', async () => {
+    server.use(
+      http.get(`${gateway}/api/model-aliases`, () => HttpResponse.json({ modelAliases: {} })),
+      http.get(`${gateway}/api/auto-route/model-options`, () => HttpResponse.error()),
+    );
+    render(<ModelAliasesSection />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /模型别名/ }));
+    await expect(screen.findByRole('alert')).resolves.toBeTruthy();
   });
 });

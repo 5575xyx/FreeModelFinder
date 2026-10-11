@@ -11,6 +11,7 @@ type ModelOption = { id: string; provider: string; displayName?: string };
 export function ModelAliasesSection() {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [rows, setRows] = useState<AliasRow[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [busy, setBusy] = useState(false);
@@ -20,19 +21,28 @@ export function ModelAliasesSection() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [aliasRes, modelRes] = await Promise.all([
-        fetch(`${GATEWAY}/api/model-aliases`, withUiHeaders()),
-        fetch(`${GATEWAY}/api/auto-route/model-options`, withUiHeaders()),
-      ]);
-      if (cancelled) return;
-      const aliasJson = (await aliasRes.json().catch(() => ({}))) as {
-        modelAliases?: Record<string, string>;
-      };
-      const modelJson = (await modelRes.json().catch(() => ({}))) as { models?: ModelOption[] };
-      setRows(
-        Object.entries(aliasJson.modelAliases ?? {}).map(([alias, target]) => ({ alias, target })),
-      );
-      setModels(modelJson.models ?? []);
+      try {
+        const [aliasRes, modelRes] = await Promise.all([
+          fetch(`${GATEWAY}/api/model-aliases`, withUiHeaders()),
+          fetch(`${GATEWAY}/api/auto-route/model-options`, withUiHeaders()),
+        ]);
+        if (cancelled) return;
+        const aliasJson = (await aliasRes.json().catch(() => ({}))) as {
+          modelAliases?: Record<string, string>;
+        };
+        const modelJson = (await modelRes.json().catch(() => ({}))) as { models?: ModelOption[] };
+        setRows(
+          Object.entries(aliasJson.modelAliases ?? {}).map(([alias, target]) => ({
+            alias,
+            target,
+          })),
+        );
+        setModels(modelJson.models ?? []);
+      } catch {
+        if (!cancelled) setError(t('settings.aliases.loadFailed'));
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
     })();
     return () => {
       cancelled = true;
@@ -62,8 +72,14 @@ export function ModelAliasesSection() {
         setError(body.error ?? `save failed ${res.status}`);
         return;
       }
-      setRows(next.filter((row) => row.alias.trim()));
+      setRows(
+        next
+          .filter((row) => row.alias.trim())
+          .map((row) => ({ alias: row.alias.trim(), target: row.target })),
+      );
       setSaved(true);
+    } catch {
+      setError(t('settings.aliases.saveFailed'));
     } finally {
       setBusy(false);
     }
@@ -97,7 +113,7 @@ export function ModelAliasesSection() {
           )}
         />
       </button>
-      {open && (
+      {open && loaded && (
         <div className="space-y-3 rounded-lg border border-border bg-surface p-4 shadow-sm">
           <p className="text-xs text-muted-foreground">{t('settings.aliases.hint')}</p>
           {rows.length === 0 && (
@@ -107,7 +123,7 @@ export function ModelAliasesSection() {
             <div key={index} className="flex items-center gap-2">
               <input
                 value={row.alias}
-                aria-label={t('settings.aliases.aliasLabel')}
+                aria-label={t('settings.aliases.aliasLabel', { index: index + 1 })}
                 placeholder={t('settings.aliases.aliasPlaceholder')}
                 onChange={(e) =>
                   setRows((cur) =>
@@ -118,7 +134,7 @@ export function ModelAliasesSection() {
               />
               <select
                 value={row.target}
-                aria-label={t('settings.aliases.targetLabel')}
+                aria-label={t('settings.aliases.targetLabel', { index: index + 1 })}
                 onChange={(e) =>
                   setRows((cur) =>
                     cur.map((r, i) => (i === index ? { ...r, target: e.target.value } : r)),
@@ -135,7 +151,7 @@ export function ModelAliasesSection() {
               </select>
               <button
                 type="button"
-                aria-label={t('settings.aliases.remove')}
+                aria-label={t('settings.aliases.remove', { index: index + 1 })}
                 onClick={() => setRows((cur) => cur.filter((_, i) => i !== index))}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition hover:text-destructive"
               >
