@@ -56,9 +56,7 @@ export type ModelsResponse = {
     failed_providers?: ProviderFailure[];
   };
 };
-export function modelValue(
-  model: Pick<ModelItem, 'provider' | 'id'> & { alias_of?: string },
-): string {
+export function modelValue(model: Pick<ModelItem, 'provider' | 'id' | 'alias_of'>): string {
   // The UI always dispatches the REAL model id, never the alias: aliases are an
   // external-facing surface, and the UI already knows the real id via alias_of.
   const realId = model.alias_of ?? model.id;

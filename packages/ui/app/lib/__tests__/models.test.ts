@@ -14,15 +14,15 @@ describe('modelValue', () => {
     ).toBe('opencode:mimo-v2.6');
   });
 
-  it('does not double-prefix when alias_of already carries the provider', () => {
-    expect(modelValue({ provider: 'opencode', id: 'my-model', alias_of: 'opencode:mimo' })).toBe(
-      'opencode:mimo',
+  it('prefixes a bare alias_of from an OpenAI-compatible provider', () => {
+    expect(modelValue({ provider: 'openrouter', id: 'my-model', alias_of: 'gpt-4o-mini' })).toBe(
+      'openrouter:gpt-4o-mini',
     );
   });
 
-  it('keeps the custom provider prefixing', () => {
-    expect(modelValue({ provider: 'custom', id: 'fx:fast', alias_of: 'custom:fx:fast' })).toBe(
-      'custom:custom:fx:fast',
+  it('prefixes the custom provider so a custom alias dispatches its catalog id', () => {
+    expect(modelValue({ provider: 'custom', id: 'my-model', alias_of: 'fx:fast' })).toBe(
+      'custom:fx:fast',
     );
   });
 });
