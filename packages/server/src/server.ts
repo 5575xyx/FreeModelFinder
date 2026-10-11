@@ -23,7 +23,7 @@ import {
   type GatewayKeyEntry,
 } from '@freemodelfinder/core';
 import { redactProxy } from '@freemodelfinder/zen';
-import { registerOpenAIRoutes } from './routes/openai.js';
+import { modelAllowlistViolation, registerOpenAIRoutes } from './routes/openai.js';
 import { registerAnthropicRoutes } from './routes/anthropic.js';
 import { registerGeminiRoutes } from './routes/gemini.js';
 import { ModelWatcher } from './watcher.js';
@@ -126,14 +126,53 @@ function isPublicGatewayRoute(method: string, url: string): boolean {
   return /^\/v1beta\/models\/.+:(generateContent|streamGenerateContent)$/.test(url);
 }
 
+/**
+ * Extracts the model a gateway request wants, or null when the route carries no
+ * model. Only the POST routes that name a model are checked; the three video
+ * task routes (`/v1/videos/status`, `/v1/videos/proxy` and
+ * GET `/v1/videos/:video_id`) cannot be validated because the task id does not
+ * carry the model that was used to create it.
+ */
+function extractGatewayModel(url: string, body: unknown): string | null {
+  const record = body as { model?: unknown } | null | undefined;
+  if (
+    url === '/v1/chat/completions' ||
+    url === '/v1/messages' ||
+    url === '/v1/images/generations' ||
+    url === '/v1/videos'
+  ) {
+    return typeof record?.model === 'string' && record.model.trim() ? record.model : null;
+  }
+  const gemini = url.match(/^\/v1beta\/models\/(.+?):(generateContent|streamGenerateContent)$/);
+  if (!gemini) return null;
+  const raw = gemini[1] ?? '';
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    // Malformed percent sequence. Fastify rejects such a URL outright (400
+    // FST_ERR_BAD_URL) before this hook runs, so this branch is defense in depth
+    // for a caller that bypasses that validation. It still returns the RAW
+    // capture rather than null, because null means "this route names no model",
+    // which SKIPS the allowlist check — the raw string can never be an
+    // allowlist entry, so a restricted key is refused instead of passing
+    // through. A literal unescaped '%' in a genuine id ("100%gpt") also lands
+    // here and is returned exactly as sent, so it still matches its entry.
+    return raw;
+  }
+}
+
 function extractBearer(req: FastifyRequest): string | null {
-  const auth = req.headers['authorization'];
+  // Tolerate a bare request object without `headers`, matching
+  // extractGatewayModel above and extractBearer in routes/openai.ts. A missing
+  // header object means "no credentials presented", not a crash.
+  const headers = (req.headers ?? {}) as Record<string, unknown>;
+  const auth = headers['authorization'];
   if (typeof auth === 'string' && auth.toLowerCase().startsWith('bearer ')) {
     return auth.slice(7).trim();
   }
-  const xKey = req.headers['x-api-key'];
+  const xKey = headers['x-api-key'];
   if (typeof xKey === 'string' && xKey.trim()) return xKey.trim();
-  const googKey = req.headers['x-goog-api-key'];
+  const googKey = headers['x-goog-api-key'];
   if (typeof googKey === 'string' && googKey.trim()) return googKey.trim();
   return null;
 }
@@ -400,6 +439,31 @@ function findMatchingGatewayKey(
   return null;
 }
 
+/**
+ * Sanitises a client-supplied model allowlist: non-strings and blanks are
+ * dropped, duplicates removed (case-insensitively, since comparison is too).
+ *
+ * Original casing is preserved so the value echoed back to the UI matches the
+ * dropdown option it came from. An empty array is always returned rather than
+ * undefined — [] and an omitted field both mean "unrestricted", and [] is the
+ * shape the UI reads back.
+ */
+function sanitizeModelAllowlist(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of value) {
+    if (typeof raw !== 'string') continue;
+    const id = raw.trim();
+    if (!id) continue;
+    const dedupe = id.toLowerCase();
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    out.push(id);
+  }
+  return out;
+}
+
 function normalizeHttpsOrigin(value: string, label: string): string {
   let url: URL;
   try {
@@ -576,6 +640,20 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           },
         });
       }
+    }
+    const violation = modelAllowlistViolation(
+      getRegistry(),
+      matchedKey,
+      extractGatewayModel(url, req.body),
+    );
+    if (violation) {
+      return reply.code(403).send({
+        error: {
+          message: violation,
+          type: 'permission_error',
+          code: 'model_not_allowed',
+        },
+      });
     }
   });
 
@@ -1660,6 +1738,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           expiresAt: k.expiresAt ?? null,
           dailyRequestLimit: k.dailyRequestLimit ?? null,
           dailyTokenLimit: k.dailyTokenLimit ?? null,
+          modelAllowlist: k.modelAllowlist ?? [],
         })),
         requireAuth: !!gw.requireAuth,
         port: opts.mode === 'server' ? opts.gatewayPort : cfg.port,
@@ -1680,10 +1759,23 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         expiresAt?: number | null;
         dailyRequestLimit?: number | null;
         dailyTokenLimit?: number | null;
+        modelAllowlist?: unknown;
       };
     }>('/api/gateway', async (req, reply) => {
-      const { action, requireAuth, id, label, expiresAt, dailyRequestLimit, dailyTokenLimit } =
-        req.body ?? {};
+      const {
+        action,
+        requireAuth,
+        id,
+        label,
+        expiresAt,
+        dailyRequestLimit,
+        dailyTokenLimit,
+        modelAllowlist,
+      } = req.body ?? {};
+      // `hasAllowlist` distinguishes "clear it" ([]) from "leave it alone" (omitted),
+      // which is the whole point of accepting [] on update.
+      const allowlist = sanitizeModelAllowlist(modelAllowlist);
+      const hasAllowlist = modelAllowlist !== undefined;
       if (opts.mode === 'server' && (action === 'revoke' || requireAuth === false)) {
         return reply.code(409).send({
           error: 'gateway authentication is mandatory in server mode; rotate the key instead',
@@ -1714,6 +1806,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             ...(typeof dailyTokenLimit === 'number' && dailyTokenLimit > 0
               ? { dailyTokenLimit }
               : {}),
+            ...(allowlist.length ? { modelAllowlist: allowlist } : {}),
           };
           keys.push(entry);
           if (action === 'generate') requireAuthNext = cur.requireAuth ?? true;
@@ -1737,6 +1830,9 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
               typeof dailyTokenLimit === 'number' && dailyTokenLimit > 0
                 ? dailyTokenLimit
                 : undefined;
+            if (hasAllowlist) {
+              entry.modelAllowlist = allowlist.length ? allowlist : undefined;
+            }
           }
         }
         if (action === 'update' && typeof requireAuth === 'boolean' && !id) {
@@ -1781,6 +1877,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           expiresAt: k.expiresAt ?? null,
           dailyRequestLimit: k.dailyRequestLimit ?? null,
           dailyTokenLimit: k.dailyTokenLimit ?? null,
+          modelAllowlist: k.modelAllowlist ?? [],
         })),
         requireAuth: !!gw.requireAuth,
         mode: opts.mode,

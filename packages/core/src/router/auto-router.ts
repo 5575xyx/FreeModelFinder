@@ -408,7 +408,18 @@ export class AutoRouter {
     }
   }
 
-  async pickFallback(excludedModel: string): Promise<ModelInfo | null> {
+  /**
+   * Picks a substitute for a model that just failed or was rate-limited.
+   *
+   * @param excludedModel the model to skip, either bare or composed.
+   * @param allowed restricted set of composed model ids the caller may use;
+   *   `null` or omitted means unrestricted. Applied before the cooldown checks
+   *   so a model that IS allowlisted but IS cooled down is still dropped.
+   */
+  async pickFallback(
+    excludedModel: string,
+    allowed?: Set<string> | null,
+  ): Promise<ModelInfo | null> {
     const settings = this.opts.getSettings();
     if (!settings?.enabled) return null;
     const strategy = settings.strategy;
@@ -418,6 +429,9 @@ export class AutoRouter {
       const key = bareModelId(m.provider, m.id).toLowerCase();
       const full = composeModelId(m.provider, m.id).toLowerCase();
       if (key === excludedKey || full === excludedKey) return false;
+      // A restricted caller may only be failed over to a model on its own list;
+      // falling through here would be a silent allowlist bypass with a 200.
+      if (allowed && !allowed.has(full)) return false;
       // Skip any model whose provider is currently in cooldown (shared quota)
       if (this.isProviderRateLimited(m.provider)) return false;
       if (this.isRateLimited(key) || this.isRateLimited(full)) return false;
@@ -522,9 +536,17 @@ export class AutoRouter {
    *
    * Providers with shared quotas cause every one of their models to be
    * considered "in cooldown" until the reset time.
+   *
+   * @param allowed restricted set of composed model ids the caller may use;
+   *   `null` or omitted means unrestricted. Forwarded to {@link pickFallback},
+   *   so a restricted caller never gets failed over outside its allowlist. When
+   *   no legal fallback exists this returns the ORIGINAL model — the request
+   *   then proceeds to it and fails naturally upstream, which is correct: it is
+   *   better than silently serving a model the caller is not entitled to.
    */
   async preflight(
     requestedModel: string,
+    allowed?: Set<string> | null,
   ): Promise<
     | { switched: false; model: string }
     | { switched: true; model: ModelInfo; notice: SwitchNotice; original: string }
@@ -550,7 +572,7 @@ export class AutoRouter {
       return { switched: false, model: requestedModel };
     }
 
-    const fallback = await this.pickFallback(requestedModel);
+    const fallback = await this.pickFallback(requestedModel, allowed);
     if (!fallback) return { switched: false, model: requestedModel };
 
     this.rememberPreference(requestedModel);

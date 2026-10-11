@@ -11,16 +11,23 @@ import {
   type ProviderRegistry,
   type SwitchNotice,
 } from '@freemodelfinder/core';
+import { keyModelAllowlist, resolveGatewayKey } from './openai.js';
 
+/**
+ * Restricted composed model ids for the caller's gateway key, or null for an
+ * unrestricted caller. Failover must stay inside it, or a 200 from another
+ * model would silently bypass the allowlist.
+ */
 async function dispatchWithAutoRoute(
   reg: ProviderRegistry,
   chatReq: ChatRequest,
+  allowed?: Set<string> | null,
 ): Promise<{ response: ChatResponse; notices: SwitchNotice[]; finalModel: string }> {
   const router = reg.getAutoRouter();
   const notices: SwitchNotice[] = [];
   const originalRequested = chatReq.model;
 
-  const pre = await router.preflight(chatReq.model);
+  const pre = await router.preflight(chatReq.model, allowed);
   if (pre.switched) {
     chatReq.model = pre.model.id;
     notices.push(pre.notice);
@@ -44,7 +51,7 @@ async function dispatchWithAutoRoute(
       const parsed = parseRateLimitError(err);
       if (parsed.isRateLimit && router.isEnabled() && attempt === 0) {
         router.markRateLimited(chatReq.model, provider.id as ProviderId, parsed);
-        const fallback = await router.pickFallback(chatReq.model);
+        const fallback = await router.pickFallback(chatReq.model, allowed);
         if (fallback) {
           router.rememberPreference(originalRequested);
           const notice: SwitchNotice = {
@@ -90,10 +97,17 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
       // lookups and markRateLimited are keyed by the resolved model rather than
       // the external name.
       chatReq.model = reg.resolveAlias(chatReq.model);
+      // The caller's allowlist, resolved once here: preflight and the post-429
+      // switch must both stay inside it.
+      const allowedModels = keyModelAllowlist(resolveGatewayKey(reg, req));
 
       if (!chatReq.stream) {
         try {
-          const { response, notices, finalModel } = await dispatchWithAutoRoute(reg, chatReq);
+          const { response, notices, finalModel } = await dispatchWithAutoRoute(
+            reg,
+            chatReq,
+            allowedModels,
+          );
           const payload = chatResponseToAnthropic(response) as Record<string, unknown>;
           payload.model = reg.toClientFacingModel(finalModel);
           if (notices.length > 0) payload.fmf_route_notices = notices;
@@ -107,7 +121,7 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
       const router = reg.getAutoRouter();
       const originalRequested = chatReq.model;
       const preNotices: SwitchNotice[] = [];
-      const pre = await router.preflight(chatReq.model);
+      const pre = await router.preflight(chatReq.model, allowedModels);
       if (pre.switched) {
         chatReq.model = pre.model.id;
         preNotices.push(pre.notice);
