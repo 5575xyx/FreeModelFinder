@@ -60,40 +60,32 @@ async function appWith(
     { id: 'custom:fx:plain', provider: 'custom', displayName: 'Plain', free: true },
     { id: 'custom:fx:fast', provider: 'custom', displayName: 'Fast', free: true },
   ],
+  beforeCreate?: (registry: ProviderRegistry) => void,
 ): Promise<FastifyInstance> {
   const registry = new ProviderRegistry(config);
+  beforeCreate?.(registry);
   registry.listAllModels = async () => ({
     models,
     succeededProviders: ['custom' as const],
     failedProviders: [],
   });
-  // Not exercised by the /v1/models tests; present so later dispatch tests can
-  // add cases here without rebuilding the harness.
-  //
-  // Deliberately does NOT resolve aliases: the route handlers must call
-  // resolveAlias before preflight, which is exactly what the dispatch tests
-  // below assert. It mirrors the real registry only for the part that runs
-  // after that normalization: a composed custom id keeps its SOURCE segment
-  // (bareModelId('custom', 'fx:fast') === 'fx:fast'), so finalModel composes
-  // back to 'custom:fx:fast' and the reverse lookup can match the alias
-  // target. Anything else throws, as an unresolvable model does in production.
-  registry.resolveModel = (model) => {
-    const sep = model.indexOf(':');
-    if (sep <= 0 || model.slice(0, sep) !== 'custom' || sep === model.length - 1) {
-      throw new Error(`unknown model: ${model}`);
-    }
-    const id = model.slice(sep + 1);
-    return {
-      provider: {
-        id: 'custom',
-        chat: async () => ({ ...CHAT_REPLY, model: id }),
-        stream: async function* () {
-          yield { id: 'alias-stream', model: id, created: 1, delta: 'ok', finish_reason: 'stop' };
-        },
-      } as never,
-      modelId: id,
-    };
-  };
+  // Deliberately only the PROVIDER is faked. ProviderRegistry.resolveModel itself
+  // resolves aliases (registry.ts:464), so stubbing resolveModel here would hide
+  // the very routing path these tests are meant to exercise.
+  const provider = {
+    id: 'custom',
+    chat: async (req: { model: string }) => ({ ...CHAT_REPLY, model: req.model }),
+    stream: async function* (req: { model: string }) {
+      yield {
+        id: 'alias-stream',
+        model: req.model,
+        created: 1,
+        delta: 'ok',
+        finish_reason: 'stop' as const,
+      };
+    },
+  } as never;
+  registry.getProvider = () => provider;
   const { app } = await createServer({ registry, watchIntervalMs: 60 * 60 * 1000 });
   apps.push(app);
   return app;
@@ -198,7 +190,9 @@ describe('/v1/models alias replacement', () => {
 });
 
 describe('alias routing and response echo', () => {
-  it('routes an aliased model id to the real provider in all three protocols', async () => {
+  // Routing itself was already alias-aware via resolveModel; Task 4 adds
+  // preflight keying (asserted separately below) and the response echo.
+  it('routes an aliased model id to the custom provider in all three protocols', async () => {
     const config = baseConfig();
     config.modelAliases = { 'my-model': 'custom:fx:fast' };
     const app = await appWith(config);
@@ -248,7 +242,12 @@ describe('alias routing and response echo', () => {
       payload: { model: 'my-model', messages: [{ role: 'user', content: 'hi' }], stream: true },
     });
     assert.equal(res.statusCode, 200);
-    assert.match(res.body, /"model":"my-model"/);
+    const chunks = res.body
+      .split('\n')
+      .filter((line) => line.startsWith('data: ') && line.includes('chat.completion.chunk'))
+      .map((line) => JSON.parse(line.slice(6)) as { model: string });
+    assert.ok(chunks.length > 0, 'stream must emit at least one chunk');
+    assert.equal(chunks[0]?.model, 'my-model');
   });
 
   it('echoes the alias as the response model for Anthropic non-streaming', async () => {
@@ -281,10 +280,13 @@ describe('alias routing and response echo', () => {
       },
     });
     assert.equal(res.statusCode, 200);
-    assert.match(res.body, /"model":"my-model"/);
+    assert.match(
+      res.body,
+      /event: message_start\ndata: \{"type":"message_start","message":\{[^}]*"model":"my-model"/,
+    );
   });
 
-  it('keeps echoing the composed real id when the request used the original id', async () => {
+  it('still echoes the alias when the client requested the real id directly', async () => {
     const config = baseConfig();
     config.modelAliases = { 'my-model': 'custom:fx:fast' };
     const app = await appWith(config);
@@ -296,5 +298,27 @@ describe('alias routing and response echo', () => {
     });
     const body = res.json() as { model: string };
     assert.equal(body.model, 'my-model');
+  });
+
+  it('hands the REAL model id to preflight so cooldowns key by the real model', async () => {
+    const config = baseConfig();
+    config.modelAliases = { 'my-model': 'custom:fx:fast' };
+    const seen: string[] = [];
+    const app = await appWith(config, undefined, (registry) => {
+      const router = registry.getAutoRouter();
+      const original = router.preflight.bind(router);
+      router.preflight = async (model: string) => {
+        seen.push(model);
+        return original(model);
+      };
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'my-model', messages: [{ role: 'user', content: 'hi' }] },
+    });
+
+    assert.deepEqual(seen, ['custom:fx:fast'], 'preflight must key by the real id, not the alias');
   });
 });

@@ -545,8 +545,9 @@ export function registerOpenAIRoutes(
       // replace chatReq.model: the pool-walk gate must look at what the client
       // asked for, not at the rewritten model.
       const requestedModel = String(body.model);
-      // Resolve an external alias to its real id BEFORE preflight so cooldown
-      // lookups and markRateLimited stay keyed by the real model.
+      // Resolve an external alias to its target BEFORE preflight so cooldown
+      // lookups and markRateLimited are keyed by the resolved model rather than
+      // the external name.
       chatReq.model = reg.resolveAlias(chatReq.model);
 
       // Auto-route: detect modality from request content when model is "auto"
@@ -642,7 +643,7 @@ export function registerOpenAIRoutes(
             id: `chatcmpl-img-${Date.now()}`,
             object: 'chat.completion',
             created: Math.floor(Date.now() / 1000),
-            model: chatReq.model,
+            model: reg.toClientFacingModel(chatReq.model),
             choices: [
               {
                 index: 0,
@@ -715,7 +716,7 @@ export function registerOpenAIRoutes(
             id: `chatcmpl-vid-${Date.now()}`,
             object: 'chat.completion',
             created: Math.floor(Date.now() / 1000),
-            model: chatReq.model,
+            model: reg.toClientFacingModel(chatReq.model),
             choices: [
               {
                 index: 0,
