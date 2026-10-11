@@ -138,6 +138,7 @@ export const defaultHandlers = [
           expiresAt: null,
           dailyRequestLimit: null,
           dailyTokenLimit: null,
+          modelAllowlist: [],
         },
       ],
       requireAuth: true,

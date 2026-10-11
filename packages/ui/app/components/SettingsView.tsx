@@ -11,6 +11,7 @@ import {
   Globe2,
   KeyRound,
   Loader2,
+  ListFilter,
   PlugZap,
   Plus,
   RefreshCw,
@@ -122,6 +123,8 @@ type GatewayKeyInfo = {
   expiresAt: number | null;
   dailyRequestLimit: number | null;
   dailyTokenLimit: number | null;
+  /** Real composed model ids this key may call; empty/absent = unrestricted. */
+  modelAllowlist?: string[];
 };
 
 type GatewayInfo = {
@@ -613,6 +616,8 @@ export function SettingsView({
   const [gateway, setGateway] = useState<GatewayInfo | null>(null);
   const [gatewaySectionOpen, setGatewaySectionOpen] = useState(true);
   const [gatewayKeyVisible, setGatewayKeyVisible] = useState<Record<string, boolean>>({});
+  // Which key's model allowlist editor is open; null means none.
+  const [editingModelsFor, setEditingModelsFor] = useState<string | null>(null);
   const [gatewayBusy, setGatewayBusy] = useState<'idle' | 'generating' | 'revoking' | 'saving'>(
     'idle',
   );
@@ -1469,6 +1474,18 @@ export function SettingsView({
     setGatewayBusy('idle');
   }
 
+  /**
+   * Saves a key's model allowlist. `models` is the FULL new list, so [] genuinely
+   * clears the restriction — the server only clears when the field is present,
+   * which is why this always sends it. The response is the source of truth: the
+   * server has already dropped blanks and de-duplicated case-insensitively.
+   */
+  async function saveGatewayKeyModels(id: string, models: string[]) {
+    setGatewayBusy('saving');
+    await callGateway({ action: 'update', id, modelAllowlist: models });
+    setGatewayBusy('idle');
+  }
+
   async function revokeGatewayKey() {
     setGatewayBusy('revoking');
     const next = await callGateway({ action: 'revoke' });
@@ -2163,6 +2180,19 @@ export function SettingsView({
                               <Copy size={13} strokeWidth={1.75} />
                             )}
                           </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingModelsFor(editingModelsFor === entry.id ? null : entry.id)
+                            }
+                            disabled={gatewayBusy !== 'idle'}
+                            aria-label={t('settings.gateway.editModels')}
+                            aria-pressed={editingModelsFor === entry.id}
+                            title={t('settings.gateway.editModels')}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                          >
+                            <ListFilter size={13} strokeWidth={1.75} />
+                          </button>
                           {!gateway?.authLocked && (
                             <button
                               type="button"
@@ -2190,7 +2220,26 @@ export function SettingsView({
                               ? new Date(entry.expiresAt).toLocaleDateString()
                               : t('settings.gateway.meta.never')}
                           </span>
+                          <span>
+                            {t('settings.gateway.meta.models')}:{' '}
+                            {entry.modelAllowlist?.length
+                              ? entry.modelAllowlist.length
+                              : t('settings.gateway.meta.allModels')}
+                          </span>
                         </div>
+                        {editingModelsFor === entry.id && (
+                          <div className="mt-2">
+                            <ModelMultiSelect
+                              label={t('settings.gateway.models.title')}
+                              placeholder={t('settings.gateway.models.placeholder')}
+                              hint={t('settings.gateway.models.hint')}
+                              value={entry.modelAllowlist ?? []}
+                              onChange={(next) => void saveGatewayKeyModels(entry.id, next)}
+                              options={modelOptions}
+                              disabled={gatewayBusy !== 'idle'}
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
