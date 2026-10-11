@@ -22,14 +22,14 @@ export function validateModelAliases(input: unknown, knownIds: Set<string>): Ali
   for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
     const alias = rawKey.trim();
     if (!alias) return { ok: false, error: 'alias name must not be empty' };
-    if (knownIds.has(alias)) {
-      return { ok: false, error: `alias "${alias}" conflicts with an existing model id` };
-    }
     if (alias.includes(':')) {
       return { ok: false, error: `alias "${alias}" must not contain ":"` };
     }
     if (alias === 'auto' || alias === 'default') {
       return { ok: false, error: `alias "${alias}" is a reserved routing keyword` };
+    }
+    if (knownIds.has(alias)) {
+      return { ok: false, error: `alias "${alias}" conflicts with an existing model id` };
     }
     if (typeof rawValue !== 'string' || !rawValue.trim()) {
       return { ok: false, error: `alias "${alias}" must point to a model id` };

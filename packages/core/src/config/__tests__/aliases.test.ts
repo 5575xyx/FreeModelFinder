@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { validateModelAliases } from '../aliases.js';
 
 describe('validateModelAliases', () => {
-  const known = new Set(['openrouter:gpt-4o-mini']);
+  const known = new Set(['openrouter:gpt-4o-mini', 'gpt-4o-mini']);
 
   it('accepts a well-formed map and trims both sides', () => {
     const res = validateModelAliases({ ' my-model ': ' openrouter:gpt-4o-mini ' }, known);
@@ -41,9 +41,15 @@ describe('validateModelAliases', () => {
   });
 
   it('rejects an alias that collides with a known model id', () => {
-    const res = validateModelAliases({ 'openrouter:gpt-4o-mini': 'openrouter:gpt-4o-mini' }, known);
+    const res = validateModelAliases({ 'gpt-4o-mini': 'openrouter:gpt-4o-mini' }, known);
     assert.equal(res.ok, false);
     assert.match(res.error ?? '', /conflict/i);
+  });
+
+  it('reports the colon rule before the conflict rule for a composed id', () => {
+    const res = validateModelAliases({ 'openrouter:gpt-4o-mini': 'openrouter:gpt-4o-mini' }, known);
+    assert.equal(res.ok, false);
+    assert.match(res.error ?? '', /must not contain/);
   });
 
   it('rejects a missing or blank target', () => {
