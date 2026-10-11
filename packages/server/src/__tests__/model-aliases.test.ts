@@ -10,13 +10,15 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-const CHAT_REPLY: ChatResponse = {
+// No `model` here: the fake provider echoes the id it was actually asked for
+// (`req.model`), so a baked-in value would only ever be overwritten. The
+// provider supplies it, keeping the assembled object a complete ChatResponse.
+const CHAT_REPLY = {
   id: 'alias-reply',
-  model: 'plain',
   created: 1_700_000_000,
   content: 'ok',
   finish_reason: 'stop',
-};
+} as const;
 
 function baseConfig(): AppConfig {
   return {
@@ -49,6 +51,14 @@ function baseConfig(): AppConfig {
   };
 }
 
+// Catalog for the in-chat image/video shortcut tests. The capability
+// fast-path keys off the LAST id segment (openai.ts:616), so these bare ids
+// carry the 'image'/'vid' markers the /image/i and /vid(eo)?/i tests match.
+const IMAGE_VIDEO_MODELS = [
+  { id: 'custom:fx:image-model', provider: 'custom' as const, displayName: 'Image', free: true },
+  { id: 'custom:fx:vid-model', provider: 'custom' as const, displayName: 'Vid', free: true },
+];
+
 async function appWith(
   config: AppConfig,
   models: Array<{
@@ -74,7 +84,10 @@ async function appWith(
   // the very routing path these tests are meant to exercise.
   const provider = {
     id: 'custom',
-    chat: async (req: { model: string }) => ({ ...CHAT_REPLY, model: req.model }),
+    chat: async (req: { model: string }): Promise<ChatResponse> => ({
+      ...CHAT_REPLY,
+      model: req.model,
+    }),
     stream: async function* (req: { model: string }) {
       yield {
         id: 'alias-stream',
@@ -320,5 +333,49 @@ describe('alias routing and response echo', () => {
     });
 
     assert.deepEqual(seen, ['custom:fx:fast'], 'preflight must key by the real id, not the alias');
+  });
+
+  // The image/video shortcut branches build their payload by hand instead of
+  // going through dispatchWithAutoRoute, so they needed their own echo fix.
+  it('echoes the alias from the in-chat image shortcut branch', async () => {
+    const config = baseConfig();
+    config.modelAliases = { 'my-image': 'custom:fx:image-model' };
+    const app = await appWith(config, IMAGE_VIDEO_MODELS, (registry) => {
+      registry.generateImage = async () => ({
+        provider: registry.getProvider('custom'),
+        response: { created: 1, data: [{ url: 'https://img.invalid/a.png' }] },
+      });
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'my-image', messages: [{ role: 'user', content: 'a cat' }] },
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { model: string };
+    assert.equal(body.model, 'my-image');
+  });
+
+  it('echoes the alias from the in-chat video shortcut branch', async () => {
+    const config = baseConfig();
+    // 'vid-…' matches /vid(eo)?/i and the composed id keeps the real 'custom'
+    // provider prefix, which the branch echoes into the polling hint.
+    config.modelAliases = { 'my-video': 'custom:fx:vid-model' };
+    const app = await appWith(config, IMAGE_VIDEO_MODELS, (registry) => {
+      registry.generateVideo = async () => ({
+        provider: registry.getProvider('custom'),
+        response: { video_id: 'vid_123', status: 'queued' },
+      });
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'my-video', messages: [{ role: 'user', content: 'a cat' }] },
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { model: string };
+    assert.equal(body.model, 'my-video');
   });
 });

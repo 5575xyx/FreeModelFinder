@@ -86,8 +86,9 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
       }
       const reg = getRegistry();
       const chatReq = anthropicToChatRequest(body);
-      // Resolve an external alias before preflight keeps cooldowns keyed by
-      // the real model id.
+      // Resolve an external alias to its target BEFORE preflight so cooldown
+      // lookups and markRateLimited are keyed by the resolved model rather than
+      // the external name.
       chatReq.model = reg.resolveAlias(chatReq.model);
 
       if (!chatReq.stream) {
