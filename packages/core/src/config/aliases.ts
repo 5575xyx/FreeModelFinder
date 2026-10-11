@@ -17,8 +17,13 @@ export type AliasValidationResult =
  * The mapping is one alias per model: an alias whose target is already claimed
  * by another alias is rejected, because the reverse lookup that renders a model
  * back to a client returns a single name per model and would otherwise pick an
- * arbitrary one of the aliases. Aliases that point at themselves and alias
- * cycles are rejected for the same reason - resolution would never terminate.
+ * arbitrary one of the aliases.
+ *
+ * An alias may point at another alias (chained aliases are allowed and are
+ * resolved recursively). Self-pointing aliases and alias cycles are rejected
+ * for a different reason: they would recurse forever. Cycles are detected by
+ * walking the finished alias graph, so the verdict does not depend on the order
+ * in which the keys happen to be iterated.
  *
  * @param knownIds Model ids an alias must not shadow. Callers must pass BOTH
  * the composed and the bare form of every catalog entry, e.g.
@@ -57,7 +62,10 @@ export function validateModelAliases(input: unknown, knownIds: Set<string>): Ali
     if (target === alias) {
       return { ok: false, error: `alias "${alias}" cannot point to itself` };
     }
-    if (Object.hasOwn(out, target) || targets.has(target)) {
+    if (Object.hasOwn(out, alias)) {
+      return { ok: false, error: `duplicate alias name "${alias}" after trimming` };
+    }
+    if (targets.has(target)) {
       return {
         ok: false,
         error: `alias "${alias}" duplicates an existing alias target "${target}"`,
@@ -65,6 +73,17 @@ export function validateModelAliases(input: unknown, knownIds: Set<string>): Ali
     }
     out[alias] = target;
     targets.add(target);
+  }
+  for (const [alias, target] of Object.entries(out)) {
+    const seen = new Set<string>([alias]);
+    let cur: string | undefined = target;
+    while (cur !== undefined && Object.hasOwn(out, cur)) {
+      if (seen.has(cur)) {
+        return { ok: false, error: `alias "${alias}" is part of an alias cycle` };
+      }
+      seen.add(cur);
+      cur = out[cur];
+    }
   }
   return { ok: true, aliases: out };
 }

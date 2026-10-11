@@ -95,7 +95,48 @@ describe('validateModelAliases', () => {
   });
 
   it('rejects an alias cycle', () => {
-    assert.match(expectError({ a: 'b', b: 'a' }), /duplicates an existing alias target/);
+    assert.match(expectError({ a: 'b', b: 'a' }), /alias cycle/);
+  });
+
+  it('accepts an alias chain regardless of key order', () => {
+    const expected = { a: 'b', b: 'c', c: 'openrouter:gpt-4o-mini' };
+    for (const input of [
+      { a: 'b', b: 'c', c: 'openrouter:gpt-4o-mini' },
+      { c: 'openrouter:gpt-4o-mini', b: 'c', a: 'b' },
+      { b: 'c', a: 'b', c: 'openrouter:gpt-4o-mini' },
+    ]) {
+      assert.deepEqual(
+        expectOk(input),
+        expected,
+        `chain must be accepted for ${JSON.stringify(input)}`,
+      );
+    }
+  });
+
+  it('rejects a three-alias cycle in any rotation', () => {
+    for (const input of [
+      { a: 'b', b: 'c', c: 'a' },
+      { b: 'c', c: 'a', a: 'b' },
+      { c: 'a', a: 'b', b: 'c' },
+    ]) {
+      assert.match(
+        expectError(input),
+        /alias cycle/,
+        `cycle must be rejected for ${JSON.stringify(input)}`,
+      );
+    }
+  });
+
+  it('does not report a false duplicate for a chain onto an unused model', () => {
+    const aliases = expectOk({ other: 'openrouter:gpt-4o-mini', mine: 'other' });
+    assert.deepEqual(aliases, { other: 'openrouter:gpt-4o-mini', mine: 'other' });
+  });
+
+  it('rejects two alias names that collide only after trimming', () => {
+    assert.match(
+      expectError({ 'fast ': 'openrouter:gpt-4o-mini', fast: 'other-model' }),
+      /duplicate alias name/,
+    );
   });
 
   it('rejects two aliases pointing at the same model', () => {
