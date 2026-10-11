@@ -10,6 +10,7 @@ import {
   type ProviderRegistry,
   type SwitchNotice,
 } from '@freemodelfinder/core';
+import { keyModelAllowlist, resolveGatewayKey } from './openai.js';
 
 type GeminiRouteParams = { modelAction: string };
 type GeminiRouteRequest = FastifyRequest<{
@@ -38,10 +39,12 @@ async function handleGenerate(
   // lookups and markRateLimited are keyed by the resolved model rather than
   // the external name.
   chatReq.model = reg.resolveAlias(chatReq.model);
+  // The caller's allowlist: preflight and the post-429 switch must stay inside it.
+  const allowedModels = keyModelAllowlist(resolveGatewayKey(reg, req));
   const router = reg.getAutoRouter();
   const originalRequested = chatReq.model;
 
-  const pre = await router.preflight(chatReq.model);
+  const pre = await router.preflight(chatReq.model, allowedModels);
   const notices: SwitchNotice[] = [];
   if (pre.switched) {
     chatReq.model = pre.model.id;
@@ -64,7 +67,7 @@ async function handleGenerate(
       const parsed = parseRateLimitError(err);
       if (parsed.isRateLimit && router.isEnabled() && attempt === 0) {
         router.markRateLimited(chatReq.model, provider.id as ProviderId, parsed);
-        const fallback = await router.pickFallback(chatReq.model);
+        const fallback = await router.pickFallback(chatReq.model, allowedModels);
         if (fallback) {
           router.rememberPreference(originalRequested);
           const notice: SwitchNotice = {
@@ -108,10 +111,12 @@ async function handleStream(
   // lookups and markRateLimited are keyed by the resolved model rather than
   // the external name.
   chatReq.model = reg.resolveAlias(chatReq.model);
+  // The caller's allowlist: preflight must stay inside it.
+  const allowedModels = keyModelAllowlist(resolveGatewayKey(reg, req));
   const router = reg.getAutoRouter();
   const originalRequested = chatReq.model;
 
-  const pre = await router.preflight(chatReq.model);
+  const pre = await router.preflight(chatReq.model, allowedModels);
   const preNotices: SwitchNotice[] = [];
   if (pre.switched) {
     chatReq.model = pre.model.id;

@@ -33,13 +33,16 @@ import {
 } from '@freemodelfinder/core';
 
 function extractBearer(req: FastifyRequest): string | null {
-  const auth = req.headers['authorization'];
+  // `req` can be a bare object without `headers` — route-level tests call the
+  // handler directly. That means "no credentials presented", not a crash.
+  const headers = (req.headers ?? {}) as Record<string, unknown>;
+  const auth = headers['authorization'];
   if (typeof auth === 'string' && auth.toLowerCase().startsWith('bearer ')) {
     return auth.slice(7).trim();
   }
-  const xKey = req.headers['x-api-key'];
+  const xKey = headers['x-api-key'];
   if (typeof xKey === 'string' && xKey.trim()) return xKey.trim();
-  const googKey = req.headers['x-goog-api-key'];
+  const googKey = headers['x-goog-api-key'];
   if (typeof googKey === 'string' && googKey.trim()) return googKey.trim();
   return null;
 }
@@ -50,7 +53,8 @@ function keysEqual(a: string, b: string): boolean {
   return left.length === right.length && left.equals(right);
 }
 
-function resolveGatewayKey(
+// Exported so the other gateway routes can resolve a caller's allowlist too.
+export function resolveGatewayKey(
   reg: ProviderRegistry,
   req: FastifyRequest,
 ): GatewayKeyEntry | undefined {
@@ -79,12 +83,15 @@ function resolveGatewayKeyId(reg: ProviderRegistry, req: FastifyRequest): string
  *
  * Missing, empty, or all-invalid allowlists all mean "no restriction" — that is
  * the documented default and the thing that must not regress.
+ *
+ * Entries are trimmed and lowercased: the router compares model ids in
+ * lowercase everywhere, so a mixed-case entry would otherwise never match.
  */
 export function keyModelAllowlist(key: GatewayKeyEntry | undefined): Set<string> | null {
   const list = key?.modelAllowlist;
   if (!list?.length) return null;
   const ids = list.filter((id): id is string => typeof id === 'string' && !!id.trim());
-  return ids.length ? new Set(ids.map((id) => id.trim())) : null;
+  return ids.length ? new Set(ids.map((id) => id.trim().toLowerCase())) : null;
 }
 
 /**
@@ -94,6 +101,9 @@ export function keyModelAllowlist(key: GatewayKeyEntry | undefined): Set<string>
  * the way through the alias chain first. `auto`/`default` are refused outright:
  * automatic routing could pick a model outside the list, which would silently
  * bypass the restriction.
+ *
+ * `model` is trimmed before use, otherwise a padded `" auto"` is not
+ * recognised as automatic routing but as the unknown model `openrouter: auto`.
  */
 export function modelAllowlistViolation(
   reg: ProviderRegistry,
@@ -102,19 +112,21 @@ export function modelAllowlistViolation(
 ): string | null {
   const allowlist = keyModelAllowlist(key);
   if (!allowlist || !model) return null;
-  if (model === 'auto' || model === 'default') {
+  const requested = model.trim();
+  if (requested === 'auto' || requested === 'default') {
     return 'This API key cannot use automatic routing; request a specific model.';
   }
   let real: string;
   try {
-    const resolved = reg.resolveModel(model);
-    real = composeModelId(resolved.provider.id, resolved.modelId);
+    const resolved = reg.resolveModel(requested);
+    real = composeModelId(resolved.provider.id, resolved.modelId).toLowerCase();
   } catch {
-    // Unknown model: let the handler produce its own error.
+    // The provider is not enabled or configured. Leave the error to the
+    // handler, which reports it with its normal message.
     return null;
   }
   if (allowlist.has(real)) return null;
-  return `This API key is not allowed to use model "${model}". Allowed models: ${[...allowlist].join(', ')}.`;
+  return `This API key is not allowed to use model "${requested}". Allowed models: ${[...allowlist].join(', ')}.`;
 }
 
 export function classifyStatus(err: unknown): { status: CallStatus; httpStatus?: number } {
@@ -179,6 +191,11 @@ function newFailoverSeq(): FailoverSeq {
  * the failed model stays findable for ring positioning), record the failure,
  * apply the mark, then return the next candidate walking the ring. Returns
  * null once every candidate has been attempted.
+ *
+ * The pool is deliberately unfiltered by allowlist: this only runs for a
+ * caller that asked for `auto` (the `allowPoolWalk && isAutoRequest` gate in
+ * dispatchWithAutoRoute), and the preHandler already 403s `auto`/`default`
+ * for a restricted gateway key — so a restricted caller never reaches here.
  */
 async function advanceFailover(
   router: AutoRouter,
@@ -230,6 +247,13 @@ async function dispatchWithAutoRoute(
   reg: ProviderRegistry,
   chatReq: ChatRequest,
   scope: { requestedModel: string; poolWalk: boolean },
+  /**
+   * Restricted composed model ids for the caller's gateway key, or null for an
+   * unrestricted caller. Failover must stay inside it: `preflight` and the
+   * post-429 switch both replace `chatReq.model`, and a swap outside the list
+   * would bypass the allowlist with a 200.
+   */
+  allowed?: Set<string> | null,
 ): Promise<{
   finalModel: string;
   finalProviderId: string;
@@ -261,7 +285,7 @@ async function dispatchWithAutoRoute(
     : undefined;
 
   // 1. Pre-flight: honor existing cooldowns before we even try upstream.
-  const pre = await router.preflight(chatReq.model);
+  const pre = await router.preflight(chatReq.model, allowed);
   if (pre.switched) {
     chatReq.model = pre.model.id;
     notices.push(pre.notice);
@@ -326,7 +350,7 @@ async function dispatchWithAutoRoute(
       mark();
       const parsed = parseRateLimitError(err);
       if (parsed.isRateLimit && router.isEnabled() && attempt === 0) {
-        const fallback = await router.pickFallback(failedKey);
+        const fallback = await router.pickFallback(failedKey, allowed);
         if (fallback) {
           router.rememberPreference(originalRequested);
           const notice: SwitchNotice = {
@@ -526,10 +550,11 @@ export function registerOpenAIRoutes(
     const router = reg.getAutoRouter();
     // Allowlists hold composed ids but the catalog keeps provider-native ids
     // (bare "gpt-4o-mini" for OpenAI-compatible providers, "fx:fast" for custom
-    // sources), so the composed form has to be built for the comparison.
+    // sources), so the composed form has to be built for the comparison. Both
+    // sides are lowercase to match keyModelAllowlist.
     const allowlist = keyModelAllowlist(resolveGatewayKey(reg, _req));
     const visibleModels = allowlist
-      ? models.filter((m) => allowlist.has(composeModelId(m.provider, m.id)))
+      ? models.filter((m) => allowlist.has(composeModelId(m.provider, m.id).toLowerCase()))
       : models;
     return reply.send({
       object: 'list',
@@ -606,6 +631,10 @@ export function registerOpenAIRoutes(
       // lookups and markRateLimited are keyed by the resolved model rather than
       // the external name.
       chatReq.model = reg.resolveAlias(chatReq.model);
+      // The caller's allowlist, resolved once here. Every failover point below
+      // (preflight, the post-429 switch) must stay inside it, or a 200 from a
+      // different model would silently bypass the restriction.
+      const allowedModels = keyModelAllowlist(resolveGatewayKey(reg, req));
 
       // Auto-route: detect modality from request content when model is "auto"
       let forcedImageModality = false;
@@ -831,12 +860,17 @@ export function registerOpenAIRoutes(
                 usage = u;
               },
               async () =>
-                dispatchWithAutoRoute(reg, chatReq, {
-                  requestedModel,
-                  // The vision loop below owns vision requests; let it pick
-                  // the next vision candidate instead of the generic pool.
-                  poolWalk: visionCandidates.length === 0,
-                }),
+                dispatchWithAutoRoute(
+                  reg,
+                  chatReq,
+                  {
+                    requestedModel,
+                    // The vision loop below owns vision requests; let it pick
+                    // the next vision candidate instead of the generic pool.
+                    poolWalk: visionCandidates.length === 0,
+                  },
+                  allowedModels,
+                ),
             );
           let result;
           if (visionCandidates.length) {
@@ -946,7 +980,7 @@ export function registerOpenAIRoutes(
         : undefined;
       const originalRequested = chatReq.model;
       const preNotices: SwitchNotice[] = [];
-      const pre = await router.preflight(chatReq.model);
+      const pre = await router.preflight(chatReq.model, allowedModels);
       if (pre.switched) {
         chatReq.model = pre.model.id;
         preNotices.push(pre.notice);
