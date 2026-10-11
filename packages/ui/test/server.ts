@@ -108,6 +108,8 @@ export const defaultHandlers = [
           displayName: 'MM Chat',
           vision: true,
         },
+        { id: 'custom:fx:fast', provider: 'custom', displayName: 'Fast' },
+        { id: 'custom:fx:plain', provider: 'custom', displayName: 'Plain' },
       ],
     }),
   ),
@@ -115,6 +117,10 @@ export const defaultHandlers = [
   http.post(`${gateway}/api/auto-route/clear-cooldown`, () => HttpResponse.json({ ok: true })),
   http.get(`${gateway}/api/gateway`, () =>
     HttpResponse.json({ hasKey: false, apiKey: null, requireAuth: false, port: 11435 }),
+  ),
+  http.get(`${gateway}/api/model-aliases`, () => HttpResponse.json({ modelAliases: {} })),
+  http.post(`${gateway}/api/model-aliases`, () =>
+    HttpResponse.json({ ok: true, modelAliases: {} }),
   ),
   http.get(`${gateway}/api/cline/accounts`, () => HttpResponse.json({ accounts: [] })),
   http.post(`${gateway}/api/providers`, () => HttpResponse.json({ ok: true })),

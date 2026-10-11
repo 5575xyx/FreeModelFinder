@@ -26,6 +26,7 @@ import { Badge, Dot } from './Badge';
 import { StatCard } from './StatCard';
 import { ModelChangesBanner } from './ModelChangesBanner';
 import { ClineAccountsPanel } from './ClineAccountsPanel';
+import { ModelAliasesSection } from './ModelAliasesSection';
 import { ModelMultiSelect, type ModelOption } from './ModelMultiSelect';
 import { classNames, copyToClipboard, GATEWAY, withUiHeaders } from '../lib/utils';
 import { modelValue } from '../lib/models';
@@ -2009,6 +2010,8 @@ export function SettingsView({
           </div>
         )}
       </section>
+
+      <ModelAliasesSection />
 
       <section
         aria-label={t('settings.aria.gateway')}
