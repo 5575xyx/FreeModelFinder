@@ -68,6 +68,12 @@ export function resolveGatewayKey(
       : [];
   const now = Date.now();
   for (const entry of keys) {
+    // A malformed entry (a key that failed decryption and came back '' or
+    // undefined) must be skipped, not compared: Buffer.from(undefined) throws
+    // ERR_INVALID_ARG_TYPE. Mirrors findMatchingGatewayKey in server.ts so both
+    // paths match the same entry — otherwise preHandler authorises the request
+    // and the handler then 500s it.
+    if (!entry.key) continue;
     if (entry.expiresAt && entry.expiresAt < now) continue;
     if (keysEqual(provided, entry.key)) return entry;
   }
@@ -102,8 +108,11 @@ export function keyModelAllowlist(key: GatewayKeyEntry | undefined): Set<string>
  * automatic routing could pick a model outside the list, which would silently
  * bypass the restriction.
  *
- * `model` is trimmed before use, otherwise a padded `" auto"` is not
- * recognised as automatic routing but as the unknown model `openrouter: auto`.
+ * `model` is used RAW, never trimmed, because the handler resolves and
+ * dispatches the same raw value. Authorization and dispatch have to agree
+ * byte-for-byte; trimming here would let a padded `" auto"` quietly become
+ * automatic routing instead of an unknown model. Config values ARE trimmed,
+ * because a hand-edited config is allowed to be sloppy where a request is not.
  */
 export function modelAllowlistViolation(
   reg: ProviderRegistry,
@@ -112,13 +121,16 @@ export function modelAllowlistViolation(
 ): string | null {
   const allowlist = keyModelAllowlist(key);
   if (!allowlist || !model) return null;
-  const requested = model.trim();
-  if (requested === 'auto' || requested === 'default') {
+  // Do not trim `model`: the handler resolves and dispatches the raw value, so
+  // authorization and dispatch must see byte-identical strings. A stray space is
+  // reported as "not allowed" rather than silently forgiven — forgiving it would
+  // make `model: " auto"` a working misspelling of automatic routing.
+  if (model === 'auto' || model === 'default') {
     return 'This API key cannot use automatic routing; request a specific model.';
   }
   let real: string;
   try {
-    const resolved = reg.resolveModel(requested);
+    const resolved = reg.resolveModel(model);
     real = composeModelId(resolved.provider.id, resolved.modelId).toLowerCase();
   } catch {
     // The provider is not enabled or configured. Leave the error to the
@@ -126,7 +138,7 @@ export function modelAllowlistViolation(
     return null;
   }
   if (allowlist.has(real)) return null;
-  return `This API key is not allowed to use model "${requested}". Allowed models: ${[...allowlist].join(', ')}.`;
+  return `This API key is not allowed to use model "${model}". Allowed models: ${[...allowlist].join(', ')}.`;
 }
 
 export function classifyStatus(err: unknown): { status: CallStatus; httpStatus?: number } {

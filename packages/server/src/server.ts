@@ -128,9 +128,10 @@ function isPublicGatewayRoute(method: string, url: string): boolean {
 
 /**
  * Extracts the model a gateway request wants, or null when the route carries no
- * model. Only the POST routes that name a model are checked; `/v1/videos/status`
- * and `/v1/videos/proxy` cannot be validated because the task id does not carry
- * the model that was used to create it.
+ * model. Only the POST routes that name a model are checked; the three video
+ * task routes (`/v1/videos/status`, `/v1/videos/proxy` and
+ * GET `/v1/videos/:video_id`) cannot be validated because the task id does not
+ * carry the model that was used to create it.
  */
 function extractGatewayModel(url: string, body: unknown): string | null {
   const record = body as { model?: unknown } | null | undefined;
@@ -143,17 +144,35 @@ function extractGatewayModel(url: string, body: unknown): string | null {
     return typeof record?.model === 'string' && record.model.trim() ? record.model : null;
   }
   const gemini = url.match(/^\/v1beta\/models\/(.+?):(generateContent|streamGenerateContent)$/);
-  return gemini ? decodeURIComponent(gemini[1] ?? '') || null : null;
+  if (!gemini) return null;
+  const raw = gemini[1] ?? '';
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    // Malformed percent sequence. Fastify rejects such a URL outright (400
+    // FST_ERR_BAD_URL) before this hook runs, so this branch is defense in depth
+    // for a caller that bypasses that validation. It still returns the RAW
+    // capture rather than null, because null means "this route names no model",
+    // which SKIPS the allowlist check — the raw string can never be an
+    // allowlist entry, so a restricted key is refused instead of passing
+    // through. A literal unescaped '%' in a genuine id ("100%gpt") also lands
+    // here and is returned exactly as sent, so it still matches its entry.
+    return raw;
+  }
 }
 
 function extractBearer(req: FastifyRequest): string | null {
-  const auth = req.headers['authorization'];
+  // Tolerate a bare request object without `headers`, matching
+  // extractGatewayModel above and extractBearer in routes/openai.ts. A missing
+  // header object means "no credentials presented", not a crash.
+  const headers = (req.headers ?? {}) as Record<string, unknown>;
+  const auth = headers['authorization'];
   if (typeof auth === 'string' && auth.toLowerCase().startsWith('bearer ')) {
     return auth.slice(7).trim();
   }
-  const xKey = req.headers['x-api-key'];
+  const xKey = headers['x-api-key'];
   if (typeof xKey === 'string' && xKey.trim()) return xKey.trim();
-  const googKey = req.headers['x-goog-api-key'];
+  const googKey = headers['x-goog-api-key'];
   if (typeof googKey === 'string' && googKey.trim()) return googKey.trim();
   return null;
 }
