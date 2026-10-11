@@ -306,6 +306,8 @@ export interface GatewayKeyEntry {
   dailyRequestLimit?: number;
   /** Max total tokens per calendar day (local timezone). */
   dailyTokenLimit?: number;
+  /** Composed real model ids this key may access. Omit or [] = unrestricted. */
+  modelAllowlist?: string[];
 }
 
 export interface GatewaySettings {

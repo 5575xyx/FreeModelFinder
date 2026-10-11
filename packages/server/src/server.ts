@@ -23,7 +23,7 @@ import {
   type GatewayKeyEntry,
 } from '@freemodelfinder/core';
 import { redactProxy } from '@freemodelfinder/zen';
-import { registerOpenAIRoutes } from './routes/openai.js';
+import { modelAllowlistViolation, registerOpenAIRoutes } from './routes/openai.js';
 import { registerAnthropicRoutes } from './routes/anthropic.js';
 import { registerGeminiRoutes } from './routes/gemini.js';
 import { ModelWatcher } from './watcher.js';
@@ -124,6 +124,26 @@ function isPublicGatewayRoute(method: string, url: string): boolean {
   )
     return true;
   return /^\/v1beta\/models\/.+:(generateContent|streamGenerateContent)$/.test(url);
+}
+
+/**
+ * Extracts the model a gateway request wants, or null when the route carries no
+ * model. Only the POST routes that name a model are checked; `/v1/videos/status`
+ * and `/v1/videos/proxy` cannot be validated because the task id does not carry
+ * the model that was used to create it.
+ */
+function extractGatewayModel(url: string, body: unknown): string | null {
+  const record = body as { model?: unknown } | null | undefined;
+  if (
+    url === '/v1/chat/completions' ||
+    url === '/v1/messages' ||
+    url === '/v1/images/generations' ||
+    url === '/v1/videos'
+  ) {
+    return typeof record?.model === 'string' && record.model.trim() ? record.model : null;
+  }
+  const gemini = url.match(/^\/v1beta\/models\/(.+?):(generateContent|streamGenerateContent)$/);
+  return gemini ? decodeURIComponent(gemini[1] ?? '') || null : null;
 }
 
 function extractBearer(req: FastifyRequest): string | null {
@@ -576,6 +596,20 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           },
         });
       }
+    }
+    const violation = modelAllowlistViolation(
+      getRegistry(),
+      matchedKey,
+      extractGatewayModel(url, req.body),
+    );
+    if (violation) {
+      return reply.code(403).send({
+        error: {
+          message: violation,
+          type: 'permission_error',
+          code: 'model_not_allowed',
+        },
+      });
     }
   });
 

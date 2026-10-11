@@ -50,7 +50,10 @@ function keysEqual(a: string, b: string): boolean {
   return left.length === right.length && left.equals(right);
 }
 
-function resolveGatewayKeyId(reg: ProviderRegistry, req: FastifyRequest): string | undefined {
+function resolveGatewayKey(
+  reg: ProviderRegistry,
+  req: FastifyRequest,
+): GatewayKeyEntry | undefined {
   const provided = extractBearer(req);
   if (!provided) return undefined;
   const gw = reg.getConfig().gateway;
@@ -62,9 +65,56 @@ function resolveGatewayKeyId(reg: ProviderRegistry, req: FastifyRequest): string
   const now = Date.now();
   for (const entry of keys) {
     if (entry.expiresAt && entry.expiresAt < now) continue;
-    if (keysEqual(provided, entry.key)) return entry.id;
+    if (keysEqual(provided, entry.key)) return entry;
   }
   return undefined;
+}
+
+function resolveGatewayKeyId(reg: ProviderRegistry, req: FastifyRequest): string | undefined {
+  return resolveGatewayKey(reg, req)?.id;
+}
+
+/**
+ * Allowlist set for a gateway key, or null when the key is unrestricted.
+ *
+ * Missing, empty, or all-invalid allowlists all mean "no restriction" — that is
+ * the documented default and the thing that must not regress.
+ */
+export function keyModelAllowlist(key: GatewayKeyEntry | undefined): Set<string> | null {
+  const list = key?.modelAllowlist;
+  if (!list?.length) return null;
+  const ids = list.filter((id): id is string => typeof id === 'string' && !!id.trim());
+  return ids.length ? new Set(ids.map((id) => id.trim())) : null;
+}
+
+/**
+ * Returns a human-readable denial reason, or null when the model is permitted.
+ *
+ * Allowlists are keyed on the REAL composed id, so the request is resolved all
+ * the way through the alias chain first. `auto`/`default` are refused outright:
+ * automatic routing could pick a model outside the list, which would silently
+ * bypass the restriction.
+ */
+export function modelAllowlistViolation(
+  reg: ProviderRegistry,
+  key: GatewayKeyEntry | undefined,
+  model: string | null | undefined,
+): string | null {
+  const allowlist = keyModelAllowlist(key);
+  if (!allowlist || !model) return null;
+  if (model === 'auto' || model === 'default') {
+    return 'This API key cannot use automatic routing; request a specific model.';
+  }
+  let real: string;
+  try {
+    const resolved = reg.resolveModel(model);
+    real = composeModelId(resolved.provider.id, resolved.modelId);
+  } catch {
+    // Unknown model: let the handler produce its own error.
+    return null;
+  }
+  if (allowlist.has(real)) return null;
+  return `This API key is not allowed to use model "${model}". Allowed models: ${[...allowlist].join(', ')}.`;
 }
 
 export function classifyStatus(err: unknown): { status: CallStatus; httpStatus?: number } {
@@ -474,9 +524,16 @@ export function registerOpenAIRoutes(
     const reg = getRegistry();
     const { models, succeededProviders, failedProviders } = await reg.listAllModels();
     const router = reg.getAutoRouter();
+    // Allowlists hold composed ids but the catalog keeps provider-native ids
+    // (bare "gpt-4o-mini" for OpenAI-compatible providers, "fx:fast" for custom
+    // sources), so the composed form has to be built for the comparison.
+    const allowlist = keyModelAllowlist(resolveGatewayKey(reg, _req));
+    const visibleModels = allowlist
+      ? models.filter((m) => allowlist.has(composeModelId(m.provider, m.id)))
+      : models;
     return reply.send({
       object: 'list',
-      data: models.map((m) => {
+      data: visibleModels.map((m) => {
         // Externally the client only knows the alias; the real id travels along as
         // alias_of so clients (e.g. the dashboard) can still dispatch the model.
         const clientFacingId = reg.toClientFacingModel(m.id);
