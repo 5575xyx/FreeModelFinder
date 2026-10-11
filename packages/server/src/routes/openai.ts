@@ -545,6 +545,9 @@ export function registerOpenAIRoutes(
       // replace chatReq.model: the pool-walk gate must look at what the client
       // asked for, not at the rewritten model.
       const requestedModel = String(body.model);
+      // Resolve an external alias to its real id BEFORE preflight so cooldown
+      // lookups and markRateLimited stay keyed by the real model.
+      chatReq.model = reg.resolveAlias(chatReq.model);
 
       // Auto-route: detect modality from request content when model is "auto"
       let forcedImageModality = false;
@@ -798,7 +801,7 @@ export function registerOpenAIRoutes(
           const payload = chatResponseToOpenAI(response) as Record<string, unknown> & {
             model?: string;
           };
-          payload.model = finalModel;
+          payload.model = reg.toClientFacingModel(finalModel);
           if (notices.length > 0) {
             (payload as Record<string, unknown>).fmf_route_notices = notices;
           }
@@ -942,6 +945,14 @@ export function registerOpenAIRoutes(
                 for await (const chunk of provider.stream(dispatchReq)) {
                   wroteChunk = true;
                   const payload = streamChunkToOpenAI(chunk);
+                  // Echo the alias (when one is configured) instead of the
+                  // upstream's bare model id, without touching the
+                  // non-aliased path that clients already rely on.
+                  const chunkComposed = `${provider.id}:${realModelId}`;
+                  const chunkClientFacing = reg.toClientFacingModel(chunkComposed);
+                  if (chunkClientFacing !== chunkComposed) {
+                    (payload as Record<string, unknown>).model = chunkClientFacing;
+                  }
                   if (body.model === 'auto') {
                     const autoRoute: Record<string, unknown> = {
                       picked: `${provider.id}:${realModelId}`,

@@ -86,12 +86,15 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
       }
       const reg = getRegistry();
       const chatReq = anthropicToChatRequest(body);
+      // Resolve an external alias before preflight keeps cooldowns keyed by
+      // the real model id.
+      chatReq.model = reg.resolveAlias(chatReq.model);
 
       if (!chatReq.stream) {
         try {
           const { response, notices, finalModel } = await dispatchWithAutoRoute(reg, chatReq);
           const payload = chatResponseToAnthropic(response) as Record<string, unknown>;
-          payload.model = finalModel;
+          payload.model = reg.toClientFacingModel(finalModel);
           if (notices.length > 0) payload.fmf_route_notices = notices;
           return reply.send(payload);
         } catch (err) {
@@ -128,7 +131,7 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
           id: msgId,
           type: 'message',
           role: 'assistant',
-          model: `${provider.id}:${modelId}`,
+          model: reg.toClientFacingModel(`${provider.id}:${modelId}`),
           content: [],
           stop_reason: null,
           usage: { input_tokens: 0, output_tokens: 0 },

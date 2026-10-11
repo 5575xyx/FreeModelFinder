@@ -69,9 +69,20 @@ async function appWith(
   });
   // Not exercised by the /v1/models tests; present so later dispatch tests can
   // add cases here without rebuilding the harness.
+  //
+  // Deliberately does NOT resolve aliases: the route handlers must call
+  // resolveAlias before preflight, which is exactly what the dispatch tests
+  // below assert. It mirrors the real registry only for the part that runs
+  // after that normalization: a composed custom id keeps its SOURCE segment
+  // (bareModelId('custom', 'fx:fast') === 'fx:fast'), so finalModel composes
+  // back to 'custom:fx:fast' and the reverse lookup can match the alias
+  // target. Anything else throws, as an unresolvable model does in production.
   registry.resolveModel = (model) => {
-    const bare = model.includes(':') ? model.slice(model.indexOf(':') + 1) : model;
-    const id = bare.split(':').pop() ?? bare;
+    const sep = model.indexOf(':');
+    if (sep <= 0 || model.slice(0, sep) !== 'custom' || sep === model.length - 1) {
+      throw new Error(`unknown model: ${model}`);
+    }
+    const id = model.slice(sep + 1);
     return {
       provider: {
         id: 'custom',
@@ -183,5 +194,107 @@ describe('/v1/models alias replacement', () => {
     // alias_of carries the CATALOG id, which for OpenAI-compatible providers is
     // the bare form — not the composed alias target.
     assert.equal(body.data[0]?.alias_of, 'gpt-4o-mini');
+  });
+});
+
+describe('alias routing and response echo', () => {
+  it('routes an aliased model id to the real provider in all three protocols', async () => {
+    const config = baseConfig();
+    config.modelAliases = { 'my-model': 'custom:fx:fast' };
+    const app = await appWith(config);
+
+    for (const request of [
+      {
+        url: '/v1/chat/completions',
+        payload: { model: 'my-model', messages: [{ role: 'user', content: 'hi' }] },
+      },
+      {
+        url: '/v1/messages',
+        payload: { model: 'my-model', max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+      },
+      {
+        url: '/v1beta/models/my-model:generateContent',
+        payload: { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
+      },
+    ]) {
+      const res = await app.inject({ method: 'POST', ...request });
+      assert.equal(res.statusCode, 200, `${request.url} should succeed`);
+      assert.match(res.body, /ok/);
+    }
+  });
+
+  it('echoes the alias as the response model for OpenAI non-streaming', async () => {
+    const config = baseConfig();
+    config.modelAliases = { 'my-model': 'custom:fx:fast' };
+    const app = await appWith(config);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'my-model', messages: [{ role: 'user', content: 'hi' }] },
+    });
+    const body = res.json() as { model: string };
+    assert.equal(body.model, 'my-model');
+  });
+
+  it('echoes the alias as the response model for OpenAI streaming chunks', async () => {
+    const config = baseConfig();
+    config.modelAliases = { 'my-model': 'custom:fx:fast' };
+    const app = await appWith(config);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'my-model', messages: [{ role: 'user', content: 'hi' }], stream: true },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /"model":"my-model"/);
+  });
+
+  it('echoes the alias as the response model for Anthropic non-streaming', async () => {
+    const config = baseConfig();
+    config.modelAliases = { 'my-model': 'custom:fx:fast' };
+    const app = await appWith(config);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: { model: 'my-model', max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+    });
+    const body = res.json() as { model: string };
+    assert.equal(body.model, 'my-model');
+  });
+
+  it('echoes the alias in the Anthropic message_start frame', async () => {
+    const config = baseConfig();
+    config.modelAliases = { 'my-model': 'custom:fx:fast' };
+    const app = await appWith(config);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: {
+        model: 'my-model',
+        max_tokens: 16,
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+      },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /"model":"my-model"/);
+  });
+
+  it('keeps echoing the composed real id when the request used the original id', async () => {
+    const config = baseConfig();
+    config.modelAliases = { 'my-model': 'custom:fx:fast' };
+    const app = await appWith(config);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'custom:fx:fast', messages: [{ role: 'user', content: 'hi' }] },
+    });
+    const body = res.json() as { model: string };
+    assert.equal(body.model, 'my-model');
   });
 });

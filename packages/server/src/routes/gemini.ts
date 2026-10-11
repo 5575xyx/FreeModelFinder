@@ -34,6 +34,9 @@ async function handleGenerate(
 ) {
   const reg = getRegistry();
   const chatReq = geminiToChatRequest(model, req.body, false);
+  // Resolve an external alias before preflight keeps cooldowns keyed by the
+  // real model id.
+  chatReq.model = reg.resolveAlias(chatReq.model);
   const router = reg.getAutoRouter();
   const originalRequested = chatReq.model;
 
@@ -100,6 +103,9 @@ async function handleStream(
 ) {
   const reg = getRegistry();
   const chatReq = geminiToChatRequest(model, req.body, true);
+  // Resolve an external alias before preflight keeps cooldowns keyed by the
+  // real model id.
+  chatReq.model = reg.resolveAlias(chatReq.model);
   const router = reg.getAutoRouter();
   const originalRequested = chatReq.model;
 
