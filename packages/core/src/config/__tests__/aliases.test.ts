@@ -47,8 +47,11 @@ describe('validateModelAliases', () => {
     assert.equal(validateModelAliases({ default: 'openrouter:gpt-4o-mini' }, known).ok, false);
   });
 
-  it('rejects an alias that collides with a known model id', () => {
-    assert.match(expectError({ 'gpt-4o-mini': 'openrouter:gpt-4o-mini' }), /conflict/i);
+  it('accepts an alias that has the same name as a known model id', () => {
+    // Shadowing a model id is harmless: routing tries the alias map first, and
+    // toClientFacingModel's exact-target branch reverse-maps it unambiguously.
+    const aliases = expectOk({ 'gpt-4o-mini': 'openrouter:gpt-4o-mini' });
+    assert.deepEqual(aliases, { 'gpt-4o-mini': 'openrouter:gpt-4o-mini' });
   });
 
   it('reports the colon rule before the conflict rule for a composed id', () => {

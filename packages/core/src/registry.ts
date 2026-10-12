@@ -70,14 +70,29 @@ const PROVIDER_CTORS: Record<
 
 const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 
+/** Every provider id that may prefix a composed model id (ollama has no ctor). */
+const PROVIDER_PREFIXES: ReadonlySet<string> = new Set<string>([
+  ...(Object.keys(PROVIDER_CTORS) as string[]),
+  'ollama',
+]);
+
 export function resetAutoPoolCursor(): void {
   resetStickyStore();
 }
 
-/** Drop a leading "provider:" segment so composed and bare ids compare equal. */
+/**
+ * Drop a leading "<provider>:" segment so composed and bare ids compare equal.
+ *
+ * Only a segment that is actually a known provider id is stripped. A custom
+ * source model is a provider-native two-segment id ("<source>:<model>") whose
+ * first segment is the source, NOT a provider; it must survive untouched or it
+ * can never reconcile with the composed "custom:<source>:<model>" form the UI
+ * alias picker emits.
+ */
 function stripProviderPrefix(id: string): string {
   const sep = id.indexOf(':');
-  return sep > 0 ? id.slice(sep + 1) : id;
+  if (sep <= 0) return id;
+  return PROVIDER_PREFIXES.has(id.slice(0, sep)) ? id.slice(sep + 1) : id;
 }
 
 /** Longest alias chain we will walk; backstop for a hand-edited config.json. */

@@ -4,8 +4,14 @@ export type AliasValidationResult =
 /**
  * Validate a model-alias map before persisting it. Alias names are external
  * identifiers, so they must stay free of ':' (which the gemini route splits on
- * and the "provider:model" prefix parser consumes), must not shadow the
- * reserved routing keywords, and must not collide with a real model id.
+ * and the "provider:model" prefix parser consumes) and must not shadow the
+ * reserved routing keywords.
+ *
+ * Alias names are deliberately allowed to equal a real model id. The one
+ * alias per model guarantee that matters for the reverse lookup held by
+ * `toClientFacingModel` is enforced separately via duplicate-target
+ * rejection below; shadowing a model id is a safe no-op there because the
+ * exact-target branch matches it directly.
  *
  * Targets are deliberately NOT required to exist in the catalog: the model
  * list refreshes continuously, so an alias may be configured before its
@@ -25,13 +31,15 @@ export type AliasValidationResult =
  * walking the finished alias graph, so the verdict does not depend on the order
  * in which the keys happen to be iterated.
  *
- * @param knownIds Model ids an alias must not shadow. Callers must pass BOTH
- * the composed and the bare form of every catalog entry, e.g.
- * `new Set(models.flatMap((m) => [m.id, bareModelId(m.provider, m.id)]))`,
- * because OpenAI-compatible providers store bare ids and a user alias is far
- * more likely to collide with the bare form.
+ * @param knownIds Reserved for future use (e.g. rejecting shadowed alias
+ * targets). Callers still pass the composed and bare form of every catalog
+ * entry, e.g. `new Set(models.flatMap((m) => [m.id, bareModelId(m.provider, m.id)]))`.
+ * Currently accepted but NOT enforced: alias names may safely equal model ids.
  */
-export function validateModelAliases(input: unknown, knownIds: Set<string>): AliasValidationResult {
+export function validateModelAliases(
+  input: unknown,
+  _knownIds?: Set<string>,
+): AliasValidationResult {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     return { ok: false, error: 'modelAliases must be an object' };
   }
@@ -48,9 +56,6 @@ export function validateModelAliases(input: unknown, knownIds: Set<string>): Ali
     }
     if (alias === 'auto' || alias === 'default') {
       return { ok: false, error: `alias "${alias}" is a reserved routing keyword` };
-    }
-    if (knownIds.has(alias)) {
-      return { ok: false, error: `alias "${alias}" conflicts with an existing model id` };
     }
     if (typeof rawValue !== 'string' || !rawValue.trim()) {
       return { ok: false, error: `alias "${alias}" must point to a model id` };

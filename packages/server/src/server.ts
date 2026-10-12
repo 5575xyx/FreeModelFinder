@@ -1,7 +1,12 @@
 import './proxy.js';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { resolve } from 'node:path';
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, {
+  type FastifyHttpOptions,
+  type FastifyInstance,
+  type FastifyRequest,
+} from 'fastify';
+import type { Server } from 'node:http';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import {
@@ -572,8 +577,30 @@ async function enforceServerGatewayAuth(
   registry.updateConfig(next);
 }
 
+/**
+ * Read the request body size cap in bytes. Defaults to 16 MiB; operators who
+ * run long agentic tasks can raise it via FREEMODELFINDER_MAX_BODY_MB.
+ *
+ * Fastify's own default is 1 MiB, which is too small for chat payloads that
+ * grow over long sessions.
+ */
+export function resolveContentLengthLimit(): number {
+  const raw = process.env.FREEMODELFINDER_MAX_BODY_MB;
+  const defaultMb = 16;
+  if (!raw) return defaultMb * 1024 * 1024;
+  const mb = Number(raw);
+  if (!Number.isFinite(mb) || mb <= 0) {
+    console.warn(
+      `[fmf] FREEMODELFINDER_MAX_BODY_MB=${raw} is not a positive number; falling back to ${defaultMb} MB`,
+    );
+    return defaultMb * 1024 * 1024;
+  }
+  return Math.floor(mb * 1024 * 1024);
+}
+
 async function createApp(opts: AppOptions): Promise<FastifyInstance> {
-  const app = Fastify({
+  const appOptions: FastifyHttpOptions<Server> = {
+    bodyLimit: resolveContentLengthLimit(),
     logger: {
       level: process.env.LOG_LEVEL ?? 'info',
       redact: {
@@ -592,7 +619,8 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         censor: '[REDACTED]',
       },
     },
-  });
+  };
+  const app = Fastify<Server>(appOptions);
   if (opts.surface !== 'gateway') {
     await app.register(cors, {
       origin(origin, callback) {

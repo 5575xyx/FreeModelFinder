@@ -1197,6 +1197,34 @@ describe('ProviderRegistry model aliases', () => {
     assert.equal(registry.toClientFacingModel('other-model'), 'other-model');
   });
 
+  it('matches a bare custom catalog id against a custom-prefixed alias target', () => {
+    // A custom catalog stores ids as "source:model" (no "custom:" prefix), while
+    // the UI alias picker emits "custom:source:model". Both forms must reconcile
+    // or an alias configured for a custom model never renders.
+    const config = configWithProviders({
+      custom: {
+        enabled: true,
+        credentials: {
+          apiKey: '',
+          extra: {
+            sources: [
+              {
+                id: 'novaway',
+                baseUrl: 'https://novaway.invalid/v1',
+                models: [{ id: 'glm-5.3' }],
+              },
+            ],
+          },
+        },
+      },
+    });
+    config.modelAliases = { 'GLM-5.3': 'custom:novaway:glm-5.3' };
+    const registry = new ProviderRegistry(config);
+    assert.equal(registry.toClientFacingModel('novaway:glm-5.3'), 'GLM-5.3');
+    // The composed payload form must keep working too.
+    assert.equal(registry.toClientFacingModel('custom:novaway:glm-5.3'), 'GLM-5.3');
+  });
+
   it('keeps auto routing out of reach of an alias named "auto"', () => {
     const registry = new ProviderRegistry(configWithAliases({ auto: 'openrouter:gpt-4o-mini' }));
     assert.throws(() => registry.resolveModel('auto'), /no model available for/);

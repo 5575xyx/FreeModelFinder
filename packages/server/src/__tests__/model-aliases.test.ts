@@ -205,6 +205,24 @@ describe('/v1/models alias replacement', () => {
     // the bare form — not the composed alias target.
     assert.equal(body.data[0]?.alias_of, 'gpt-4o-mini');
   });
+
+  it('replaces a custom source model with its alias despite the custom-prefixed target', async () => {
+    // A real CustomProvider catalog id is "<source>:<model>" (no "custom:"
+    // prefix), while the UI alias picker emits "custom:<source>:<model>".
+    // The alias must still render, or custom aliases silently never apply.
+    const config = baseConfig();
+    config.modelAliases = { 'GLM-5.3': 'custom:fx:fast' };
+    const app = await appWith(config, [
+      { id: 'fx:fast', provider: 'custom', displayName: 'Fast', free: true },
+    ]);
+
+    const res = await app.inject({ method: 'GET', url: '/v1/models' });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { data: Array<{ id: string; alias_of?: string }> };
+    assert.equal(body.data.length, 1);
+    assert.equal(body.data[0]?.id, 'GLM-5.3');
+    assert.equal(body.data[0]?.alias_of, 'fx:fast');
+  });
 });
 
 describe('alias routing and response echo', () => {
@@ -489,10 +507,10 @@ describe('/api/model-aliases', () => {
     assert.equal(res.statusCode, 400);
   });
 
-  // The other collision test uses a colon-bearing alias, so it is rejected by
-  // the ':' rule before the conflict rule is ever reached. This one uses a bare
-  // catalog id to prove the conflict rule itself fires.
-  it('rejects a colon-free alias that shadows a catalog id', async () => {
+  // Alias names may safely equal a real model id: shadowing is a no-op in the
+  // reverse lookup held by toClientFacingModel, and the only real conflict that
+  // matters is two aliases claiming the same target, which is rejected below.
+  it('accepts an alias named after a catalog id that points to another model', async () => {
     const app = await appWith(baseConfig(), [
       { id: 'gpt-4o-mini', provider: 'openrouter', displayName: 'GPT-4o Mini', free: true },
     ]);
@@ -502,16 +520,14 @@ describe('/api/model-aliases', () => {
       headers: localUiHeaders,
       payload: { modelAliases: { 'gpt-4o-mini': 'custom:fx:plain' } },
     });
-    assert.equal(res.statusCode, 400);
-    assert.match((res.json() as { error: string }).error, /conflicts/);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual((res.json() as { modelAliases: Record<string, string> }).modelAliases, {
+      'gpt-4o-mini': 'custom:fx:plain',
+    });
   });
 
-  // A prefixed provider stores its catalog id WITH the provider prefix, so only
-  // the bareModelId form is colon-free and therefore eligible as an alias name.
-  // If server.ts ever stops feeding bareModelId(m.provider, m.id) into knownIds
-  // (see the caller obligation documented in aliases.ts), this alias would be
-  // accepted and would silently shadow the real cline model. Pins that.
-  it('rejects a colon-free alias that shadows the bare id of a prefixed model', async () => {
+  // Same for the bare (provider-stripped) id of a prefixed catalog model.
+  it('accepts an alias named after the bare id of a prefixed model', async () => {
     const app = await appWith(baseConfig(), [
       { id: 'cline:z-ai/glm-5.3-flash', provider: 'cline', displayName: 'GLM', free: true },
     ]);
@@ -521,8 +537,10 @@ describe('/api/model-aliases', () => {
       headers: localUiHeaders,
       payload: { modelAliases: { 'z-ai/glm-5.3-flash': 'custom:fx:plain' } },
     });
-    assert.equal(res.statusCode, 400);
-    assert.match((res.json() as { error: string }).error, /conflicts/);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual((res.json() as { modelAliases: Record<string, string> }).modelAliases, {
+      'z-ai/glm-5.3-flash': 'custom:fx:plain',
+    });
   });
 
   it('rejects a body that omits modelAliases rather than clearing silently', async () => {
