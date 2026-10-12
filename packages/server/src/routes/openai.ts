@@ -1063,6 +1063,7 @@ export function registerOpenAIRoutes(
       }
 
       let streamUsage: ChatResponse['usage'] | undefined;
+      let lastChunkUsage: StreamChunk['usage'];
       let wroteChunk = false;
       let maxTokensRetried = false;
       let visionIndex = 0;
@@ -1079,6 +1080,13 @@ export function registerOpenAIRoutes(
               async () => {
                 for await (const chunk of provider.stream(dispatchReq)) {
                   wroteChunk = true;
+                  // The final chunk usually carries usage, and the AsyncLocalStorage
+                  // store does not always survive the provider's own async boundary
+                  // (a proxy-backed upstream reliably loses it). The usage is already
+                  // flowing past on the chunk, so remember the last one seen and fall
+                  // back to it: same value the store would have held, without depending
+                  // on context propagation across a network read.
+                  if (chunk.usage) lastChunkUsage = chunk.usage;
                   const payload = streamChunkToOpenAI(chunk);
                   // Echo the alias (when one is configured) instead of the
                   // upstream's bare model id, without touching the
@@ -1112,6 +1120,10 @@ export function registerOpenAIRoutes(
               );
             }
             reply.raw.write('data: [DONE]\n\n');
+            // Prefer the captured store value; fall back to the usage that came
+            // through on the stream itself when the AsyncLocalStorage context was
+            // lost across the upstream's async boundary.
+            const recordedUsage = streamUsage ?? lastChunkUsage;
             record(req, t0, {
               kind: 'chat',
               // Never resolve `auto` here: that would re-roll the pool cursor
@@ -1119,9 +1131,9 @@ export function registerOpenAIRoutes(
               ...resolvePM(reg, `${provider.id}:${realModelId}`),
               status: 'success',
               httpStatus: 200,
-              promptTokens: streamUsage?.prompt_tokens,
-              completionTokens: streamUsage?.completion_tokens,
-              cachedTokens: streamUsage?.prompt_tokens_details?.cached_tokens,
+              promptTokens: recordedUsage?.prompt_tokens,
+              completionTokens: recordedUsage?.completion_tokens,
+              cachedTokens: recordedUsage?.prompt_tokens_details?.cached_tokens,
             });
             break;
           } catch (err) {

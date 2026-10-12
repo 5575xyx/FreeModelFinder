@@ -76,7 +76,7 @@ const COPY = {
     test: '验证模型',
     done: '完成',
     recommended: '推荐',
-    openrouterDescription: '模型数量最多，最适合快速体验 FreeModelFinder。',
+    openrouterDescription: '模型数量最多，最适合快速体验 NovaWay Model Gateway。',
     geminiDescription: '免费额度规则相对清晰，适合作为稳定来源或备用平台。',
     useProvider: '使用此平台',
     other: '使用其他平台',
@@ -85,7 +85,7 @@ const COPY = {
     getKey: '前往获取 Key',
     keyLabel: 'API Key',
     keyPlaceholder: '粘贴 API Key',
-    localOnly: 'Key 不会发送给 FreeModelFinder 作者，只会发往你选择的平台。',
+    localOnly: 'Key 不会发送给 NovaWay Model Gateway 作者，只会发往你选择的平台。',
     connect: '连接并测试',
     envFound: '发现当前进程已有环境变量',
     importEnv: '导入并测试',
@@ -123,7 +123,7 @@ const COPY = {
     test: 'Verify',
     done: 'Done',
     recommended: 'Recommended',
-    openrouterDescription: 'The largest catalog and the fastest way to try FreeModelFinder.',
+    openrouterDescription: 'The largest catalog and the fastest way to try NovaWay Model Gateway.',
     geminiDescription: 'Clearer free-tier rules and a useful primary or fallback provider.',
     useProvider: 'Use this provider',
     other: 'Use another provider',
@@ -273,10 +273,10 @@ export function OnboardingWizard({
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground text-xs font-bold text-background">
-              FM
+              NV
             </span>
             <div>
-              <div className="text-sm font-semibold">FreeModelFinder</div>
+              <div className="text-sm font-semibold">NovaWay Model Gateway</div>
               <div className="text-[11px] text-muted-foreground">
                 Free LLMs · One local endpoint
               </div>

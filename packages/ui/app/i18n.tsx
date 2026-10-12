@@ -54,7 +54,6 @@ export const zh: Dict = {
   'adminPanel.error.unsaved': '保存失败，请稍后重试。',
   'adminPanel.error.network': '无法连接到网关。',
   'adminPanel.note.cli': '忘记密码？在服务器上运行 fmf admin reset-password 重新设置。',
-  'app.subtitle': 'Local model gateway',
   'app.tab.stats': '统计',
   'app.tab.finder': '模型',
   'app.tab.tester': '测试',
@@ -665,7 +664,6 @@ export const en: Dict = {
   'adminPanel.error.network': 'Could not reach the gateway.',
   'adminPanel.note.cli':
     'Forgot it? Run fmf admin reset-password on the server to choose a new one.',
-  'app.subtitle': 'Local model gateway',
   'app.tab.stats': 'Stats',
   'app.tab.finder': 'Models',
   'app.tab.tester': 'Test',

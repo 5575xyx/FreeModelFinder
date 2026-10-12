@@ -589,7 +589,7 @@ export default function Home() {
       <main className="flex min-h-[100dvh] items-center justify-center bg-background text-foreground">
         <div className="text-center">
           <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-foreground text-xs font-bold text-background">
-            FM
+            NV
           </div>
           <p className="mt-4 text-xs text-muted-foreground">{t('app.loading.gateway')}</p>
         </div>
@@ -617,13 +617,12 @@ export default function Home() {
             className="flex items-center gap-3 rounded-xl px-2 py-1.5 text-left"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-foreground text-xs font-bold tracking-tight text-background">
-              FM
+              NV
             </span>
             <span>
               <span className="block text-sm font-semibold tracking-[-0.02em]">
-                FreeModelFinder
+                NovaWay Model Gateway
               </span>
-              <span className="block text-[11px] text-muted-foreground">{t('app.subtitle')}</span>
             </span>
           </button>
 

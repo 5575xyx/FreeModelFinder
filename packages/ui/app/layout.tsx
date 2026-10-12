@@ -3,7 +3,7 @@ import './globals.css';
 import { I18nProvider } from './i18n';
 
 export const metadata = {
-  title: 'FreeModelFinder',
+  title: 'NovaWay Model Gateway',
   description: 'Discover, verify and unify access to truly free AI models',
 };
 

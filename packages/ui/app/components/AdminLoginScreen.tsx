@@ -83,11 +83,10 @@ export function AdminLoginScreen({ onSignedIn }: { onSignedIn: () => void }) {
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-foreground text-xs font-bold tracking-tight text-background">
-            FM
+            NV
           </span>
           <div>
-            <p className="text-sm font-semibold tracking-[-0.02em]">FreeModelFinder</p>
-            <p className="text-[11px] text-muted-foreground">{t('app.subtitle')}</p>
+            <p className="text-sm font-semibold tracking-[-0.02em]">NovaWay Model Gateway</p>
           </div>
         </div>
 
