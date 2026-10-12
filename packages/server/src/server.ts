@@ -227,8 +227,16 @@ function hasTrustedOrigin(req: FastifyRequest, adminOrigin?: string): boolean {
 function isTrustedUiRequest(
   req: FastifyRequest,
   adminOrigin: string | undefined,
-  trustUiEnvAllowed = true,
+  passwordless = true,
 ): boolean {
+  // Loopback used to be proof of identity, which only held while the panel was
+  // private by construction. Once a password exists it stops meaning anything:
+  // any process on this machine can send `x-fmf-client: ui`, so treating a
+  // local address as a credential would leave a hole exactly the size of the
+  // machine the password was meant to protect. The session cookie is the only
+  // way in from that point, local or remote alike.
+  if (!passwordless) return false;
+
   const clientHeader = req.headers['x-fmf-client'];
   const hasUiHeader = typeof clientHeader === 'string' && clientHeader.toLowerCase() === 'ui';
   const isLoopback = isLoopbackAddress(req.socket?.remoteAddress ?? null);
@@ -241,16 +249,10 @@ function isTrustedUiRequest(
   }
 
   // The escape hatch that lets a non-loopback client through with just the
-  // `x-fmf-client: ui` header. Once a management password exists it is
-  // disabled outright: it is the one path that would let the sign-in gate be
-  // bypassed by a header anyone can send, which is what put the panel in front
-  // of a public address in the first place.
-  if (
-    hasUiHeader &&
-    !adminOrigin &&
-    trustUiEnvAllowed &&
-    process.env.FREEMODELFINDER_TRUST_UI === 'true'
-  ) {
+  // `x-fmf-client: ui` header. It only exists for an operator who set
+  // FREEMODELFINDER_TRUST_UI on a machine they control, and it is the first
+  // thing to go once a password is chosen.
+  if (hasUiHeader && !adminOrigin && process.env.FREEMODELFINDER_TRUST_UI === 'true') {
     return true;
   }
 
@@ -648,20 +650,29 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       url === '/api/default-model' ||
       url === '/api/auto-route' ||
       url === '/api/runtime/shutdown';
-    // When a management password is configured the FREEMODELFINDER_TRUST_UI
-    // escape hatch stops granting access — it is a header anyone can send — and
-    // a session cookie becomes the way in. Without a password the behaviour is
-    // byte-for-byte what it was before.
+    // With a management password configured, neither loopback nor
+    // FREEMODELFINDER_TRUST_UI grants entry any more — both are things a client
+    // can assert about itself. A session cookie becomes the way in, and without
+    // a password the behaviour is byte-for-byte what it was before.
     const adminPassword = getRegistry().getConfig().adminAuth;
     const trustedUi = isTrustedUiRequest(req, opts.adminOrigin, adminPassword === undefined);
-    const desktopControl = desktopControlRoute && hasRuntimeControlToken(req, opts.state);
+    const desktopControl =
+      hasRuntimeControlToken(req, opts.state) &&
+      // The status-bar menu copies the base URL and Gateway Key out of
+      // /api/gateway, and that read has to keep working once a panel password
+      // exists. Read-only on purpose: the token authenticates the desktop app
+      // as the process that spawned this runtime, not as an operator, so it
+      // may read connection details but not rewrite configuration.
+      (desktopControlRoute || (req.method === 'GET' && url === '/api/gateway'));
     const signedIn = adminPassword ? adminAuth.validateSession(req.headers['cookie']) : false;
 
     // The cookie is what makes a remote browser reachable at all, so it has to
-    // earn the same-origin guarantee that trustedUi gets for free from loopback.
-    // Checked before the /api/ branch below, which returns out of the hook. A
-    // request already trusted via loopback is not second-guessed: the desktop
-    // app posts from a tauri: origin and has nothing better to offer.
+    // earn the same-origin guarantee that trustedUi used to get for free from
+    // loopback. With a password set that guarantee is gone for local browsers
+    // too, so this check now covers them as well — the Dashboard is served from
+    // the same origin it calls, and passes. Checked before the /api/ branch
+    // below, which returns out of the hook. The desktop app never gets here: it
+    // authenticates with the control token, not a session.
     if (
       signedIn &&
       !trustedUi &&

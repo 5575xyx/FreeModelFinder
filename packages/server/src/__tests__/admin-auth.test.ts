@@ -69,6 +69,31 @@ const localUi = {
   headers: { host: '127.0.0.1:11435', origin: 'http://127.0.0.1:11435', 'x-fmf-client': 'ui' },
 };
 
+/**
+ * A local browser that has actually signed in. Once a management password
+ * exists, loopback stops carrying any trust at all — being on the machine is
+ * no longer an identity — so anything exercising the password endpoints has to
+ * hold a session cookie like every other client.
+ */
+async function signedInLocal(app: FastifyInstance): Promise<{
+  remoteAddress: string;
+  headers: Record<string, string>;
+}> {
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/admin/login',
+    remoteAddress: '127.0.0.1',
+    headers: { host: '127.0.0.1:11435', origin: 'http://127.0.0.1:11435' },
+    payload: { password: PANEL_PASSWORD },
+  });
+  assert.equal(login.statusCode, 200, 'sign-in must succeed before the test can continue');
+  const token = setCookieOf(login)!.split(';')[0]!;
+  return {
+    remoteAddress: '127.0.0.1',
+    headers: { ...localUi.headers, cookie: token },
+  };
+}
+
 describe('management panel sign-in', () => {
   it('without a password: the pre-existing local UI gate is unchanged', async () => {
     const app = await startServer(baseConfig());
@@ -84,6 +109,33 @@ describe('management panel sign-in', () => {
       ...localUi,
     });
     assert.equal(allowed.statusCode, 200);
+  });
+
+  it('with a password: a local request still has to sign in', async () => {
+    const app = await startWithPassword();
+    // Loopback is no longer treated as an identity. Any process on this
+    // machine can send `x-fmf-client: ui`, so a local address on its own must
+    // not be enough to read or rewrite the panel.
+    const local = await app.inject({ method: 'GET', url: '/api/config', ...localUi });
+    assert.equal(local.statusCode, 401);
+    assert.equal(local.json().error.code, 'admin_signin_required');
+
+    const localWrite = await app.inject({
+      method: 'POST',
+      url: '/api/admin/password',
+      ...localUi,
+      payload: { action: 'clear', currentPassword: PANEL_PASSWORD },
+    });
+    assert.equal(localWrite.statusCode, 401);
+    assert.equal(localWrite.json().error.code, 'admin_signin_required');
+
+    // The cookie is what carries the identity now, and it works locally too.
+    const withCookie = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      ...(await signedInLocal(app)),
+    });
+    assert.equal(withCookie.statusCode, 200);
   });
 
   it('without a password: FREEMODELFINDER_TRUST_UI still grants access', async () => {
@@ -392,7 +444,7 @@ describe('POST /api/admin/password', { concurrency: 1 }, () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/admin/password',
-      ...localUi,
+      ...(await signedInLocal(app)),
       payload: { action: 'set', password: 'another-secret' },
     });
     assert.equal(res.statusCode, 409);
@@ -429,7 +481,7 @@ describe('POST /api/admin/password', { concurrency: 1 }, () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/admin/password',
-      ...localUi,
+      ...(await signedInLocal(app)),
       payload: { action: 'change', currentPassword: PANEL_PASSWORD, password: next },
     });
     assert.equal(res.statusCode, 200);
@@ -452,11 +504,12 @@ describe('POST /api/admin/password', { concurrency: 1 }, () => {
 
   it('change and clear reject a wrong current password without touching the stored one', async () => {
     const app = await startWithPassword();
+    const signedIn = await signedInLocal(app);
     for (const action of ['change', 'clear']) {
       const res = await app.inject({
         method: 'POST',
         url: '/api/admin/password',
-        ...localUi,
+        ...signedIn,
         payload: { action, currentPassword: 'not-it', password: 'seven-correct-horses' },
       });
       assert.equal(res.statusCode, 401);
@@ -486,13 +539,14 @@ describe('POST /api/admin/password', { concurrency: 1 }, () => {
 
   it('locks a client out of change after five wrong current passwords', async () => {
     const app = await startWithPassword();
+    const signedIn = await signedInLocal(app);
     let status = 0;
     for (let attempt = 0; attempt < 5; attempt++) {
       status = (
         await app.inject({
           method: 'POST',
           url: '/api/admin/password',
-          ...localUi,
+          ...signedIn,
           payload: { action: 'change', currentPassword: 'nope', password: 'seven-correct-horses' },
         })
       ).statusCode;
@@ -503,7 +557,7 @@ describe('POST /api/admin/password', { concurrency: 1 }, () => {
     const locked = await app.inject({
       method: 'POST',
       url: '/api/admin/password',
-      ...localUi,
+      ...signedIn,
       payload: {
         action: 'change',
         currentPassword: PANEL_PASSWORD,
@@ -515,16 +569,17 @@ describe('POST /api/admin/password', { concurrency: 1 }, () => {
 
   it('clears the failure counter on a successful change', async () => {
     const app = await startWithPassword();
+    const signedIn = await signedInLocal(app);
     await app.inject({
       method: 'POST',
       url: '/api/admin/password',
-      ...localUi,
+      ...signedIn,
       payload: { action: 'change', currentPassword: 'typo', password: 'seven-correct-horses' },
     });
     const res = await app.inject({
       method: 'POST',
       url: '/api/admin/password',
-      ...localUi,
+      ...signedIn,
       payload: {
         action: 'change',
         currentPassword: PANEL_PASSWORD,
@@ -539,7 +594,7 @@ describe('POST /api/admin/password', { concurrency: 1 }, () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/admin/password',
-      ...localUi,
+      ...(await signedInLocal(app)),
       payload: { action: 'clear', currentPassword: PANEL_PASSWORD },
     });
     assert.equal(res.statusCode, 200);
@@ -548,7 +603,7 @@ describe('POST /api/admin/password', { concurrency: 1 }, () => {
     const status = await app.inject({ method: 'GET', url: '/api/admin/status', ...localUi });
     assert.deepEqual(status.json(), { authRequired: false, authenticated: true, remote: false });
 
-    // The panel is open to a local UI again, with no session required.
+    // With no password the panel is open to a local UI again, session or not.
     const config = await app.inject({ method: 'GET', url: '/api/config', ...localUi });
     assert.equal(config.statusCode, 200);
   });

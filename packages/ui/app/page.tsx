@@ -115,16 +115,20 @@ export default function Home() {
   const selectionPendingRef = useRef(false);
 
   /**
-   * A 401 off a management route means the session is gone. The state update
-   * is idempotent so the 5s poller cannot churn re-renders once we are here.
+   * A 401 off a management route means there is no usable session, whatever
+   * the panel believed a moment ago. Notably that includes the moment a
+   * password is set from an open panel: the status here still says
+   * `authRequired: false`, so an update keyed on the previous value would skip
+   * and the page would sit on stale data instead of offering the login screen.
+   * The state update is idempotent so the 2s poller cannot churn re-renders.
    */
   const markSignedOut = useCallback((response: Response) => {
     if (response.status !== 401) return;
-    setAuthStatus((previous) =>
-      previous && previous.authRequired && previous.authenticated
-        ? { ...previous, authenticated: false }
-        : previous,
-    );
+    setAuthStatus((previous) => ({
+      authRequired: true,
+      authenticated: false,
+      remote: previous?.remote === true,
+    }));
   }, []);
 
   const applyModels = useCallback((payload: ModelsResponse) => {

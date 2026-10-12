@@ -56,6 +56,26 @@ describe('management panel sign-in gate', () => {
     expect(await screen.findByRole('navigation')).toBeInTheDocument();
     expect(screen.queryByText('管理面板登录')).not.toBeInTheDocument();
   });
+
+  it('returns to the login screen when a route stops accepting the session', async () => {
+    // The panel is open with no password, so the dashboard mounted on the
+    // strength of that status snapshot.
+    server.use(
+      http.get(statusUrl, () =>
+        HttpResponse.json({ authRequired: false, authenticated: true, remote: false }),
+      ),
+      // A password is set while the panel is open, and the next poll comes back
+      // 401. The snapshot still says authRequired:false, so the flip cannot be
+      // keyed on what the panel used to believe about itself.
+      http.get(`${gateway}/api/desktop/state`, () =>
+        HttpResponse.json({ error: { code: 'admin_signin_required' } }, { status: 401 }),
+      ),
+    );
+    renderPanel();
+
+    expect(await screen.findByRole('navigation')).toBeInTheDocument();
+    expect(await screen.findByText('管理面板登录')).toBeInTheDocument();
+  });
 });
 
 describe('management password hint', () => {

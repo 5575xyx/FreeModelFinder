@@ -111,6 +111,7 @@ fmf admin set-password
 - 打开管理面板会先要求登录；成功后浏览器拿到一个 12 小时有效、每次访问滑动续期的 `fmf_admin` 会话 Cookie（`HttpOnly` + `SameSite=Lax`，走 HTTPS 时自动加 `Secure`）。会话只存在进程内存里，重启后要重新登录。
 - 同一个来源地址连续 5 次输错密码会锁定 15 分钟，锁定期内正确密码同样被拒。
 - 密码以 scrypt 哈希加随机盐存在 `config.json` 的 `adminAuth` 字段中，明文不落盘。
+- 本机 loopback 同样不再免登录，Tailscale 之外的其他访问路径一视同仁；面板里登录一次，之后交给会话 Cookie。
 - `FREEMODELFINDER_TRUST_UI=true` 在密码存在时自动失效，不需要去改 systemd unit。
 - 公网 Gateway Key 认证与此完全独立，已接入的客户端不受任何影响。
 

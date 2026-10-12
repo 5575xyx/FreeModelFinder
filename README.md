@@ -371,8 +371,8 @@ Gateway 认证默认关闭。启用 Gateway Key 后，请增加 `Authorization: 
 
 - 默认配置位于 `~/.freemodelfinder`；`config.json` 保存 v3 加密密文，随机主密钥单独保存在 `master.key`。
 - 在支持 POSIX 权限的系统上，配置目录使用 `0700`，配置文件和主密钥使用 `0600`。这不是系统 Keychain；同一操作系统账户下的其他进程仍处于信任边界内。
-- `/api/*` 管理接口只接受来自 loopback 且带本地 UI Origin/Referer 的请求；兼容协议端点可使用 Gateway Key 保护。
-- 管理面板可单独设置访问密码（见 [管理面板密码](#管理面板密码)）；一旦设置，`FREEMODELFINDER_TRUST_UI` 不再放行 `/api/*`。
+- `/api/*` 管理接口默认只接受来自 loopback 且带本地 UI Origin/Referer 的请求；兼容协议端点可使用 Gateway Key 保护。
+- 管理面板可单独设置访问密码（见 [管理面板密码](#管理面板密码)）；一旦设置，`/api/*` 全部改为凭会话 Cookie 进入，本机 loopback 与 `FREEMODELFINDER_TRUST_UI` 都不再放行。
 - 出站 Provider 请求支持 `HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY` 及对应小写变量，只支持 HTTP/HTTPS 代理。
 - 免费目录和本地配额估算不能替代 Provider 控制台的账单、配额或使用条款。
 - 首次向导只会报告受支持的环境变量是否存在，不会把原始值返回浏览器，也不会未经确认自动导入。
@@ -403,7 +403,9 @@ fmf admin status          # 查看当前是否已设置
 - 密码以 scrypt 哈希 + 随机盐写入 `config.json` 的 `adminAuth` 字段，明文不落盘；哈希是单向校验值，不经过 `master.key` 加密，因此配置文件丢了也不会连带丢掉登录能力。
 - 会话只存在内存里，有效期 12 小时且每次访问滑动续期；进程重启后需要重新登录。这是刻意的设计：面板没有可被偷走的持久凭证文件。
 - 同一个来源地址连续 5 次输错会锁定 15 分钟，正确密码在锁定期内同样被拒。
-- 设置密码后，`FREEMODELFINDER_TRUST_UI=true` 会停止放行 `/api/*`。它只靠一个请求头，任何客户端都能伪造，留着就是白送一个免登录入口。
+- 设置密码后，本机 loopback 也不再免登录。「来自这台机器」曾经就等同于身份，但任何本机进程都能发 `x-fmf-client: ui`，把一个地址当凭据，等于给整台机器留了个后门。会话 Cookie 成为唯一入口，本机和远程一视同仁；面板里登录一次即可，之后由 Cookie 接手。
+- `FREEMODELFINDER_TRUST_UI=true` 同样在密码存在时失效。它只靠一个请求头，任何客户端都能伪造，留着就是白送一个免登录入口。
+- macOS 状态栏应用凭 spawn 时下发的运行时控制令牌访问服务，不是靠 `x-fmf-client` 头，因此设置密码后照常工作。它读取 `/api/gateway`（复制接入代码需要）仍然放行，但仅限 GET——那个令牌证明的是「我启动了这个进程」，不是「操作者在场」，所以能读连接信息，不能改写配置。
 - Cookie 使用 `HttpOnly` + `SameSite=Lax`；只有当请求本身走 HTTPS 时才会附带 `Secure`，所以明文 HTTP 部署也能正常登录，加了 TLS 后自动收紧。
 - 已登录会话调用 `/v1/*` 不需要 Gateway Key，面板自带的测试器、图片与视频生成可以继续直接用；外部 AI 工具（OpenCode、Cline 等）请继续用 Gateway Key，认证方式没有任何变化。
 
