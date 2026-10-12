@@ -4,6 +4,7 @@ import {
   recordSnapshot,
   ProviderRegistry,
   type ModelSnapshot,
+  type ModelSnapshotEntry,
 } from '@freemodelfinder/core';
 
 export interface ModelWatcherOptions {
@@ -11,6 +12,14 @@ export interface ModelWatcherOptions {
   getRegistry: () => ProviderRegistry;
   logger?: FastifyBaseLogger;
   onCatalogChange?: () => void;
+  /**
+   * Called after a tick that detected removed models (provider listing
+   * succeeded and the model disappeared from the provider's listing). The
+   * caller is expected to run any config-reference cleanup (gateway keys,
+   * autoRoute pools, defaultModel, aliases) synchronously or fire-and-forget.
+   * `removedModels` are the entries confirmed removed THIS round.
+   */
+  onModelsRemoved?: (removedModels: readonly ModelSnapshotEntry[]) => void;
 }
 
 export interface WatcherStatus {
@@ -81,6 +90,9 @@ export class ModelWatcher {
         this.latest = snapshot;
         if (isInitial || diff.added.length || diff.removed.length) {
           this.opts.onCatalogChange?.();
+        }
+        if (!isInitial && diff.removed.length) {
+          this.opts.onModelsRemoved?.(diff.removed);
         }
         this.status.lastRunAt = snapshot.updatedAt;
         this.status.lastError = failedProviders.length

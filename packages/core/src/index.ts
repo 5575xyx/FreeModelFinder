@@ -7,6 +7,7 @@ export * from './config/admin-auth.js';
 export { validateModelAliases, type AliasValidationResult } from './config/aliases.js';
 export * from './config/crypto.js';
 export * from './config/snapshot.js';
+export * from './config/removal-cleanup.js';
 export * from './providers/index.js';
 export { __resetCatalogCacheForTests } from './providers/cline-catalog.js';
 export * from './protocols/index.js';

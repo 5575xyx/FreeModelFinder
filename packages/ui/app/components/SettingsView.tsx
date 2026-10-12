@@ -27,6 +27,7 @@ import { AdminPasswordPanel } from './AdminPasswordPanel';
 import { Badge, Dot } from './Badge';
 import { StatCard } from './StatCard';
 import { ModelChangesBanner } from './ModelChangesBanner';
+import { ModelCleanupLogPanel } from './ModelCleanupLogPanel';
 import { ClineAccountsPanel } from './ClineAccountsPanel';
 import { ModelAliasesSection } from './ModelAliasesSection';
 import { ModelMultiSelect, type ModelOption } from './ModelMultiSelect';
@@ -3318,7 +3319,12 @@ export function SettingsView({
             )}
           />
         </button>
-        {inspectSectionOpen && <ModelChangesBanner />}
+        {inspectSectionOpen && (
+          <>
+            <ModelChangesBanner />
+            <ModelCleanupLogPanel />
+          </>
+        )}
       </section>
 
       <p className="text-xs text-muted-foreground">

@@ -139,6 +139,7 @@ export const defaultHandlers = [
     HttpResponse.json({ hasKey: false, apiKey: null, requireAuth: false, port: 11435 }),
   ),
   http.get(`${gateway}/api/model-aliases`, () => HttpResponse.json({ modelAliases: {} })),
+  http.get(`${gateway}/api/model-cleanup-log`, () => HttpResponse.json({ entries: [] })),
   http.post(`${gateway}/api/model-aliases`, () =>
     HttpResponse.json({ ok: true, modelAliases: {} }),
   ),

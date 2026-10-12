@@ -18,12 +18,15 @@ import {
   ProviderRegistry,
   asModelList,
   assertAdminPasswordUsable,
+  applyRemovalCleanupPatch,
   bareModelId,
+  buildRemovalCleanupPlan,
   composeModelId,
   getCredentialRuntime,
   hashAdminPassword,
   isVisionCapable,
   loadConfig,
+  loadSnapshot,
   redact,
   updateConfig,
   validateModelAliases,
@@ -31,6 +34,7 @@ import {
   type AdminAuthSettings,
   type CredentialAccountEntry,
   type GatewayKeyEntry,
+  type ModelSnapshotEntry,
 } from '@freemodelfinder/core';
 import { redactProxy } from '@freemodelfinder/zen';
 import {
@@ -45,6 +49,7 @@ import { modelAllowlistViolation, registerOpenAIRoutes } from './routes/openai.j
 import { registerAnthropicRoutes } from './routes/anthropic.js';
 import { registerGeminiRoutes } from './routes/gemini.js';
 import { ModelWatcher } from './watcher.js';
+import { recordRemovalCleanup, loadRemovalCleanupLog } from './removal-cleanup-log.js';
 import { registerOnboardingRoutes } from './onboarding.js';
 import {
   createRuntimeIdentity,
@@ -654,6 +659,42 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
   });
 
   if (opts.ownsWatcher) {
+    const handleModelsRemoved = async (removed: readonly ModelSnapshotEntry[]) => {
+      try {
+        const current = await loadConfig();
+        // recordSnapshot already persisted the narrowed catalog before the
+        // watcher invokes this handler, so loadSnapshot() returns the
+        // post-removal online list.
+        const online = (await loadSnapshot()).models;
+        const { patch, entry } = buildRemovalCleanupPlan(removed, current, online);
+        if (!entry) return;
+        if (
+          entry.allowlistEntriesPruned === 0 &&
+          entry.aliasEntriesPruned === 0 &&
+          entry.autoRoutePoolsEmptied === 0 &&
+          !entry.defaultModelChanged
+        ) {
+          // Nothing referenced the removed models; still log it so operators
+          // can see the removal happened, but don't rewrite the config file.
+          const log = await recordRemovalCleanup(entry);
+          app.log.info(
+            { ...entry, persisted: log.entries.length },
+            '[model-removal-cleanup] upstream removed models; no config references to prune',
+          );
+          return;
+        }
+        const next = await updateConfig((cfg) => applyRemovalCleanupPatch(cfg, patch));
+        getRegistry().updateConfig(next, { preserveModels: true });
+        const log = await recordRemovalCleanup(entry);
+        app.log.info(
+          { ...entry, persisted: log.entries.length },
+          '[model-removal-cleanup] pruned config references to removed upstream models',
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        app.log.warn({ err: msg }, '[model-removal-cleanup] failed to prune config references');
+      }
+    };
     const watcher = new ModelWatcher({
       intervalMs: opts.watchIntervalMs ?? 60 * 60 * 1000,
       getRegistry,
@@ -661,6 +702,9 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       onCatalogChange: () => {
         opts.state.catalogRevision += 1;
         opts.state.revision += 1;
+      },
+      onModelsRemoved: (removed) => {
+        void handleModelsRemoved(removed);
       },
     });
     await watcher.init();
@@ -1223,6 +1267,11 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       } catch (error) {
         return reply.code(500).send({ error: redactMessage(error) });
       }
+    });
+
+    app.get('/api/model-cleanup-log', async () => {
+      const log = await loadRemovalCleanupLog();
+      return { entries: log.entries };
     });
 
     registerOnboardingRoutes(app, {
