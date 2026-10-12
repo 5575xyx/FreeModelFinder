@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { AdminAuthSettings } from './config/admin-auth.js';
 
 export const ProviderIdSchema = z.enum([
   'openrouter',
@@ -391,6 +392,12 @@ export interface AppConfig {
   credentials?: Partial<Record<CredentialPlatform, CredentialPoolConfig>>;
   /** External alias -> real model id (composed form, e.g. "opencode:mimo-v2.6-flash-free"). */
   modelAliases?: Record<string, string>;
+  /**
+   * Optional management-panel password verifier. Absent means no sign-in is
+   * required and the panel falls back to the loopback + same-origin gate.
+   * When present it takes over from the FREEMODELFINDER_TRUST_UI escape hatch.
+   */
+  adminAuth?: AdminAuthSettings;
 }
 
 // ── Multimodal Generation Types ──────────────────────────────────

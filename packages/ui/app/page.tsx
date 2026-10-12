@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
+  AlertTriangle,
   KeyRound,
   Image,
   MessageSquare,
@@ -12,6 +13,13 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
+import {
+  AdminLoginScreen,
+  AdminSignOutButton,
+  fetchAdminStatus,
+  type AdminStatus,
+} from './components/AdminLoginScreen';
+import { dismissAdminBanner, isAdminBannerDismissed } from './components/AdminPasswordPanel';
 import { FinderView } from './components/FinderView';
 import { ImageGeneratorView } from './components/ImageGeneratorView';
 import { OnboardingWizard, type OnboardingResult } from './components/OnboardingWizard';
@@ -92,6 +100,9 @@ export default function Home() {
   const [failures, setFailures] = useState<ProviderFailure[]>([]);
   const [probingModels, setProbingModels] = useState<string[]>([]);
   const [onboardingMode, setOnboardingMode] = useState<OnboardingMode>('loading');
+  const [authStatus, setAuthStatus] = useState<AdminStatus | null>(null);
+  const [adminBannerDismissed, setAdminBannerDismissed] = useState(isAdminBannerDismissed);
+  const [adminPasswordFocus, setAdminPasswordFocus] = useState(0);
   const [selectionValid, setSelectionValid] = useState(true);
   const [modelSaveError, setModelSaveError] = useState('');
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -102,6 +113,19 @@ export default function Home() {
   > | null>(null);
   const selectionRequestRef = useRef(0);
   const selectionPendingRef = useRef(false);
+
+  /**
+   * A 401 off a management route means the session is gone. The state update
+   * is idempotent so the 5s poller cannot churn re-renders once we are here.
+   */
+  const markSignedOut = useCallback((response: Response) => {
+    if (response.status !== 401) return;
+    setAuthStatus((previous) =>
+      previous && previous.authRequired && previous.authenticated
+        ? { ...previous, authenticated: false }
+        : previous,
+    );
+  }, []);
 
   const applyModels = useCallback((payload: ModelsResponse) => {
     const list = Array.isArray(payload.data)
@@ -134,6 +158,18 @@ export default function Home() {
     },
     [applyModels],
   );
+
+  // Sign-in state is probed once on mount. `null` means this gateway predates
+  // sign-in, in which case the panel behaves exactly as it did before.
+  useEffect(() => {
+    let cancelled = false;
+    fetchAdminStatus().then((status) => {
+      if (!cancelled && status) setAuthStatus(status);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -200,7 +236,10 @@ export default function Home() {
     const poll = async () => {
       try {
         const response = await fetch(`${GATEWAY}/api/desktop/state`, withUiHeaders());
-        if (!response.ok) return;
+        if (!response.ok) {
+          markSignedOut(response);
+          return;
+        }
         const state = (await response.json()) as DesktopState;
         if (cancelled) return;
         const previous = desktopStateRef.current;
@@ -228,7 +267,7 @@ export default function Home() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [applyModels, onboardingMode]);
+  }, [applyModels, markSignedOut, onboardingMode]);
 
   const finishOnboarding = useCallback(
     async (_result: OnboardingResult) => {
@@ -524,6 +563,23 @@ export default function Home() {
     description: t(PAGE_COPY_KEYS[tab].description),
   };
 
+  const needsSignin = !!authStatus?.authRequired && !authStatus.authenticated;
+
+  if (needsSignin) {
+    return (
+      <AdminLoginScreen
+        onSignedIn={() => {
+          setAuthStatus((previous) => ({
+            authRequired: true,
+            authenticated: true,
+            remote: previous?.remote === true,
+          }));
+          void refreshModels();
+        }}
+      />
+    );
+  }
+
   if (onboardingMode === 'loading') {
     return (
       <main className="flex min-h-[100dvh] items-center justify-center bg-background text-foreground">
@@ -656,6 +712,7 @@ export default function Home() {
               </button>
               <ThemeToggle className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground transition hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/10" />
               <LanguageToggle />
+              {authStatus?.authRequired && <AdminSignOutButton />}
             </div>
           </header>
 
@@ -667,6 +724,42 @@ export default function Home() {
               {modelSaveError || t('app.selection.invalid', { model })}
             </div>
           )}
+
+          {!adminBannerDismissed &&
+            !!authStatus &&
+            !authStatus.authRequired &&
+            authStatus.remote && (
+              <div
+                role="alert"
+                className="flex shrink-0 items-center gap-3 border-b border-warning/30 bg-warning/5 px-5 py-2 text-xs text-warning md:px-8"
+              >
+                <AlertTriangle size={13} strokeWidth={1.75} className="shrink-0" />
+                <span className="flex-1">{t('adminPanel.banner')}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('settings');
+                    setAdminPasswordFocus((value) => value + 1);
+                  }}
+                  className="flex shrink-0 items-center gap-1 rounded-md bg-warning/15 px-2 py-1 font-medium text-warning transition hover:bg-warning/25"
+                >
+                  <KeyRound size={12} />
+                  {t('adminPanel.bannerGo')}
+                </button>
+                <button
+                  type="button"
+                  aria-label={t('adminPanel.bannerDismiss')}
+                  title={t('adminPanel.bannerDismiss')}
+                  onClick={() => {
+                    dismissAdminBanner();
+                    setAdminBannerDismissed(true);
+                  }}
+                  className="shrink-0 rounded-md px-2 py-1 font-medium text-warning/70 transition hover:text-warning"
+                >
+                  {t('adminPanel.bannerDismiss')}
+                </button>
+              </div>
+            )}
 
           <div className="min-h-0 flex-1 overflow-hidden">
             {tab === 'stats' ? (
@@ -716,6 +809,7 @@ export default function Home() {
                   model={model}
                   onModelChange={selectModel}
                   onModelsRefresh={() => refreshModels(false)}
+                  adminPasswordFocus={adminPasswordFocus}
                 />
               </div>
             )}

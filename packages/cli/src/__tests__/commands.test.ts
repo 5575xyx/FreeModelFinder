@@ -7,6 +7,7 @@ import {
   type StreamChunk,
 } from '@freemodelfinder/core';
 import { chatCommand } from '../commands/chat.js';
+import { adminCommand } from '../commands/admin.js';
 import { keyCommand } from '../commands/key.js';
 import { modelCommand } from '../commands/model.js';
 
@@ -175,5 +176,114 @@ describe('interactive CLI command branches', () => {
     });
     await command.parseAsync(['node', 'fmf']);
     assert.match(output.join('\n'), /model unavailable/);
+  });
+});
+
+describe('fmf admin', () => {
+  it('status reports when no management password is set', async () => {
+    const store = configStore();
+    const output = captureOutput();
+    await adminCommand({ ...store }).parseAsync(['node', 'fmf', 'status']);
+    assert.match(output.join('\n'), /no management password is set/);
+    assert.equal(store.current().adminAuth, undefined);
+  });
+
+  it('set-password stores a verifier, never the plaintext', async () => {
+    const store = configStore();
+    const answers = [{ password: 'correct-horse-battery' }, { confirm: 'correct-horse-battery' }];
+    const output = captureOutput();
+    await adminCommand({ ...store, prompt: async () => answers.shift() as never }).parseAsync([
+      'node',
+      'fmf',
+      'set-password',
+    ]);
+    const written = store.current().adminAuth;
+    assert.ok(written, 'a verifier must be written');
+    assert.ok(written.passwordHash.length > 0);
+    assert.ok(written.passwordSalt.length > 0);
+    assert.ok(written.createdAt > 0);
+    assert.doesNotMatch(
+      JSON.stringify(store.current()),
+      /correct-horse-battery/,
+      'the plaintext password must not reach the config',
+    );
+
+    assert.match(output.join('\n'), /management password saved/);
+    assert.match(output.join('\n'), /TRUST_UI/);
+
+    const statusOutput = captureOutput();
+    await adminCommand({ ...store }).parseAsync(['node', 'fmf', 'status']);
+    assert.match(statusOutput.join('\n'), /management password is set/);
+  });
+
+  it('aborts when the two password entries do not match', async () => {
+    const store = configStore();
+    const answers = [{ password: 'correct-horse-battery' }, { confirm: 'something-else' }];
+    const output = captureOutput();
+    await adminCommand({ ...store, prompt: async () => answers.shift() as never }).parseAsync([
+      'node',
+      'fmf',
+      'set-password',
+    ]);
+    assert.equal(store.current().adminAuth, undefined);
+    assert.match(output.join('\n'), /do not match/);
+  });
+
+  it('rejects a password below the minimum length', async () => {
+    const store = configStore();
+    const answers = [{ password: 'short' }, { confirm: 'short' }];
+    const output = captureOutput();
+    await adminCommand({ ...store, prompt: async () => answers.shift() as never }).parseAsync([
+      'node',
+      'fmf',
+      'reset-password',
+    ]);
+    assert.equal(store.current().adminAuth, undefined);
+    assert.match(output.join('\n'), /at least 8 characters/);
+  });
+
+  it('clear-password needs confirmation and removes the verifier', async () => {
+    const existing = { passwordHash: 'h', passwordSalt: 's', createdAt: 1 };
+    const store = configStore({ ...config(), adminAuth: existing });
+
+    const declined = captureOutput();
+    await adminCommand({ ...store, prompt: async () => ({ ok: false }) as never }).parseAsync([
+      'node',
+      'fmf',
+      'clear-password',
+    ]);
+    assert.equal(store.current().adminAuth, existing);
+    assert.match(declined.join('\n'), /aborted/);
+
+    await adminCommand({ ...store, prompt: async () => ({ ok: true }) as never }).parseAsync([
+      'node',
+      'fmf',
+      'clear-password',
+    ]);
+    assert.equal(store.current().adminAuth, undefined);
+  });
+
+  it('clear-password on an unset config is a no-op', async () => {
+    const store = configStore();
+    const output = captureOutput();
+    await adminCommand({ ...store }).parseAsync(['node', 'fmf', 'clear-password']);
+    assert.equal(store.current().adminAuth, undefined);
+    assert.match(output.join('\n'), /no management password is set/);
+  });
+
+  it('reset-password replaces an existing verifier', async () => {
+    const existing = { passwordHash: 'old-hash', passwordSalt: 'old-salt', createdAt: 1 };
+    const store = configStore({ ...config(), adminAuth: existing });
+    const answers = [{ password: 'brand-new-password' }, { confirm: 'brand-new-password' }];
+    await adminCommand({ ...store, prompt: async () => answers.shift() as never }).parseAsync([
+      'node',
+      'fmf',
+      'reset-password',
+    ]);
+    const replaced = store.current().adminAuth;
+    assert.ok(replaced);
+    assert.notEqual(replaced.passwordHash, 'old-hash');
+    assert.notEqual(replaced.passwordSalt, 'old-salt');
+    assert.notEqual(replaced.createdAt, 1);
   });
 });

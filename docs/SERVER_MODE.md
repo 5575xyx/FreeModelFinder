@@ -95,3 +95,23 @@ Gemini Base URL:    https://PUBLIC_IP/v1beta
 ```
 
 所有请求都必须携带设置页显示的 Gateway Key。
+
+## 5. 给管理面板加密码
+
+服务器模式下管理面板挂在 Tailscale 的私有域名后面，公网 Nginx 只提供 `/v1`、`/v1beta` 与 Anthropic 兼容路径，API 端口上并不会注册 `/api/*`。如果想在私有入口之外再上一道闸门，在服务器上执行：
+
+```bash
+fmf admin set-password
+```
+
+也可以在面板里设：「设置 → 网关」标签页底部的「管理面板密码」区块，保存后立刻生效，不需要重启服务。已设置时可以修改（需要当前密码）或取消。
+
+设置之后的行为：
+
+- 打开管理面板会先要求登录；成功后浏览器拿到一个 12 小时有效、每次访问滑动续期的 `fmf_admin` 会话 Cookie（`HttpOnly` + `SameSite=Lax`，走 HTTPS 时自动加 `Secure`）。会话只存在进程内存里，重启后要重新登录。
+- 同一个来源地址连续 5 次输错密码会锁定 15 分钟，锁定期内正确密码同样被拒。
+- 密码以 scrypt 哈希加随机盐存在 `config.json` 的 `adminAuth` 字段中，明文不落盘。
+- `FREEMODELFINDER_TRUST_UI=true` 在密码存在时自动失效，不需要去改 systemd unit。
+- 公网 Gateway Key 认证与此完全独立，已接入的客户端不受任何影响。
+
+忘记密码时在同一台服务器上执行 `fmf admin reset-password`；确认不再需要时执行 `fmf admin clear-password`，状态可用 `fmf admin status` 查看。

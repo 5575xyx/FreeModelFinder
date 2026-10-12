@@ -3,6 +3,7 @@ export * from './quota.js';
 export * from './call-logger.js';
 export * from './config/store.js';
 export { asModelList } from './config/model-list.js';
+export * from './config/admin-auth.js';
 export { validateModelAliases, type AliasValidationResult } from './config/aliases.js';
 export * from './config/crypto.js';
 export * from './config/snapshot.js';

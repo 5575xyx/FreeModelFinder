@@ -65,6 +65,26 @@ export const defaultHandlers = [
       onboardingRequired: false,
     }),
   ),
+  http.get(`${gateway}/api/stats`, () =>
+    HttpResponse.json({
+      range: 'today',
+      since: 0,
+      totals: {
+        calls: 0,
+        errors: 0,
+        rateLimited: 0,
+        success: 0,
+        successRate: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        cachedTokens: 0,
+        cacheHitRate: 0,
+      },
+      byModel: [],
+    }),
+  ),
+  http.get(`${gateway}/api/logs`, () => HttpResponse.json({ data: [] })),
   http.get(`${gateway}/api/model-quotas`, () => HttpResponse.json({ data: [] })),
   http.post(`${gateway}/api/model-quotas/probe`, () => HttpResponse.json({ data: [] })),
   http.get(`${gateway}/api/auto-route`, () =>
@@ -146,6 +166,13 @@ export const defaultHandlers = [
   ),
   http.get(`${gateway}/api/onboarding/environment`, () => HttpResponse.json({ data: [] })),
   http.post(`${gateway}/api/onboarding/dismiss`, () => HttpResponse.json({ ok: true })),
+  http.get(`${gateway}/api/admin/status`, () =>
+    HttpResponse.json({ authRequired: false, authenticated: true, remote: false }),
+  ),
+  http.post(`${gateway}/api/admin/logout`, () => HttpResponse.json({ ok: true })),
+  http.post(`${gateway}/api/admin/password`, () =>
+    HttpResponse.json({ ok: true, authRequired: true }),
+  ),
 ];
 
 export const server = setupServer(...defaultHandlers);

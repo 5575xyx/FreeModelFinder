@@ -23,6 +23,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { AdminPasswordPanel } from './AdminPasswordPanel';
 import { Badge, Dot } from './Badge';
 import { StatCard } from './StatCard';
 import { ModelChangesBanner } from './ModelChangesBanner';
@@ -597,12 +598,15 @@ export function SettingsView({
   model = '',
   onModelChange,
   onModelsRefresh,
+  adminPasswordFocus = 0,
 }: {
   compact?: boolean;
   models?: ModelItem[];
   model?: string;
   onModelChange?: (value: string) => void;
   onModelsRefresh?: () => Promise<ModelItem[]> | ModelItem[] | void;
+  /** Non-zero bumps land the user on the gateway tab with the password panel open. */
+  adminPasswordFocus?: number;
 }) {
   const { t } = useI18n();
   const [cfg, setCfg] = useState<ConfigRes | null>(null);
@@ -670,6 +674,10 @@ export function SettingsView({
   const [autoRouteBusy, setAutoRouteBusy] = useState(false);
   const [autoRouteOpen, setAutoRouteOpen] = useState(true);
   const [tab, setTab] = useState<SettingsTab>('models');
+
+  useEffect(() => {
+    if (adminPasswordFocus > 0) setTab('gateway');
+  }, [adminPasswordFocus]);
 
   const tabItems: readonly SegmentedItem<SettingsTab>[] = [
     { key: 'models', label: t('settings.tabs.models'), Icon: Sparkles },
@@ -2394,6 +2402,7 @@ export function SettingsView({
           </div>
         )}
       </section>
+      <AdminPasswordPanel focusSignal={adminPasswordFocus} hidden={tab !== 'gateway'} />
       <section
         aria-label={t('settings.aria.sources')}
         className={classNames(

@@ -8,21 +8,34 @@ import {
   CallLogger,
   ClineLoginAdapter,
   DeviceAuthManager,
+  MIN_ADMIN_PASSWORD_LENGTH,
   ProviderIdSchema,
   ProviderRegistry,
   asModelList,
+  assertAdminPasswordUsable,
   bareModelId,
   composeModelId,
   getCredentialRuntime,
+  hashAdminPassword,
   isVisionCapable,
   loadConfig,
   redact,
   updateConfig,
   validateModelAliases,
+  verifyAdminPassword,
+  type AdminAuthSettings,
   type CredentialAccountEntry,
   type GatewayKeyEntry,
 } from '@freemodelfinder/core';
 import { redactProxy } from '@freemodelfinder/zen';
+import {
+  DEFAULT_SESSION_TTL_MS,
+  LOGIN_LOCKOUT_MESSAGE,
+  SESSION_CLEAR_COOKIE_HEADER,
+  createAdminAuthState,
+  sessionCookieHeader,
+  type AdminAuthState,
+} from './admin-auth.js';
 import { modelAllowlistViolation, registerOpenAIRoutes } from './routes/openai.js';
 import { registerAnthropicRoutes } from './routes/anthropic.js';
 import { registerGeminiRoutes } from './routes/gemini.js';
@@ -72,6 +85,7 @@ interface SharedRuntimeState {
   desktopSignature?: string;
   catalogSignature?: string;
   requestShutdown?: () => Promise<void>;
+  adminAuth?: AdminAuthState;
 }
 
 interface AppOptions {
@@ -210,7 +224,11 @@ function hasTrustedOrigin(req: FastifyRequest, adminOrigin?: string): boolean {
   return false;
 }
 
-function isTrustedUiRequest(req: FastifyRequest, adminOrigin?: string): boolean {
+function isTrustedUiRequest(
+  req: FastifyRequest,
+  adminOrigin: string | undefined,
+  trustUiEnvAllowed = true,
+): boolean {
   const clientHeader = req.headers['x-fmf-client'];
   const hasUiHeader = typeof clientHeader === 'string' && clientHeader.toLowerCase() === 'ui';
   const isLoopback = isLoopbackAddress(req.socket?.remoteAddress ?? null);
@@ -222,9 +240,42 @@ function isTrustedUiRequest(req: FastifyRequest, adminOrigin?: string): boolean 
     return hasTrustedOrigin(req, adminOrigin);
   }
 
-  if (hasUiHeader && !adminOrigin && process.env.FREEMODELFINDER_TRUST_UI === 'true') return true;
+  // The escape hatch that lets a non-loopback client through with just the
+  // `x-fmf-client: ui` header. Once a management password exists it is
+  // disabled outright: it is the one path that would let the sign-in gate be
+  // bypassed by a header anyone can send, which is what put the panel in front
+  // of a public address in the first place.
+  if (
+    hasUiHeader &&
+    !adminOrigin &&
+    trustUiEnvAllowed &&
+    process.env.FREEMODELFINDER_TRUST_UI === 'true'
+  ) {
+    return true;
+  }
 
   return false;
+}
+
+/**
+ * Same-origin check for the cookie-authenticated panel. `SameSite=Lax` already
+ * withholds the cookie from cross-site posts in browsers; this is the second
+ * layer against a page that somehow holds a session and is driven by a script.
+ */
+function isSameOriginRequest(req: FastifyRequest, adminOrigin: string | undefined): boolean {
+  const origin = req.headers['origin'];
+  if (typeof origin !== 'string' || !origin) return false;
+  if (adminOrigin && origin === adminOrigin) return true;
+  const host = req.headers['host'];
+  if (typeof host !== 'string' || !host) return false;
+  try {
+    const parsed = new URL(origin);
+    // URL drops the port for :80 and :443, and so does the Host header.
+    const originHost = parsed.port ? `${parsed.hostname}:${parsed.port}` : parsed.hostname;
+    return originHost.toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 function generateApiKey(): string {
@@ -563,6 +614,8 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
   }
 
   const getRegistry = () => opts.state.registry;
+  if (!opts.state.adminAuth) opts.state.adminAuth = createAdminAuthState();
+  const adminAuth = opts.state.adminAuth;
   const callLogger = new CallLogger();
   callLogger.cleanup().catch(() => {});
 
@@ -595,20 +648,60 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       url === '/api/default-model' ||
       url === '/api/auto-route' ||
       url === '/api/runtime/shutdown';
+    // When a management password is configured the FREEMODELFINDER_TRUST_UI
+    // escape hatch stops granting access — it is a header anyone can send — and
+    // a session cookie becomes the way in. Without a password the behaviour is
+    // byte-for-byte what it was before.
+    const adminPassword = getRegistry().getConfig().adminAuth;
+    const trustedUi = isTrustedUiRequest(req, opts.adminOrigin, adminPassword === undefined);
+    const desktopControl = desktopControlRoute && hasRuntimeControlToken(req, opts.state);
+    const signedIn = adminPassword ? adminAuth.validateSession(req.headers['cookie']) : false;
+
+    // The cookie is what makes a remote browser reachable at all, so it has to
+    // earn the same-origin guarantee that trustedUi gets for free from loopback.
+    // Checked before the /api/ branch below, which returns out of the hook. A
+    // request already trusted via loopback is not second-guessed: the desktop
+    // app posts from a tauri: origin and has nothing better to offer.
     if (
-      opts.surface !== 'gateway' &&
-      url.startsWith('/api/') &&
-      !isTrustedUiRequest(req, opts.adminOrigin) &&
-      !(desktopControlRoute && hasRuntimeControlToken(req, opts.state))
+      signedIn &&
+      !trustedUi &&
+      req.method !== 'GET' &&
+      req.method !== 'HEAD' &&
+      req.method !== 'OPTIONS' &&
+      !isSameOriginRequest(req, opts.adminOrigin)
     ) {
-      return reply.code(403).send({ error: 'management API is available only to the local UI' });
+      return reply.code(403).send({
+        error: { message: 'Cross-origin request rejected.', code: 'csrf_rejected' },
+      });
+    }
+
+    if (opts.surface !== 'gateway' && url.startsWith('/api/')) {
+      if (trustedUi || desktopControl || signedIn) return;
+      if (!adminPassword) {
+        return reply.code(403).send({ error: 'management API is available only to the local UI' });
+      }
+      // The sign-in flow itself must stay reachable. Logout is included because
+      // a session that has already expired has nowhere else to clear itself.
+      if (
+        url === '/api/admin/login' ||
+        url === '/api/admin/status' ||
+        url === '/api/admin/logout'
+      ) {
+        return;
+      }
+      return reply.code(401).send({
+        error: {
+          message: 'Sign in to the management panel first.',
+          code: 'admin_signin_required',
+        },
+      });
     }
     if (opts.surface === 'gateway' && !isPublicGatewayRoute(req.method, url)) return;
     if (!PROTECTED_PREFIXES.some((p) => url.startsWith(p))) return;
     const gateway = getRegistry().getConfig().gateway;
     const hasAnyKey = activeGatewayKeys(gateway).length > 0;
     if (opts.surface !== 'gateway' && (!gateway?.requireAuth || !hasAnyKey)) return;
-    if (opts.surface !== 'gateway' && isTrustedUiRequest(req, opts.adminOrigin)) return;
+    if (opts.surface !== 'gateway' && (trustedUi || signedIn)) return;
     const provided = extractBearer(req);
     const matchedKey = findMatchingGatewayKey(provided, activeGatewayKeys(gateway));
     if (!matchedKey) {
@@ -668,6 +761,166 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
   }));
 
   if (opts.surface !== 'gateway') {
+    // ── Management-panel sign-in ──────────────────────────────────
+    //
+    // These three routes are deliberately outside the /api/ gate below: they are
+    // the door that opens it. Everything else under /api/ still requires a
+    // trusted local UI, a desktop control token, or a live session cookie.
+
+    app.get('/api/admin/status', async (req, reply) => {
+      const passwordConfigured = getRegistry().getConfig().adminAuth !== undefined;
+      const authenticated = !passwordConfigured || adminAuth.validateSession(req.headers['cookie']);
+      return reply.send({
+        authRequired: passwordConfigured,
+        authenticated,
+        // The only reliable evidence that the panel is reachable from outside
+        // the machine: this request did not arrive over loopback. Behind a
+        // reverse proxy it reports the proxy address, so it errs toward
+        // "not remote" rather than alarming the user for no reason.
+        remote: !isLoopbackAddress(req.socket?.remoteAddress ?? null),
+      });
+    });
+
+    app.post('/api/admin/login', async (req, reply) => {
+      const clientIp = req.ip || 'no-remote-address';
+      const admin = getRegistry().getConfig().adminAuth;
+      if (!admin) {
+        return reply.code(400).send({
+          error: { message: 'No management password is configured.', code: 'admin_not_configured' },
+        });
+      }
+      if (adminAuth.isLockedOut(clientIp)) {
+        return reply.code(429).send({
+          error: { message: LOGIN_LOCKOUT_MESSAGE, code: 'admin_locked_out' },
+        });
+      }
+      const body = req.body as { password?: unknown };
+      const password = typeof body?.password === 'string' ? body.password : '';
+      if (await verifyAdminPassword(password, admin)) {
+        adminAuth.clearFailures(clientIp);
+        const token = adminAuth.issueSession();
+        reply.header(
+          'Set-Cookie',
+          sessionCookieHeader(token, DEFAULT_SESSION_TTL_MS, req.protocol === 'https'),
+        );
+        return reply.send({ ok: true });
+      }
+      if (adminAuth.recordFailure(clientIp)) {
+        return reply.code(429).send({
+          error: { message: LOGIN_LOCKOUT_MESSAGE, code: 'admin_locked_out' },
+        });
+      }
+      return reply.code(401).send({
+        error: { message: 'Incorrect password.', code: 'admin_bad_password' },
+      });
+    });
+
+    app.post('/api/admin/logout', async (req, reply) => {
+      adminAuth.revokeSession(req.headers['cookie']);
+      reply.header('Set-Cookie', SESSION_CLEAR_COOKIE_HEADER);
+      return reply.send({ ok: true });
+    });
+
+    // Change the password from the panel. `set` is the one action that checks
+    // nothing, because there is no password to check yet — and it is exactly as
+    // reachable as the rest of /api/, so it opens no new hole: anyone who can
+    // read the panel today already sees every provider key.
+    app.post('/api/admin/password', async (req, reply) => {
+      const clientIp = req.ip || 'no-remote-address';
+      const body = req.body as
+        { action?: string; password?: unknown; currentPassword?: unknown } | undefined;
+      const action = body?.action;
+      const newPassword = typeof body?.password === 'string' ? body.password : '';
+      const current = typeof body?.currentPassword === 'string' ? body.currentPassword : '';
+      const existing = getRegistry().getConfig().adminAuth;
+
+      const lengthProblem = (): string => {
+        try {
+          assertAdminPasswordUsable(newPassword);
+          return '';
+        } catch (err) {
+          return err instanceof Error
+            ? err.message
+            : `Password must be at least ${MIN_ADMIN_PASSWORD_LENGTH} characters`;
+        }
+      };
+      const rejectIfTooShort = (): boolean => {
+        const problem = lengthProblem();
+        if (!problem) return false;
+        reply.code(400).send({
+          error: { message: problem, code: 'admin_password_too_short' },
+        });
+        return true;
+      };
+      const saveVerifier = async (verifier: AdminAuthSettings): Promise<void> => {
+        const next = await updateConfig((cfg) => ({ ...cfg, adminAuth: verifier }));
+        // preserveModels keeps the provider instances and the model cache: this
+        // write touches nothing they depend on, and dropping them would force a
+        // full re-fetch of every catalog.
+        getRegistry().updateConfig(next, { preserveModels: true });
+      };
+
+      if (action !== 'set' && action !== 'change' && action !== 'clear') {
+        return reply.code(400).send({
+          error: { message: 'Unknown action.', code: 'admin_password_bad_action' },
+        });
+      }
+
+      if (action === 'set') {
+        if (existing) {
+          return reply.code(409).send({
+            error: {
+              message: 'A management password is already set; use change.',
+              code: 'admin_password_exists',
+            },
+          });
+        }
+        if (rejectIfTooShort()) return reply.send();
+        await saveVerifier(await hashAdminPassword(newPassword));
+        return reply.send({ ok: true, authRequired: true });
+      }
+
+      if (!existing) {
+        return reply.code(409).send({
+          error: { message: 'No management password is set.', code: 'admin_password_missing' },
+        });
+      }
+
+      // change and clear both verify the current password. With
+      // FREEMODELFINDER_TRUST_UI on they are reachable without a session, so
+      // they reuse the login lockout instead of trusting the caller.
+      if (adminAuth.isLockedOut(clientIp)) {
+        return reply.code(429).send({
+          error: { message: LOGIN_LOCKOUT_MESSAGE, code: 'admin_locked_out' },
+        });
+      }
+      if (!(await verifyAdminPassword(current, existing))) {
+        if (adminAuth.recordFailure(clientIp)) {
+          return reply.code(429).send({
+            error: { message: LOGIN_LOCKOUT_MESSAGE, code: 'admin_locked_out' },
+          });
+        }
+        return reply.code(401).send({
+          error: { message: 'Incorrect password.', code: 'admin_bad_password' },
+        });
+      }
+      adminAuth.clearFailures(clientIp);
+
+      if (action === 'change') {
+        if (rejectIfTooShort()) return reply.send();
+        await saveVerifier(await hashAdminPassword(newPassword));
+        return reply.send({ ok: true, authRequired: true });
+      }
+
+      const next = await updateConfig((cfg) => {
+        const copy = { ...cfg };
+        delete copy.adminAuth;
+        return copy;
+      });
+      getRegistry().updateConfig(next, { preserveModels: true });
+      return reply.send({ ok: true, authRequired: false });
+    });
+
     app.get('/api/desktop/state', async () => {
       const cfg = getRegistry().getConfig();
       const { models, failedProviders } = await getRegistry().listAllModels();

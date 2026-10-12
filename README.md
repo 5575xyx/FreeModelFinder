@@ -372,6 +372,7 @@ Gateway 认证默认关闭。启用 Gateway Key 后，请增加 `Authorization: 
 - 默认配置位于 `~/.freemodelfinder`；`config.json` 保存 v3 加密密文，随机主密钥单独保存在 `master.key`。
 - 在支持 POSIX 权限的系统上，配置目录使用 `0700`，配置文件和主密钥使用 `0600`。这不是系统 Keychain；同一操作系统账户下的其他进程仍处于信任边界内。
 - `/api/*` 管理接口只接受来自 loopback 且带本地 UI Origin/Referer 的请求；兼容协议端点可使用 Gateway Key 保护。
+- 管理面板可单独设置访问密码（见 [管理面板密码](#管理面板密码)）；一旦设置，`FREEMODELFINDER_TRUST_UI` 不再放行 `/api/*`。
 - 出站 Provider 请求支持 `HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY` 及对应小写变量，只支持 HTTP/HTTPS 代理。
 - 免费目录和本地配额估算不能替代 Provider 控制台的账单、配额或使用条款。
 - 首次向导只会报告受支持的环境变量是否存在，不会把原始值返回浏览器，也不会未经确认自动导入。
@@ -383,6 +384,28 @@ FREEMODELFINDER_HOME=/path/to/fmf-home fmf serve
 ```
 
 端口占用、模型同步失败、代理、日志、重置配置和卸载说明见 [排障指南](docs/TROUBLESHOOTING.md)。
+
+## 管理面板密码
+
+默认情况下 Dashboard 只对本机开放：`/api/*` 要求请求来自 loopback 并带本地 UI 的 Origin/Referer。只要这台机器绑定了公网 IP、开了安全组，或者前面挂了反向代理，就请给面板上一把密码：
+
+```bash
+fmf admin set-password    # 设置或更换密码
+fmf admin reset-password  # 忘记密码时重置
+fmf admin clear-password  # 取消密码，回到仅本机可见
+fmf admin status          # 查看当前是否已设置
+```
+
+不想敲命令也可以在面板里直接设：「设置 → 网关」标签页底部有「管理面板密码」区块，填新密码并确认，保存后立刻生效，不需要重启 `fmf serve`。区块会显示当前状态；已设置时修改需要输入当前密码，也可以直接取消。面板检测到请求来自本机以外的地址而密码还没设置时，顶部会出现一条提示，点「去设置」会直接跳到这个区块；点「忽略」后提示会记住，不再重复出现。
+
+忘记密码只有两条路：`fmf admin reset-password`，或者删掉 `config.json` 里的 `adminAuth` 字段。面板里没有「无需旧密码即可重置」的入口——那跟没有密码没有区别。
+
+- 密码以 scrypt 哈希 + 随机盐写入 `config.json` 的 `adminAuth` 字段，明文不落盘；哈希是单向校验值，不经过 `master.key` 加密，因此配置文件丢了也不会连带丢掉登录能力。
+- 会话只存在内存里，有效期 12 小时且每次访问滑动续期；进程重启后需要重新登录。这是刻意的设计：面板没有可被偷走的持久凭证文件。
+- 同一个来源地址连续 5 次输错会锁定 15 分钟，正确密码在锁定期内同样被拒。
+- 设置密码后，`FREEMODELFINDER_TRUST_UI=true` 会停止放行 `/api/*`。它只靠一个请求头，任何客户端都能伪造，留着就是白送一个免登录入口。
+- Cookie 使用 `HttpOnly` + `SameSite=Lax`；只有当请求本身走 HTTPS 时才会附带 `Secure`，所以明文 HTTP 部署也能正常登录，加了 TLS 后自动收紧。
+- 已登录会话调用 `/v1/*` 不需要 Gateway Key，面板自带的测试器、图片与视频生成可以继续直接用；外部 AI 工具（OpenCode、Cline 等）请继续用 Gateway Key，认证方式没有任何变化。
 
 ## 服务器模式
 

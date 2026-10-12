@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { serveCommand } from './commands/serve.js';
+import { adminCommand } from './commands/admin.js';
 import { modelCommand } from './commands/model.js';
 import { keyCommand } from './commands/key.js';
 import { chatCommand } from './commands/chat.js';
@@ -15,6 +16,7 @@ program
   .version(packageJson.version);
 
 program.addCommand(serveCommand());
+program.addCommand(adminCommand());
 program.addCommand(modelCommand());
 program.addCommand(keyCommand());
 program.addCommand(chatCommand());
