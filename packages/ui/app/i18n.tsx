@@ -414,6 +414,10 @@ export const zh: Dict = {
   'settings.custom.errorNameRequired': '请填写源名称',
   'settings.custom.duplicateModel': '{source} 已存在模型 {id}',
   'settings.custom.saved': '自定义模型已保存',
+  'settings.custom.aliasesSavedSourcesFailed':
+    '别名已保存，但自定义来源未同步：{msg}。请重试保存。',
+  'settings.custom.legacyAliasesHint':
+    '检测到旧格式别名（如 {names}），建议在本标签重建为 “来源id/别名” 形式；旧名仍有效，不会自动迁移，删除需手改 config.json。',
   'settings.custom.cleared': '已清除自定义模型配置',
   'settings.custom.saveFailed': '保存自定义模型失败：{msg}',
   'settings.custom.clearFailed': '清除失败：{msg}',
@@ -1061,6 +1065,10 @@ export const en: Dict = {
   'settings.custom.errorNameRequired': 'Please enter a source name',
   'settings.custom.duplicateModel': '{source} already has model {id}',
   'settings.custom.saved': 'Custom models saved',
+  'settings.custom.aliasesSavedSourcesFailed':
+    'Aliases were saved, but the custom sources were not synced: {msg}. Please save again.',
+  'settings.custom.legacyAliasesHint':
+    'Legacy aliases detected (e.g. {names}). Recreate them here as "source-id/alias"; old names keep working and are not migrated automatically — remove them by editing config.json.',
   'settings.custom.cleared': 'Custom model configuration cleared',
   'settings.custom.saveFailed': 'Failed to save custom models: {msg}',
   'settings.custom.clearFailed': 'Clear failed: {msg}',

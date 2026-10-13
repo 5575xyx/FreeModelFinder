@@ -29,11 +29,17 @@ import { StatCard } from './StatCard';
 import { ModelChangesBanner } from './ModelChangesBanner';
 import { ModelCleanupLogPanel } from './ModelCleanupLogPanel';
 import { ClineAccountsPanel } from './ClineAccountsPanel';
-import { ModelAliasesSection } from './ModelAliasesSection';
+import { SourceAliasesEditor } from './SourceAliasesEditor';
 import { ModelMultiSelect, type ModelOption } from './ModelMultiSelect';
 import { SegmentedTabs, type SegmentedItem } from './SegmentedTabs';
 import { classNames, copyToClipboard, GATEWAY, withUiHeaders } from '../lib/utils';
 import { modelValue } from '../lib/models';
+import { commitCustomAliasSave } from '../lib/customAliasSave';
+import {
+  findLegacyBareAliases,
+  type SourceAliasEdit,
+  type SourceChanges,
+} from '../lib/sourceAliases';
 import { SETTINGS_PROVIDERS, providerHintKey, providerLabelKey } from '../lib/platforms';
 import { useI18n } from '../i18n';
 
@@ -639,6 +645,11 @@ export function SettingsView({
 
   const [customSectionOpen, setCustomSectionOpen] = useState(true);
   const [customSources, setCustomSources] = useState<CustomSourceDef[]>([]);
+  const [customAliases, setCustomAliases] = useState<Record<string, SourceAliasEdit[]>>({});
+  const [globalAliases, setGlobalAliases] = useState<Record<string, string>>({});
+  // Latches once the Custom tab has been opened so its editors stay mounted
+  // (preserving in-progress edits) while other tabs pay no alias round-trips.
+  const [customTabVisited, setCustomTabVisited] = useState(false);
   const [customKeyVisible, setCustomKeyVisible] = useState<Record<string, boolean>>({});
   const [customSaveState, setCustomSaveState] = useState<SaveState>('idle');
   const customBusyRef = useRef(false);
@@ -878,6 +889,29 @@ export function SettingsView({
     const t = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  const refreshGlobalAliases = useCallback(async () => {
+    try {
+      const res = await fetch(`${GATEWAY}/api/model-aliases`, withUiHeaders());
+      if (!res.ok) return;
+      const json = (await res.json()) as { modelAliases?: Record<string, string> };
+      setGlobalAliases(json.modelAliases ?? {});
+    } catch {
+      /* the migration hint is best-effort; a failed read just hides it */
+    }
+  }, []);
+
+  useEffect(() => {
+    // The Custom tab owns the per-source editors and the migration hint; mount
+    // them and read the alias table on first visit. The latch keeps the editors
+    // mounted afterwards so a tab switch never discards in-progress edits.
+    if (tab === 'custom') {
+      setCustomTabVisited(true);
+      void refreshGlobalAliases();
+    }
+  }, [tab, refreshGlobalAliases]);
+
+  const legacyAliases = useMemo(() => findLegacyBareAliases(globalAliases), [globalAliases]);
 
   useEffect(() => {
     setPing({ state: 'idle' });
@@ -1229,23 +1263,27 @@ export function SettingsView({
         enabled: true,
         sources: payloadSources,
       };
-      const res = await fetch(
-        `${GATEWAY}/api/providers`,
-        withUiHeaders({
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        }),
-      );
-      if (!res.ok) {
-        let detail = '';
-        try {
-          const j = (await res.json()) as { error?: string };
-          if (j?.error) detail = `: ${j.error}`;
-        } catch {
-          /* ignore */
-        }
-        throw new Error(`HTTP ${res.status}${detail}`);
+      // Only sources whose alias editor reported this round are authoritative
+      // for their namespace; untouched sources keep every `sourceId/*` entry.
+      const changes: SourceChanges = customSources
+        .filter((s) => customAliases[s.id] !== undefined)
+        .map((s) => ({
+          id: s.id,
+          models: s.models.map((m) => m.id),
+          aliases: customAliases[s.id] ?? [],
+        }));
+      const commit = await commitCustomAliasSave({ changes, sourcesBody: body });
+      if (!commit.ok) {
+        setToast({
+          kind: 'error',
+          text:
+            commit.stage === 'sources'
+              ? t('settings.custom.aliasesSavedSourcesFailed', { msg: commit.detail ?? '' })
+              : t('settings.custom.saveFailed', { msg: commit.detail ?? '' }),
+        });
+        setCustomSaveState('error');
+        setTimeout(() => setCustomSaveState('idle'), 1800);
+        return;
       }
       const pendingKeys = customSources
         .map((s) => ({
@@ -1280,6 +1318,7 @@ export function SettingsView({
       setToast({ kind: 'success', text: t('settings.custom.saved') });
       setCustomSaveState('saved');
       setTimeout(() => setCustomSaveState('idle'), 1600);
+      void refreshGlobalAliases();
       try {
         const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
           (r) => r.json() as Promise<ConfigRes>,
@@ -2062,8 +2101,6 @@ export function SettingsView({
         )}
       </section>
 
-      {tab === 'models' && <ModelAliasesSection />}
-
       <section
         aria-label={t('settings.aria.gateway')}
         className={classNames(
@@ -2817,6 +2854,13 @@ export function SettingsView({
         </button>
         {customSectionOpen && (
           <div className="space-y-4 rounded-lg border border-border bg-surface p-4 shadow-sm">
+            {legacyAliases.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t('settings.custom.legacyAliasesHint', {
+                  names: legacyAliases.map((r) => r.alias).join(', '),
+                })}
+              </p>
+            )}
             {customSources.length === 0 ? (
               <div className="rounded-md border border-dashed border-border bg-surface-muted/30 px-3 py-4 text-center text-xs text-muted-foreground">
                 {t('settings.custom.empty')}
@@ -3205,6 +3249,17 @@ export function SettingsView({
                           </button>
                         </div>
                       </div>
+
+                      {customTabVisited && (
+                        <SourceAliasesEditor
+                          sourceId={src.id}
+                          sourceLabel={src.label}
+                          sourceModels={src.models.map((m) => m.id)}
+                          onAliasesChange={(edits) =>
+                            setCustomAliases((cur) => ({ ...cur, [src.id]: edits }))
+                          }
+                        />
+                      )}
                     </li>
                   );
                 })}
