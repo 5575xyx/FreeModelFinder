@@ -10,6 +10,10 @@ export default defineConfig({
       jsdom: { url: 'http://127.0.0.1:11435/' },
     },
     setupFiles: ['./vitest.setup.ts'],
+    // SettingsView renders are heavy under v8 coverage instrumentation; the
+    // jsdom + msw suite needs more than the 5s default so suite growth cannot
+    // trip a marginal test (see gateway-allowlist).
+    testTimeout: 20000,
     coverage: {
       provider: 'v8',
       include: ['app/page.tsx', 'app/lib/**/*.ts'],
