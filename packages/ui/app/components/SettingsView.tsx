@@ -1132,6 +1132,13 @@ export function SettingsView({
   function removeCustomSource(sourceId: string) {
     setCustomSources((list) => list.filter((s) => s.id !== sourceId));
     setRemovedSourceIds((ids) => (ids.includes(sourceId) ? ids : [...ids, sourceId]));
+    // Drop this source's reported alias edits; if the same id is re-added, its
+    // freshly mounted editor re-hydrates and reports from scratch.
+    setCustomAliases((cur) => {
+      const next = { ...cur };
+      delete next[sourceId];
+      return next;
+    });
   }
 
   function patchCustomSource(sourceId: string, patch: Partial<CustomSourceDef>) {
