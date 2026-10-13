@@ -39,10 +39,12 @@
 ### Task 1: 纯函数 `deriveSourceAliases`（改写核心逻辑）
 
 **Files:**
+
 - Create: `packages/ui/app/lib/sourceAliases.ts`
 - Test: `packages/ui/app/lib/__tests__/sourceAliases.test.ts`
 
 **Interfaces:**
+
 - Consumes: 无（纯函数，输入为 plain 对象）
 - Produces:
   - `interface SourceAliasEdit { alias: string; targetModel: string }`（`alias` 是**无前缀**的别名名，如 `glm`；`targetModel` 是该来源模型 id，如 `glm-5.3`）
@@ -118,6 +120,7 @@ Expected: FAIL（`Cannot find module '../sourceAliases'`）
 - [ ] **Step 3: Implement `deriveSourceAliases` + `findLegacyBareAliases` in `packages/ui/app/lib/sourceAliases.ts`**
 
 算法要点（signature 和上面的测试钉死行为，这是实现者需要知道的）：
+
 - `deriveSourceAliases`：以 `prevGlobal` 为基底（深拷贝）。先收集本次涉及的所有 source id（`changes` 里的）。对每个 `change`：① 从基底中剥掉所有 `change.id/*` 前缀条目里 value 对应的模型不在 `change.models` 中的（value 形如 `custom:change.id:model`，取 model 段判断）；② 写入 `change.aliases` 的每一行：key = `${change.id}/${edit.alias}`，value = `custom:${change.id}:${edit.targetModel}`。未涉及来源的前缀条目与所有无前缀条目原样保留（深拷贝天然保证）。
 - `findLegacyBareAliases`：遍历 `global`，key 中不含 `/` 的条目视为裸名（含 `:` 的也不存在——校验禁止 `:`），返回 `{ alias: key, target: value }` 列表。
 
@@ -138,9 +141,11 @@ git commit -m "feat(ui): add deriveSourceAliases pure function for source-scoped
 ### Task 2: 服务端回归（`/` 名 round-trip + 反查回显 + allowlist 不感知）
 
 **Files:**
+
 - Test: `packages/server/src/__tests__/model-aliases.test.ts`（追加 describe 块）
 
 **Interfaces:**
+
 - Consumes: 现有 `/api/model-aliases` GET/POST、`toClientFacingModel`（均零改动，本 Task 只加测试钉住行为）
 - Produces: 无新接口；钉住"含 `/` 的别名名在现有接口下天然合法"的事实，后续 Task 3/4 依赖此事实。
 
@@ -188,11 +193,13 @@ git commit -m "test(server): pin source-scoped (slashed) alias round-trip and re
 ### Task 3: `SourceAliasesEditor` 组件（来源卡片内嵌）
 
 **Files:**
+
 - Create: `packages/ui/app/components/SourceAliasesEditor.tsx`
 - Modify: `packages/ui/app/i18n.tsx`（新增 `settings.sourceAliases.*` 中英双份 key）
 - Test: `packages/ui/app/components/__tests__/source-aliases-editor.test.tsx`（新建）
 
 **Interfaces:**
+
 - Consumes: `deriveSourceAliases`/`SourceAliasEdit`（Task 1）；`GET /api/model-aliases`（现有）；i18n `settings.sourceAliases.*`
 - Produces:
   - `SourceAliasesEditor({ sourceId, sourceLabel, sourceModels, onAliasesChange }: { sourceId: string; sourceLabel?: string; sourceModels: string[]; onAliasesChange: (edits: SourceAliasEdit[]) => void })`
@@ -303,6 +310,7 @@ Expected: FAIL（`Cannot find module '../SourceAliasesEditor'`）
 - [ ] **Step 3: Implement `SourceAliasesEditor`**
 
 实现要点（signature 和测试钉死行为）：
+
 - `useState<SourceAliasEdit[]>` 持行；`useEffect` 首次 `GET /api/model-aliases`，把 `modelAliases` 中 key 以 `${sourceId}/` 开头的条目拆成 `{ alias: key.slice(sourceId.length + 1), targetModel: value.split(':').pop() }` 回填；同时收集无前缀条目（key 不含 `/`）用于 legacyHint。
 - 行 = 只读前缀文本 `{sourceId}/` + 别名名 input + 目标下拉（只列 `custom:{sourceId}:{m}` for `m in sourceModels`）+ 删除按钮。
 - 别名名校验：非空、不含 `/`、不含 `:`、非 `auto`/`default`（后两条是 `validateModelAliases` 已有规则，UI 提前拦更友好；拦住则不上报该行）。
@@ -330,12 +338,14 @@ git commit -m "feat(ui): add SourceAliasesEditor embedded in custom source cards
 ### Task 4: `SettingsView` 集成（搬家 + saveCustomProvider 扩展 + 迁移提示）
 
 **Files:**
+
 - Modify: `packages/ui/app/components/SettingsView.tsx`（删 Models 标签的 `ModelAliasesSection`、Custom 标签来源卡片内嵌 `SourceAliasesEditor`、`saveCustomProvider` 扩展、迁移提示）
 - Delete: `packages/ui/app/components/ModelAliasesSection.tsx`（搬家后无引用）
 - Modify: `packages/ui/app/components/__tests__/model-aliases.test.tsx`（删/改——组件没了，测试改到 `source-aliases-editor.test.tsx` 已覆盖；若无残留断言则删整个文件）
 - Test: `packages/ui/app/components/__tests__/settings-custom-aliases.test.tsx`（新建，钉住 saveCustomProvider 的 alias 改写与两次提交顺序）
 
 **Interfaces:**
+
 - Consumes: `SourceAliasesEditor` + `onAliasesChange`（Task 3）；`deriveSourceAliases`/`SourceChanges`（Task 1）；`GET /api/model-aliases`；`POST /api/model-aliases`；`POST /api/providers`（现有）
 - Produces: 无新导出；`SettingsView` 行为变更（Custom 标签内嵌别名编辑器 + 保存时先 aliases 后 sources）。
 
@@ -387,6 +397,7 @@ Expected: FAIL
 - [ ] **Step 3: Implement in `SettingsView`**
 
 实现要点：
+
 1. **搬家**：删 L2065 `{tab === 'models' && <ModelAliasesSection />}` 与 import；Custom 标签每个来源 `<li>` 卡片内（模型列表之后）嵌 `<SourceAliasesEditor sourceId={src.id} sourceLabel={src.label} sourceModels={src.models.map(m => m.id)} onAliasesChange={...} />`，`onAliasesChange` 把该来源的编辑行存进 `customAliases` state（`Record<sourceId, SourceAliasEdit[]>`）。
 2. **`saveCustomProvider` 扩展**：
    - 保存前 `GET /api/model-aliases` 取基底 `prevGlobal`。
@@ -419,6 +430,7 @@ git commit -m "feat(ui): move alias config into custom source cards; save aliase
 ### Task 5: 全量回归 + 文档
 
 **Files:**
+
 - Modify: `docs/superpowers/plans/2026-10-13-pool-failover-alias-fix.md`（追加本 feature 完成记录）
 
 **Interfaces:** 无新接口；纯验证 + 文档。
@@ -426,6 +438,7 @@ git commit -m "feat(ui): move alias config into custom source cards; save aliase
 - [ ] **Step 1: Run full gates**
 
 Run（按 CI 顺序）:
+
 ```bash
 pnpm format:check
 pnpm lint
@@ -433,6 +446,7 @@ pnpm build:runtime
 pnpm typecheck
 pnpm test:coverage
 ```
+
 Expected: 全绿（core 635、server 357、cli、ui 新增后全绿；coverage 阈值 core 85%lines/74%branches、server 80%/75%、cli 80% 不降）。
 
 若 coverage 因删了 `ModelAliasesSection` 而掉线：`SourceAliasesEditor` 的测试应已覆盖等价行为；若仍不足，给 `sourceAliases.ts` 纯函数补边界测试（空前缀表、全裸名表）拉回阈值。
