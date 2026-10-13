@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { GATEWAY, withUiHeaders } from '../lib/utils';
 import type { SourceAliasEdit } from '../lib/sourceAliases';
@@ -19,6 +19,34 @@ export interface SourceAliasesEditorProps {
 
 /** Alias names that collide with reserved routing keywords are not reported. */
 const RESERVED_ALIAS_NAMES = new Set(['auto', 'default']);
+
+/**
+ * The single validity predicate shared by hydration and reporting: an alias
+ * name is usable only when it is non-empty after trimming, contains neither
+ * `/` (which would double the source prefix) nor `:`, and is not a reserved
+ * routing keyword.
+ */
+function isValidAliasName(name: string): boolean {
+  const trimmed = name.trim();
+  return (
+    trimmed.length > 0 &&
+    !trimmed.includes('/') &&
+    !trimmed.includes(':') &&
+    !RESERVED_ALIAS_NAMES.has(trimmed)
+  );
+}
+
+/**
+ * Reduce editing-state rows to the reportable edits: keep only valid,
+ * fully-targeted rows and normalize the alias name by trimming it (so
+ * `' glm '` reports as `'glm'` and never creates a distinct `sourceId/glm `
+ * key). The raw value stays in editing state so the user can keep typing.
+ */
+function toReportedEdits(rows: SourceAliasEdit[]): SourceAliasEdit[] {
+  return rows
+    .filter((row) => isValidAliasName(row.alias) && row.targetModel.length > 0)
+    .map((row) => ({ alias: row.alias.trim(), targetModel: row.targetModel }));
+}
 
 /**
  * The target `<option>` values are the composed `custom:<sourceId>:<model>`
@@ -42,13 +70,29 @@ export function SourceAliasesEditor({
   const [hydrated, setHydrated] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
 
-  // Hydrate once: back-fill rows from `sourceId/*` entries of the global
-  // table; bare (prefix-less) entries only drive the legacy migration hint.
+  // The hydration effect must key on the *content* of `sourceModels`, not its
+  // array identity: the parent passes `source.models.map(m => m.id)`, a fresh
+  // array on every render, and an identity-keyed effect would re-fetch and
+  // wipe the user's in-progress edit. React compares string deps by value, so
+  // `modelsKey` stays stable across equal-content arrays.
+  const modelsKey = useMemo(() => sourceModels.join('\u0000'), [sourceModels]);
+  const onAliasesChangeRef = useRef(onAliasesChange);
+  onAliasesChangeRef.current = onAliasesChange;
+
+  // Hydrate once per (sourceId, content-of-sourceModels): back-fill rows from
+  // `sourceId/*` entries of the global table; bare (prefix-less) entries only
+  // drive the legacy migration hint. On success, report the hydrated rows once
+  // (even when empty) so the source becomes an authoritative namespace.
   useEffect(() => {
     let cancelled = false;
+    const modelSet = new Set(modelsKey.length > 0 ? modelsKey.split('\u0000') : []);
     void (async () => {
       try {
         const res = await fetch(`${GATEWAY}/api/model-aliases`, withUiHeaders());
+        if (!res.ok) {
+          if (!cancelled) setLoadFailed(true);
+          return;
+        }
         const json = (await res.json().catch(() => ({}))) as {
           modelAliases?: Record<string, string>;
         };
@@ -61,11 +105,13 @@ export function SourceAliasesEditor({
         for (const [key, value] of Object.entries(aliases)) {
           if (key.startsWith(prefix)) {
             const alias = key.slice(prefix.length);
-            const targetModel = value.startsWith(expectedTargetPrefix)
-              ? value.slice(expectedTargetPrefix.length)
-              : (value.split(':').pop() ?? '');
-            if (alias && targetModel && sourceModels.includes(targetModel)) {
-              nextRows.push({ alias, targetModel });
+            // Strict: only accept a composed target of *this* source; no
+            // `split(':').pop()` fallback that could hydrate a bogus row.
+            if (isValidAliasName(alias) && value.startsWith(expectedTargetPrefix)) {
+              const targetModel = value.slice(expectedTargetPrefix.length);
+              if (targetModel.length > 0 && modelSet.has(targetModel)) {
+                nextRows.push({ alias, targetModel });
+              }
             }
           } else if (!key.includes('/')) {
             bare.push(key);
@@ -73,6 +119,8 @@ export function SourceAliasesEditor({
         }
         setRows(nextRows);
         setLegacyNames(bare);
+        // Authoritative report: exactly once per hydration run.
+        onAliasesChangeRef.current(toReportedEdits(nextRows));
       } catch {
         if (!cancelled) setLoadFailed(true);
       } finally {
@@ -82,27 +130,12 @@ export function SourceAliasesEditor({
     return () => {
       cancelled = true;
     };
-  }, [sourceId, sourceModels]);
+  }, [sourceId, modelsKey]);
 
-  /** A row is reportable when its alias name is valid and a target is picked. */
-  const reportable = useCallback((row: SourceAliasEdit) => {
-    const alias = row.alias.trim();
-    return (
-      alias.length > 0 &&
-      !alias.includes('/') &&
-      !alias.includes(':') &&
-      !RESERVED_ALIAS_NAMES.has(alias) &&
-      row.targetModel.length > 0
-    );
+  const commit = useCallback((next: SourceAliasEdit[]) => {
+    setRows(next);
+    onAliasesChangeRef.current(toReportedEdits(next));
   }, []);
-
-  const commit = useCallback(
-    (next: SourceAliasEdit[]) => {
-      setRows(next);
-      onAliasesChange(next.filter(reportable));
-    },
-    [onAliasesChange, reportable],
-  );
 
   const addRow = useCallback(
     () => commit([...rows, { alias: '', targetModel: '' }]),

@@ -133,4 +133,103 @@ describe('SourceAliasesEditor', () => {
     await waitFor(() => expect(screen.getByDisplayValue('glm')).toBeTruthy(), { timeout: 3000 });
     expect(screen.queryByText(/旧格式别名/)).toBeNull();
   });
+
+  it('reports hydrated rows after load without a user edit', async () => {
+    server.use(
+      http.get(`${gateway}/api/model-aliases`, () =>
+        HttpResponse.json({ modelAliases: { 'novay/glm': TARGET_GL } }),
+      ),
+    );
+    const reports: unknown[] = [];
+    renderEditor((edits) => reports.push(edits));
+    await waitFor(
+      () => {
+        const flat = reports.flat() as Array<{ alias?: string; targetModel?: string }>;
+        expect(flat.some((e) => e.alias === 'glm' && e.targetModel === 'glm-5.3')).toBe(true);
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it('does not refetch or clobber on a re-render with an equal-content model list', async () => {
+    let calls = 0;
+    server.use(
+      http.get(`${gateway}/api/model-aliases`, () => {
+        calls += 1;
+        return HttpResponse.json({ modelAliases: { 'novay/glm': TARGET_GL } });
+      }),
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <SourceAliasesEditor
+        sourceId="novay"
+        sourceLabel="NovaWay"
+        sourceModels={['glm-5.3', 'qwen-8b']}
+        onAliasesChange={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByDisplayValue('glm')).toBeTruthy(), { timeout: 3000 });
+    expect(calls).toBe(1);
+
+    // Edit the hydrated row in place.
+    const input = screen.getByDisplayValue('glm');
+    await user.clear(input);
+    await user.type(input, 'gpt');
+    expect(screen.getByDisplayValue('gpt')).toBeTruthy();
+
+    // NEW array identity, identical content; NEW inline callback identity.
+    rerender(
+      <SourceAliasesEditor
+        sourceId="novay"
+        sourceLabel="NovaWay"
+        sourceModels={['glm-5.3', 'qwen-8b']}
+        onAliasesChange={() => {}}
+      />,
+    );
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Content-keyed effect: no refetch, and the in-progress edit is untouched.
+    expect(calls).toBe(1);
+    expect(screen.getByDisplayValue('gpt')).toBeTruthy();
+  });
+
+  it('ignores invalid alias names during hydration', async () => {
+    server.use(
+      http.get(`${gateway}/api/model-aliases`, () =>
+        HttpResponse.json({
+          modelAliases: {
+            'novay/bad/name': TARGET_GL,
+            'novay/auto': 'custom:novay:qwen-8b',
+          },
+        }),
+      ),
+    );
+    renderEditor();
+    // The add button renders only after hydration completes; wait for it.
+    await screen.findByRole('button', { name: /添加别名/ }, { timeout: 3000 });
+    expect(screen.queryByDisplayValue('bad/name')).toBeNull();
+    expect(screen.queryByDisplayValue('auto')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('trims alias names when reporting', async () => {
+    const reports: unknown[] = [];
+    renderEditor((edits) => reports.push(edits));
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: /添加别名/ }));
+    await user.type(screen.getByPlaceholderText(/别名名/), ' glm ');
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    select.value = TARGET_GL;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await waitFor(
+      () => {
+        const flat = reports.flat() as Array<{ alias?: string; targetModel?: string }>;
+        expect(flat.some((e) => e.alias === 'glm' && e.targetModel === 'glm-5.3')).toBe(true);
+      },
+      { timeout: 3000 },
+    );
+    const flat = reports.flat() as Array<{ alias?: string }>;
+    expect(flat.some((e) => e.alias === ' glm ')).toBe(false);
+  });
 });
