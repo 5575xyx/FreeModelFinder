@@ -29,17 +29,10 @@ import { StatCard } from './StatCard';
 import { ModelChangesBanner } from './ModelChangesBanner';
 import { ModelCleanupLogPanel } from './ModelCleanupLogPanel';
 import { ClineAccountsPanel } from './ClineAccountsPanel';
-import { SourceAliasesEditor } from './SourceAliasesEditor';
 import { ModelMultiSelect, type ModelOption } from './ModelMultiSelect';
 import { SegmentedTabs, type SegmentedItem } from './SegmentedTabs';
 import { classNames, copyToClipboard, GATEWAY, withUiHeaders } from '../lib/utils';
 import { modelValue } from '../lib/models';
-import { commitCustomAliasSave } from '../lib/customAliasSave';
-import {
-  findLegacyBareAliases,
-  type SourceAliasEdit,
-  type SourceChanges,
-} from '../lib/sourceAliases';
 import { SETTINGS_PROVIDERS, providerHintKey, providerLabelKey } from '../lib/platforms';
 import { useI18n } from '../i18n';
 
@@ -645,15 +638,6 @@ export function SettingsView({
 
   const [customSectionOpen, setCustomSectionOpen] = useState(true);
   const [customSources, setCustomSources] = useState<CustomSourceDef[]>([]);
-  const [customAliases, setCustomAliases] = useState<Record<string, SourceAliasEdit[]>>({});
-  // Source ids deleted this session (whose editors have unmounted). Folded into
-  // the alias rewrite as an empty namespace so their `sourceId/*` entries are
-  // stripped on save (design §2).
-  const [removedSourceIds, setRemovedSourceIds] = useState<string[]>([]);
-  const [globalAliases, setGlobalAliases] = useState<Record<string, string>>({});
-  // Latches once the Custom tab has been opened so its editors stay mounted
-  // (preserving in-progress edits) while other tabs pay no alias round-trips.
-  const [customTabVisited, setCustomTabVisited] = useState(false);
   const [customKeyVisible, setCustomKeyVisible] = useState<Record<string, boolean>>({});
   const [customSaveState, setCustomSaveState] = useState<SaveState>('idle');
   const customBusyRef = useRef(false);
@@ -894,29 +878,6 @@ export function SettingsView({
     return () => clearTimeout(t);
   }, [toast]);
 
-  const refreshGlobalAliases = useCallback(async () => {
-    try {
-      const res = await fetch(`${GATEWAY}/api/model-aliases`, withUiHeaders());
-      if (!res.ok) return;
-      const json = (await res.json()) as { modelAliases?: Record<string, string> };
-      setGlobalAliases(json.modelAliases ?? {});
-    } catch {
-      /* the migration hint is best-effort; a failed read just hides it */
-    }
-  }, []);
-
-  useEffect(() => {
-    // The Custom tab owns the per-source editors and the migration hint; mount
-    // them and read the alias table on first visit. The latch keeps the editors
-    // mounted afterwards so a tab switch never discards in-progress edits.
-    if (tab === 'custom') {
-      setCustomTabVisited(true);
-      void refreshGlobalAliases();
-    }
-  }, [tab, refreshGlobalAliases]);
-
-  const legacyAliases = useMemo(() => findLegacyBareAliases(globalAliases), [globalAliases]);
-
   useEffect(() => {
     setPing({ state: 'idle' });
   }, [model]);
@@ -1124,21 +1085,11 @@ export function SettingsView({
       id = `${id}-${i}`;
     }
     setCustomSources((list) => [...list, { id, label: name, baseUrl: '', apiKey: '', models: [] }]);
-    // Re-adding a previously removed id: it is no longer a deletion.
-    setRemovedSourceIds((ids) => ids.filter((x) => x !== id));
     setCustomNewSourceName('');
   }
 
   function removeCustomSource(sourceId: string) {
     setCustomSources((list) => list.filter((s) => s.id !== sourceId));
-    setRemovedSourceIds((ids) => (ids.includes(sourceId) ? ids : [...ids, sourceId]));
-    // Drop this source's reported alias edits; if the same id is re-added, its
-    // freshly mounted editor re-hydrates and reports from scratch.
-    setCustomAliases((cur) => {
-      const next = { ...cur };
-      delete next[sourceId];
-      return next;
-    });
   }
 
   function patchCustomSource(sourceId: string, patch: Partial<CustomSourceDef>) {
@@ -1277,36 +1228,32 @@ export function SettingsView({
         enabled: true,
         sources: payloadSources,
       };
-      // Only sources whose alias editor reported this round are authoritative
-      // for their namespace; untouched sources keep every `sourceId/*` entry.
-      const reportedChanges: SourceChanges = customSources
-        .filter((s) => customAliases[s.id] !== undefined)
-        .map((s) => ({
-          id: s.id,
-          models: s.models.map((m) => m.id),
-          aliases: customAliases[s.id] ?? [],
-        }));
-      // Deleted sources are forced into the rewrite with an empty namespace so
-      // their `sourceId/*` entries are stripped (design §2). Dropped again if the
-      // id was re-added in the meantime.
-      const removedChanges: SourceChanges = removedSourceIds
-        .filter((id) => !customSources.some((s) => s.id === id))
-        .map((id) => ({ id, models: [], aliases: [] }));
-      const changes: SourceChanges = [...reportedChanges, ...removedChanges];
-      const commit = await commitCustomAliasSave({ changes, sourcesBody: body });
-      if (!commit.ok) {
-        setToast({
-          kind: 'error',
-          text:
-            commit.stage === 'sources'
-              ? t('settings.custom.aliasesSavedSourcesFailed', { msg: commit.detail ?? '' })
-              : t('settings.custom.saveFailed', { msg: commit.detail ?? '' }),
-        });
+      try {
+        const res = await fetch(
+          `${GATEWAY}/api/providers`,
+          withUiHeaders({
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+        );
+        if (!res.ok) {
+          let detail = '';
+          try {
+            const j = (await res.json()) as { error?: string };
+            if (j?.error) detail = `: ${j.error}`;
+          } catch {
+            /* ignore */
+          }
+          throw new Error(`sources save HTTP ${res.status}${detail}`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setToast({ kind: 'error', text: t('settings.custom.saveFailed', { msg }) });
         setCustomSaveState('error');
         setTimeout(() => setCustomSaveState('idle'), 1800);
         return;
       }
-      setRemovedSourceIds([]);
       const pendingKeys = customSources
         .map((s) => ({
           sourceId: s.id,
@@ -1340,7 +1287,6 @@ export function SettingsView({
       setToast({ kind: 'success', text: t('settings.custom.saved') });
       setCustomSaveState('saved');
       setTimeout(() => setCustomSaveState('idle'), 1600);
-      void refreshGlobalAliases();
       try {
         const refreshed = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
           (r) => r.json() as Promise<ConfigRes>,
@@ -2876,13 +2822,6 @@ export function SettingsView({
         </button>
         {customSectionOpen && (
           <div className="space-y-4 rounded-lg border border-border bg-surface p-4 shadow-sm">
-            {legacyAliases.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {t('settings.custom.legacyAliasesHint', {
-                  names: legacyAliases.map((r) => r.alias).join(', '),
-                })}
-              </p>
-            )}
             {customSources.length === 0 ? (
               <div className="rounded-md border border-dashed border-border bg-surface-muted/30 px-3 py-4 text-center text-xs text-muted-foreground">
                 {t('settings.custom.empty')}
@@ -3271,17 +3210,6 @@ export function SettingsView({
                           </button>
                         </div>
                       </div>
-
-                      {customTabVisited && (
-                        <SourceAliasesEditor
-                          sourceId={src.id}
-                          sourceLabel={src.label}
-                          sourceModels={src.models.map((m) => m.id)}
-                          onAliasesChange={(edits) =>
-                            setCustomAliases((cur) => ({ ...cur, [src.id]: edits }))
-                          }
-                        />
-                      )}
                     </li>
                   );
                 })}

@@ -71,16 +71,37 @@ describe('SettingsView', () => {
 
   it('main save also flushes pending source key drafts', async () => {
     const writes: Array<Record<string, unknown>> = [];
+    const aliasWrites: Array<Record<string, unknown>> = [];
     server.use(
       http.get(`${gateway}/api/config`, () => HttpResponse.json(configPayload)),
       http.post(`${gateway}/api/providers`, async ({ request }) => {
         writes.push((await request.json()) as Record<string, unknown>);
         return HttpResponse.json({ ok: true });
       }),
+      // The alias table already holds a source-scoped entry; saving the
+      // sources must not rewrite it (alias editing moved to the Models page).
+      http.get(`${gateway}/api/model-aliases`, () =>
+        HttpResponse.json({
+          modelAliases: { 'fixture-source/glm': 'custom:fixture-source:custom-model' },
+        }),
+      ),
+      http.post(`${gateway}/api/model-aliases`, async ({ request }) => {
+        aliasWrites.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ ok: true, modelAliases: {} });
+      }),
     );
     const user = userEvent.setup();
     render(<SettingsView />);
+
+    // Configure the source from its own tab, where the old alias editor lived.
+    await user.click(await screen.findByRole('tab', { name: '自定义' }));
     const sourceKey = await screen.findByPlaceholderText(/粘贴 API Key（本地无鉴权可留空）/);
+    const sourceCard = sourceKey.closest('li');
+    expect(sourceCard).not.toBeNull();
+    // The source card hosts no per-source alias editor any more.
+    expect(within(sourceCard as HTMLElement).queryByText(/别名名不能含/)).toBeNull();
+    expect(within(sourceCard as HTMLElement).queryByPlaceholderText('别名名（如 glm）')).toBeNull();
+
     await user.type(sourceKey, 'flush-me-key');
     const mainSave = await screen.findByRole(
       'button',
@@ -98,6 +119,9 @@ describe('SettingsView', () => {
       provider: 'custom',
       appendSourceKeys: { sourceId: 'fixture-source', keys: ['flush-me-key'] },
     });
+    // Saving sources touches only /api/providers — no /api/model-aliases POST,
+    // even though the table already has an entry for this source.
+    expect(aliasWrites).toHaveLength(0);
   });
 
   it('adds a key draft and saves with appendKeys', async () => {
