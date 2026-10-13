@@ -191,6 +191,45 @@ describe('SourceAliasesEditor', () => {
     expect(screen.getByDisplayValue('gpt')).toBeTruthy();
   });
 
+  it('does not clobber in-progress edits when the source model list changes', async () => {
+    let calls = 0;
+    server.use(
+      http.get(`${gateway}/api/model-aliases`, () => {
+        calls += 1;
+        return HttpResponse.json({ modelAliases: { 'novay/glm': TARGET_GL } });
+      }),
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <SourceAliasesEditor
+        sourceId="novay"
+        sourceModels={['glm-5.3', 'qwen-8b']}
+        onAliasesChange={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByDisplayValue('glm')).toBeTruthy(), { timeout: 3000 });
+    expect(calls).toBe(1);
+
+    // User is mid-edit on an alias row.
+    const input = screen.getByDisplayValue('glm');
+    await user.clear(input);
+    await user.type(input, 'renamed');
+    expect(screen.getByDisplayValue('renamed')).toBeTruthy();
+
+    // A model is added to the source: content of sourceModels genuinely changes.
+    rerender(
+      <SourceAliasesEditor
+        sourceId="novay"
+        sourceModels={['glm-5.3', 'qwen-8b', 'new-model']}
+        onAliasesChange={() => {}}
+      />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Hydration is per-source: no refetch, and the in-progress edit survives.
+    expect(calls).toBe(1);
+    expect(screen.getByDisplayValue('renamed')).toBeTruthy();
+  });
+
   it('ignores invalid alias names during hydration', async () => {
     server.use(
       http.get(`${gateway}/api/model-aliases`, () =>
