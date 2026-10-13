@@ -572,3 +572,131 @@ describe('/api/model-aliases', () => {
     assert.deepEqual(get.json(), { modelAliases: {} });
   });
 });
+
+// Source-scoped alias names carry a '/' ('novaway/glm') to scope the alias to a
+// source in the UI. The existing machinery must stay '/'-compatible end to
+// end: validateModelAliases only forbids ':' (config/aliases.ts), resolveModel
+// hits the alias table verbatim before any ':' parsing, and the allowlist stays
+// keyed on composed ids. Pins this so Tasks 3/4 can build on it.
+describe('/api/model-aliases with source-scoped (slashed) alias names', () => {
+  it('round-trips a slashed alias name through POST/GET', async () => {
+    const app = await appWith(baseConfig());
+
+    const post = await app.inject({
+      method: 'POST',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+      payload: { modelAliases: { 'novaway/glm': 'custom:novaway:glm-5.3' } },
+    });
+    assert.equal(post.statusCode, 200, 'a slashed alias name must be legal today');
+    assert.deepEqual(post.json(), {
+      ok: true,
+      modelAliases: { 'novaway/glm': 'custom:novaway:glm-5.3' },
+    });
+
+    const get = await app.inject({
+      method: 'GET',
+      url: '/api/model-aliases',
+      headers: localUiHeaders,
+    });
+    assert.equal(get.statusCode, 200);
+    assert.deepEqual(get.json(), { modelAliases: { 'novaway/glm': 'custom:novaway:glm-5.3' } });
+  });
+
+  it('routes a request for the slashed alias to the composed target and echoes it back', async () => {
+    // No ':' means the alias-table lookup (registry.ts) runs verbatim and
+    // before the source-prefix parser, so 'novaway/glm' reaches the alias
+    // table — and the alias is the name the response must echo.
+    const config = baseConfig();
+    config.modelAliases = { 'novaway/glm': 'custom:novaway:glm-5.3' };
+    const app = await appWith(config, [
+      {
+        // provider-native id (no 'custom:' prefix); the alias target is the
+        // composed form the UI emits, matching ModelInfo convention.
+        id: 'novaway:glm-5.3',
+        provider: 'custom',
+        displayName: 'GLM 5.3',
+        free: true,
+      },
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'novaway/glm', messages: [{ role: 'user', content: 'hi' }] },
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { model: string };
+    assert.equal(body.model, 'novaway/glm', 'toClientFacingModel must echo the alias name');
+
+    // The echo must be driven by the alias-table reverse lookup, not by the
+    // fake provider: asking for the composed id directly returns the alias.
+    const byRealId = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'custom:novaway:glm-5.3', messages: [{ role: 'user', content: 'hi' }] },
+    });
+    assert.equal(byRealId.statusCode, 200);
+    assert.equal(byRealId.json().model, 'novaway/glm');
+  });
+
+  it('does not let a slashed alias name leak into auto allowlist matching', async () => {
+    // The gateway auto-route test lives in gateway-allowlist.test.ts; pin the
+    // same invariant from this file's fixtures: a restricted key's allowlist
+    // keeps matching on composed ids, so a slashed alias name pointing at the
+    // same model neither grants nor revokes access.
+    const config = baseConfig();
+    config.modelAliases = { 'novaway/glm': 'custom:novaway:glm-5.3' };
+    config.gateway = {
+      requireAuth: true,
+      keys: [
+        { id: 'k1', key: 'test-key', createdAt: 0, modelAllowlist: ['custom:novaway:glm-5.3'] },
+      ],
+    };
+    config.autoRoute = { enabled: true, strategy: 'capability' };
+    // ids are provider-native (no 'custom:' prefix); composeModelId adds it.
+    const autoCatalog = [
+      {
+        id: 'novaway:glm-5.3',
+        provider: 'custom' as const,
+        displayName: 'GLM 5.3',
+        free: true,
+      },
+      { id: 'fx:plain', provider: 'custom' as const, displayName: 'Plain', free: true },
+    ];
+    // `auto` resolution reads modelsCache, which the stubbed listAllModels never fills.
+    // Populate it the same way gateway-allowlist.test.ts does so pickAutoModel can
+    // see the catalog and the allowlist check runs against the composed ids.
+    const app = await appWith(config, autoCatalog, (registry) => {
+      const cache = registry as unknown as { modelsCache: unknown; cacheAt: number };
+      cache.modelsCache = {
+        models: autoCatalog,
+        succeededProviders: ['custom' as const],
+        failedProviders: [],
+      };
+      cache.cacheAt = Date.now();
+    });
+
+    const headers = { authorization: 'Bearer test-key' };
+    // The alias resolves to a model on the allowlist → 200.
+    const ok = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers,
+      payload: { model: 'novaway/glm', messages: [{ role: 'user', content: 'hi' }] },
+    });
+    assert.equal(ok.statusCode, 200, JSON.stringify(ok.json()));
+    assert.equal(ok.json().model, 'novaway/glm');
+
+    // The slashed alias name itself is NOT an allowlist entry: the composed
+    // auto pick still matches by the composed id, not by alias-name strings.
+    const auto = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers,
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }] },
+    });
+    assert.equal(auto.statusCode, 200, JSON.stringify(auto.json()));
+    assert.equal(auto.json().model, 'novaway/glm');
+  });
+});
