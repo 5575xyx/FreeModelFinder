@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ModelAliasInput } from '../ModelAliasInput';
+import { AliasConflictError } from '../../lib/saveAlias';
 
 const TARGET = 'custom:novay:glm-5.3';
 
@@ -117,6 +118,23 @@ describe('ModelAliasInput', () => {
     expect(onSave).toHaveBeenCalledWith(TARGET, 'glm');
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('boom');
+  });
+
+  it('renders the specific conflict message when onSave rejects with an alias conflict', async () => {
+    const onSave = vi.fn(async () => {
+      throw new AliasConflictError({
+        key: 'finder.alias.error.taken',
+        params: { name: 'shorty', model: 'other:model' },
+      });
+    });
+    renderInput({ onSave });
+    const user = userEvent.setup();
+    await user.type(screen.getByPlaceholderText(/nemotron/), 'shorty');
+    await user.keyboard('{Enter}');
+    const alert = await screen.findByRole('alert');
+    // The specific "taken by <model>" copy, not the generic save-failure text.
+    expect(alert.textContent).toContain('other:model');
+    expect(alert.textContent).not.toContain('保存失败');
   });
 
   it('restores the original value and clears the error on Escape without saving', async () => {

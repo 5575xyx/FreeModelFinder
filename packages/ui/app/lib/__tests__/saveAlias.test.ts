@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { gateway, server } from '../../../test/server';
-import { saveAlias } from '../saveAlias';
+import { AliasConflictError, saveAlias } from '../saveAlias';
 
 const ALIASES_URL = `${gateway}/api/model-aliases`;
 
@@ -81,6 +81,23 @@ describe('saveAlias', () => {
 
     expect(posted).toHaveLength(1);
     expect(posted[0]).toEqual({ gpt: target });
+  });
+
+  it('rejects instead of silently overwriting a name already owned by another target', async () => {
+    // The caller's local map may be stale (initial GET failed, sign-in just
+    // happened, or the CLI added this alias out-of-band): the fresh table is
+    // the authority, and stealing `shorty` from `other:model` must not POST.
+    const { posted, current } = useMutableAliasTable({ shorty: 'other:model' });
+
+    const rejection = saveAlias('openrouter:gpt-4o-mini', 'shorty');
+    await expect(rejection).rejects.toBeInstanceOf(AliasConflictError);
+    await expect(rejection).rejects.toMatchObject({
+      name: 'AliasConflictError',
+      aliasError: { key: 'finder.alias.error.taken' },
+    });
+
+    expect(posted).toHaveLength(0);
+    expect(current()).toEqual({ shorty: 'other:model' });
   });
 
   it('rejects with the server error when the POST is rejected', async () => {

@@ -124,6 +124,35 @@ describe('SettingsView', () => {
     expect(aliasWrites).toHaveLength(0);
   });
 
+  it('surfaces the failure toast when the custom sources POST is rejected', async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${gateway}/api/config`, () => HttpResponse.json(configPayload)),
+      http.post(`${gateway}/api/providers`, async ({ request }) => {
+        writes.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ error: 'quota exceeded' }, { status: 500 });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsView aliases={{}} />);
+
+    await user.click(await screen.findByRole('tab', { name: '自定义' }));
+    const mainSave = await screen.findByRole(
+      'button',
+      { name: '保存自定义模型' },
+      { timeout: 5000 },
+    );
+    await user.click(mainSave);
+
+    // The sources POST really was attempted (so the toast is not unrelated).
+    await waitFor(() => expect(writes[0]).toMatchObject({ provider: 'custom' }));
+    // Failure-specific copy — `自定义模型已保存` (success) cannot contain it.
+    const toast = await screen.findByText(/保存自定义模型失败/);
+    expect(toast.textContent).toContain('保存自定义模型失败');
+    expect(toast.textContent).toContain('quota exceeded');
+    expect(screen.queryByText('自定义模型已保存')).toBeNull();
+  });
+
   it('adds a key draft and saves with appendKeys', async () => {
     const writes: Array<Record<string, unknown>> = [];
     server.use(

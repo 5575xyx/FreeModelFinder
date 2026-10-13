@@ -13,8 +13,25 @@
  * through the returned promise.
  */
 
-import { applyAliasEdit } from './modelAliases';
+import { applyAliasEdit, validateAliasName, type AliasNameError } from './modelAliases';
 import { GATEWAY, withUiHeaders } from './utils';
+
+/**
+ * Thrown when the freshly fetched alias table already assigns the requested
+ * name to a DIFFERENT model. `saveAlias` refuses to write in that case, so a
+ * caller whose own alias map was stale (failed initial GET, out-of-band CLI
+ * edit, post-sign-in refresh) can render the specific inline conflict message
+ * instead of silently overwriting the other model's alias.
+ */
+export class AliasConflictError extends Error {
+  readonly aliasError: AliasNameError;
+
+  constructor(aliasError: AliasNameError) {
+    super(aliasError.key);
+    this.name = 'AliasConflictError';
+    this.aliasError = aliasError;
+  }
+}
 
 async function errorDetail(res: Response): Promise<string> {
   try {
@@ -31,6 +48,12 @@ async function commitAliasEdit(target: string, name: string): Promise<Record<str
   if (!getRes.ok) throw new Error(await errorDetail(getRes));
   const base =
     ((await getRes.json()) as { modelAliases?: Record<string, string> }).modelAliases ?? {};
+
+  // The caller validated against its own (possibly stale) map. Re-validate
+  // against the table that is actually on the server right now: if the name
+  // already belongs to another model, refuse rather than silently steal it.
+  const conflict = validateAliasName(name, target, base);
+  if (conflict) throw new AliasConflictError(conflict);
 
   const postRes = await fetch(
     `${GATEWAY}/api/model-aliases`,

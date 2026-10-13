@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } f
 import { X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { validateAliasName, type AliasNameError } from '../lib/modelAliases';
+import { AliasConflictError } from '../lib/saveAlias';
 import { classNames } from '../lib/utils';
 
 export interface ModelAliasInputProps {
@@ -60,10 +61,17 @@ export function ModelAliasInput({
       try {
         await onSave(target, name);
       } catch (e) {
-        setError({
-          key: 'finder.alias.error.saveFailed',
-          params: { detail: e instanceof Error ? e.message : String(e) },
-        });
+        // A stale local map can make the server-side re-validation reject with
+        // a specific conflict: render that inline message, not a generic
+        // save failure.
+        if (e instanceof AliasConflictError) {
+          setError(e.aliasError);
+        } else {
+          setError({
+            key: 'finder.alias.error.saveFailed',
+            params: { detail: e instanceof Error ? e.message : String(e) },
+          });
+        }
       } finally {
         setSaving(false);
       }

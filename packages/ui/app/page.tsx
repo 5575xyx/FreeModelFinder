@@ -177,19 +177,44 @@ export default function Home() {
     };
   }, []);
 
+  // `null` authStatus (older gateway, or the probe has not resolved yet) counts
+  // as "no sign-in needed" — only an explicit auth-required-unauthenticated
+  // status gates the alias fetch.
+  const needsSignin = !!authStatus?.authRequired && !authStatus.authenticated;
+
+  /**
+   * Fetches the global alias table used by the model cards and the settings
+   * pickers. Supplemental and non-blocking: a failure just leaves the UI
+   * without alias names. `isCancelled` lets an effect suppress a late state
+   * write after unmount.
+   */
+  const refreshAliases = useCallback(async (isCancelled: () => boolean = () => false) => {
+    try {
+      const response = await fetch(`${GATEWAY}/api/model-aliases`, withUiHeaders());
+      if (!response.ok) return;
+      const payload = (await response.json()) as { modelAliases?: Record<string, string> };
+      if (!isCancelled()) setAliases(payload.modelAliases ?? {});
+    } catch {
+      // Supplemental: a failure leaves the cards without their alias names.
+    }
+  }, []);
+
+  // Runs on mount for non-auth gateways, and again whenever the sign-in
+  // requirement flips to satisfied. While sign-in is required every `/api/*`
+  // route 401s, so skip the fetch until a session exists.
+  useEffect(() => {
+    if (needsSignin) return;
+    let cancelled = false;
+    void refreshAliases(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [needsSignin, refreshAliases]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       setModelLoading(true);
-      // Alias table for the model cards: supplemental, never blocks startup,
-      // and a failure just leaves the cards without their alias names.
-      void fetch(`${GATEWAY}/api/model-aliases`, withUiHeaders())
-        .then(async (response) => {
-          if (!response.ok) return;
-          const payload = (await response.json()) as { modelAliases?: Record<string, string> };
-          if (!cancelled) setAliases(payload.modelAliases ?? {});
-        })
-        .catch(() => undefined);
       try {
         const config = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
           async (response) => {
@@ -584,8 +609,6 @@ export default function Home() {
     title: t(PAGE_COPY_KEYS[tab].title),
     description: t(PAGE_COPY_KEYS[tab].description),
   };
-
-  const needsSignin = !!authStatus?.authRequired && !authStatus.authenticated;
 
   if (needsSignin) {
     return (

@@ -76,6 +76,37 @@ describe('management panel sign-in gate', () => {
     expect(await screen.findByRole('navigation')).toBeInTheDocument();
     expect(await screen.findByText('管理面板登录')).toBeInTheDocument();
   });
+
+  it('refetches the alias table after a successful sign-in', async () => {
+    // Sign-in gates every /api/* route, including /api/model-aliases, so the
+    // mount-time fetch is doomed to 401 on an auth-protected gateway. The table
+    // must be fetched again once the session exists.
+    let signedIn = false;
+    let aliasFetchAfterSignIn = false;
+    server.use(
+      http.get(statusUrl, () => HttpResponse.json({ authRequired: true, authenticated: signedIn })),
+      http.post(`${gateway}/api/admin/login`, () => {
+        signedIn = true;
+        return HttpResponse.json({ ok: true });
+      }),
+      http.get(`${gateway}/api/model-aliases`, () => {
+        if (!signedIn) return HttpResponse.json({ error: 'unauthorized' }, { status: 401 });
+        aliasFetchAfterSignIn = true;
+        return HttpResponse.json({ modelAliases: { shorty: 'openrouter:fixture-model' } });
+      }),
+    );
+    const user = userEvent.setup();
+    renderPanel();
+
+    expect(await screen.findByText('管理面板登录')).toBeInTheDocument();
+    expect(aliasFetchAfterSignIn).toBe(false);
+
+    await user.type(screen.getByLabelText('密码'), 'secret');
+    await user.click(screen.getByRole('button', { name: '登录' }));
+
+    expect(await screen.findByRole('navigation')).toBeInTheDocument();
+    await waitFor(() => expect(aliasFetchAfterSignIn).toBe(true));
+  });
 });
 
 describe('management password hint', () => {
