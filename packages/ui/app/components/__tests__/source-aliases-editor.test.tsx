@@ -230,4 +230,16 @@ describe('SourceAliasesEditor', () => {
     const flat = reports.flat() as Array<{ alias?: string }>;
     expect(flat.some((e) => e.alias === ' glm ')).toBe(false);
   });
+
+  it('does not report upward when the alias load fails', async () => {
+    // A failed load must NOT make this source an authoritative empty namespace,
+    // or a save would wipe `novay/*` under R1.
+    server.use(
+      http.get(`${gateway}/api/model-aliases`, () => new HttpResponse(null, { status: 500 })),
+    );
+    const reports: unknown[] = [];
+    renderEditor((edits) => reports.push(edits));
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy(), { timeout: 3000 });
+    expect(reports).toEqual([]);
+  });
 });

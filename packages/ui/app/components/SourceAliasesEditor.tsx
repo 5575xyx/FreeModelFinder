@@ -93,7 +93,7 @@ export function SourceAliasesEditor({
           if (!cancelled) setLoadFailed(true);
           return;
         }
-        const json = (await res.json().catch(() => ({}))) as {
+        const json = (await res.json()) as {
           modelAliases?: Record<string, string>;
         };
         if (cancelled) return;
@@ -110,7 +110,7 @@ export function SourceAliasesEditor({
             if (isValidAliasName(alias) && value.startsWith(expectedTargetPrefix)) {
               const targetModel = value.slice(expectedTargetPrefix.length);
               if (targetModel.length > 0 && modelSet.has(targetModel)) {
-                nextRows.push({ alias, targetModel });
+                nextRows.push({ alias: alias.trim(), targetModel });
               }
             }
           } else if (!key.includes('/')) {
