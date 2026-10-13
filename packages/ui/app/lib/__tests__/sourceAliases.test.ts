@@ -1,0 +1,54 @@
+import { describe, expect, it } from 'vitest';
+import { deriveSourceAliases, findLegacyBareAliases } from '../sourceAliases';
+
+describe('deriveSourceAliases', () => {
+  it('writes edited alias rows as 来源id/别名 → composed target', () => {
+    const out = deriveSourceAliases({}, [
+      {
+        id: 'novaway',
+        models: ['glm-5.3', 'qwen-8b'],
+        aliases: [{ alias: 'glm', targetModel: 'glm-5.3' }],
+      },
+    ]);
+    expect(out).toEqual({ 'novaway/glm': 'custom:novaway:glm-5.3' });
+  });
+
+  it('strips 来源id/* entries pointing at models no longer in the source', () => {
+    const prev = {
+      'novaway/glm': 'custom:novaway:glm-5.3',
+      'novaway/old': 'custom:novaway:old-model',
+    };
+    // source novaway now only has glm-5.3 → old-model entry must be dropped
+    const out = deriveSourceAliases(prev, [{ id: 'novaway', models: ['glm-5.3'], aliases: [] }]);
+    expect(out).toEqual({ 'novaway/glm': 'custom:novaway:glm-5.3' });
+  });
+
+  it("preserves other sources' prefixed entries and bare legacy entries", () => {
+    const prev = {
+      'cpa/gpt': 'custom:cpa:gpt-mini',
+      legacyname: 'custom:cpa:gpt-mini', // bare, kept as-is
+    };
+    // only novaway is being saved this round; cpa + bare must survive
+    const out = deriveSourceAliases(prev, [{ id: 'novaway', models: ['glm-5.3'], aliases: [] }]);
+    expect(out['cpa/gpt']).toBe('custom:cpa:gpt-mini');
+    expect(out['legacyname']).toBe('custom:cpa:gpt-mini');
+    expect(Object.keys(out)).toHaveLength(2);
+  });
+
+  it('replaces a previous edit to the same alias row (no duplicate key)', () => {
+    const prev = { 'novaway/glm': 'custom:novaway:glm-5.3' };
+    const out = deriveSourceAliases(prev, [
+      {
+        id: 'novaway',
+        models: ['glm-5.3', 'qwen-8b'],
+        aliases: [{ alias: 'glm', targetModel: 'qwen-8b' }],
+      },
+    ]);
+    expect(out).toEqual({ 'novaway/glm': 'custom:novaway:qwen-8b' });
+  });
+
+  it('findLegacyBareAliases returns only prefix-less entries', () => {
+    const rows = findLegacyBareAliases({ 'novaway/glm': 'x', legacy1: 'y', legacy2: 'z' });
+    expect(rows.map((r) => r.alias).sort()).toEqual(['legacy1', 'legacy2']);
+  });
+});
