@@ -13,14 +13,21 @@ describe('deriveSourceAliases', () => {
     expect(out).toEqual({ 'novaway/glm': 'custom:novaway:glm-5.3' });
   });
 
-  it('strips 来源id/* entries pointing at models no longer in the source', () => {
+  it('clears the source namespace then writes edits; removed models are gone', () => {
     const prev = {
       'novaway/glm': 'custom:novaway:glm-5.3',
       'novaway/old': 'custom:novaway:old-model',
     };
-    // source novaway now only has glm-5.3 → old-model entry must be dropped
+    // novaway is in the rewrite set with no reported rows → whole namespace cleared.
     const out = deriveSourceAliases(prev, [{ id: 'novaway', models: ['glm-5.3'], aliases: [] }]);
-    expect(out).toEqual({ 'novaway/glm': 'custom:novaway:glm-5.3' });
+    expect(out).toEqual({});
+  });
+
+  it('deletes a still-valid alias when the editor reports no row for it', () => {
+    // glm-5.3 still exists, yet the user deleted the `glm` row → deletion is real.
+    const prev = { 'novaway/glm': 'custom:novaway:glm-5.3' };
+    const out = deriveSourceAliases(prev, [{ id: 'novaway', models: ['glm-5.3'], aliases: [] }]);
+    expect(out).toEqual({});
   });
 
   it("preserves other sources' prefixed entries and bare legacy entries", () => {

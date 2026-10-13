@@ -23,10 +23,15 @@ export type LegacyAliasRow = { alias: string; target: string };
  * Rebuild the global alias map from a freshly-fetched baseline
  * (`prevGlobal`) plus the per-source edits saved this round.
  *
- * For each source in `changes`:
- *  1. drop `change.id/*` entries whose composed target points at a model no
- *     longer in `change.models` (value form `custom:<id>:<model>`);
- *  2. write one entry per edited alias row.
+ * Each source in `changes` is authoritative for its own namespace:
+ *  1. delete *all* `change.id/*` entries from the baseline;
+ *  2. write one entry per edited alias row (`change.id/alias` →
+ *     `custom:<id>:<targetModel>`).
+ *
+ * Because the namespace is cleared wholesale, an alias whose model still
+ * exists but whose row the user removed is genuinely deleted, and a
+ * `来源id/*` entry pointing at a removed model cannot survive (its row can no
+ * longer be hydrated, so it is never written back).
  *
  * Prefixed entries of untouched sources and all bare legacy entries are
  * preserved.
@@ -39,14 +44,9 @@ export function deriveSourceAliases(
 
   for (const change of changes) {
     const prefix = `${change.id}/`;
-    const modelSet = new Set(change.models);
 
-    for (const [key, value] of Object.entries(out)) {
-      if (!key.startsWith(prefix)) continue;
-      const modelSegment = parseTargetModel(value, change.id);
-      if (modelSegment !== undefined && !modelSet.has(modelSegment)) {
-        delete out[key];
-      }
+    for (const key of Object.keys(out)) {
+      if (key.startsWith(prefix)) delete out[key];
     }
 
     for (const edit of change.aliases) {
@@ -55,14 +55,6 @@ export function deriveSourceAliases(
   }
 
   return out;
-}
-
-/** Extract the model segment from a `custom:<id>:<model>` value; undefined if the shape does not match. */
-function parseTargetModel(value: string, sourceId: string): string | undefined {
-  const expectedPrefix = `custom:${sourceId}:`;
-  if (!value.startsWith(expectedPrefix)) return undefined;
-  const model = value.slice(expectedPrefix.length);
-  return model.length > 0 ? model : undefined;
 }
 
 /** Return the prefix-less legacy entries (keys without `/`), for migration prompts. */
