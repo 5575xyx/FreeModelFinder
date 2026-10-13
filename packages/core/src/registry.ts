@@ -70,6 +70,39 @@ const PROVIDER_CTORS: Record<
 
 const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Per-provider ceiling for one catalog refresh.
+ *
+ * `listModels()` uses the raw `fetch`, which carries no application timeout, so
+ * a single upstream that accepts the connection and then goes quiet (a
+ * blackholed route — routine when a mainland host reaches overseas providers)
+ * would pin the whole fan-out until undici's ~5 minute default. A model page
+ * that hangs that long reads as "empty / loading forever". Past this window the
+ * provider is reported failed and its last known models are served from the
+ * snapshot instead.
+ */
+const PROVIDER_LIST_TIMEOUT_MS = 20_000;
+
+/** Reject `promise` once `ms` elapse. `label` is surfaced in failedProviders. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  if (!(ms > 0)) return promise;
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 /** Every provider id that may prefix a composed model id (ollama has no ctor). */
 const PROVIDER_PREFIXES: ReadonlySet<string> = new Set<string>([
   ...(Object.keys(PROVIDER_CTORS) as string[]),
@@ -130,6 +163,10 @@ export class ProviderRegistry {
   private instances = new Map<ProviderId, BaseProvider>();
   private modelsCache: ListAllModelsResult | null = null;
   private cacheAt = 0;
+  /** Shared in-flight refresh so concurrent callers fan out to providers once. */
+  private modelsInflight: Promise<ListAllModelsResult> | null = null;
+  /** Bumped by updateConfig so a refresh started under the old config cannot backfill the new cache. */
+  private refreshGeneration = 0;
   private autoRouter: AutoRouter;
   private quotaTracker = new QuotaTracker();
   private noticeBuffer: SwitchNotice[] = [];
@@ -140,6 +177,7 @@ export class ProviderRegistry {
     private readonly loadModelSnapshot: () => Promise<ModelSnapshot> = loadSnapshot,
     private readonly queueRetry: RetryOnQueueFullOptions = {},
     private readonly credentialRuntime?: CredentialRuntime,
+    private readonly providerListTimeoutMs: number = PROVIDER_LIST_TIMEOUT_MS,
   ) {
     this.autoRouter = new AutoRouter({
       getSettings: () => this.config.autoRoute,
@@ -237,6 +275,11 @@ export class ProviderRegistry {
       }
       this.instances.clear();
       this.modelsCache = null;
+      // Abandon any refresh started under the previous config: its provider
+      // instances are being torn down above, and its result must not repopulate
+      // the cache we just invalidated.
+      this.modelsInflight = null;
+      this.refreshGeneration += 1;
     }
   }
 
@@ -323,14 +366,52 @@ export class ProviderRegistry {
     });
   }
 
-  async listAllModels(force = false): Promise<ListAllModelsResult> {
-    if (!force && this.modelsCache && Date.now() - this.cacheAt < MODELS_CACHE_TTL_MS) {
+  async listAllModels(
+    force = false,
+    opts: { revalidate?: boolean } = {},
+  ): Promise<ListAllModelsResult> {
+    if (!force && this.hasFreshModelsCache()) {
+      return this.modelsCache!;
+    }
+    // Stale-while-revalidate: with any catalog in hand, answer immediately and
+    // refresh in the background. A stalled upstream must not leave the model
+    // page blank while the refresh is still in flight. Callers that must not
+    // act on an older catalog (the snapshot watcher) pass `revalidate` to await
+    // the refresh instead of being handed stale data.
+    if (!force && this.modelsCache && !opts.revalidate) {
+      void this.refreshModelsOnce().catch(() => undefined);
       return this.modelsCache;
     }
+    return this.refreshModelsOnce();
+  }
+
+  private hasFreshModelsCache(): boolean {
+    return this.modelsCache !== null && Date.now() - this.cacheAt < MODELS_CACHE_TTL_MS;
+  }
+
+  /** Run (or join) the single in-flight provider fan-out. */
+  private refreshModelsOnce(): Promise<ListAllModelsResult> {
+    if (this.modelsInflight) return this.modelsInflight;
+    const run = this.refreshModels().finally(() => {
+      if (this.modelsInflight === run) this.modelsInflight = null;
+    });
+    this.modelsInflight = run;
+    return run;
+  }
+
+  private async refreshModels(): Promise<ListAllModelsResult> {
+    const generation = this.refreshGeneration;
     await this.warmCredentials().catch(() => undefined);
     const enabled = this.listEnabledProviders();
+    const timeoutMs = this.providerListTimeoutMs;
     const results = await Promise.allSettled(
-      enabled.map(async (id) => this.getProvider(id).listModels()),
+      enabled.map((id) =>
+        withTimeout(
+          Promise.resolve().then(() => this.getProvider(id).listModels()),
+          timeoutMs,
+          `${id} listModels`,
+        ),
+      ),
     );
     const models: ModelInfo[] = [];
     const succeededProviders: ProviderId[] = [];
@@ -370,8 +451,10 @@ export class ProviderRegistry {
       succeededProviders,
       failedProviders,
     };
-    this.modelsCache = result;
-    this.cacheAt = Date.now();
+    if (generation === this.refreshGeneration) {
+      this.modelsCache = result;
+      this.cacheAt = Date.now();
+    }
     return result;
   }
 
@@ -381,8 +464,8 @@ export class ProviderRegistry {
    * Never calls provider listModels().
    */
   async peekLocalModels(): Promise<ModelInfo[]> {
-    if (this.modelsCache && Date.now() - this.cacheAt < MODELS_CACHE_TTL_MS) {
-      return [...this.modelsCache.models];
+    if (this.hasFreshModelsCache()) {
+      return [...this.modelsCache!.models];
     }
     const snapshot = await this.loadModelSnapshot();
     return snapshot.models.map((m) => ({

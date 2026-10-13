@@ -66,6 +66,15 @@ export class ModelWatcher {
     this.status.running = false;
   }
 
+  /**
+   * Refresh the catalog and record a new snapshot.
+   *
+   * Passes `revalidate` so a stale catalog is awaited rather than served stale:
+   * the registry's stale-while-revalidate path answers immediately and refreshes
+   * in the background, and recording that older list as the new snapshot would
+   * freeze change detection — worst case it would read it as "these models were
+   * removed" and prune config references to models that are still live.
+   */
   async tick(force = false): Promise<ModelSnapshot | null> {
     if (this.inflight) {
       await this.inflight;
@@ -81,7 +90,9 @@ export class ModelWatcher {
           this.status.lastError = null;
           return;
         }
-        const { models, succeededProviders, failedProviders } = await reg.listAllModels(force);
+        const { models, succeededProviders, failedProviders } = await reg.listAllModels(force, {
+          revalidate: true,
+        });
         const { snapshot, diff, isInitial } = await recordSnapshot(
           models,
           Date.now(),

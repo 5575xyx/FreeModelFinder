@@ -49,6 +49,7 @@ import { modelAllowlistViolation, registerOpenAIRoutes } from './routes/openai.j
 import { registerAnthropicRoutes } from './routes/anthropic.js';
 import { registerGeminiRoutes } from './routes/gemini.js';
 import { ModelWatcher } from './watcher.js';
+import { catalogSignature } from './catalog-signature.js';
 import { recordRemovalCleanup, loadRemovalCleanupLog } from './removal-cleanup-log.js';
 import { registerOnboardingRoutes } from './onboarding.js';
 import {
@@ -1007,12 +1008,10 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
     app.get('/api/desktop/state', async () => {
       const cfg = getRegistry().getConfig();
       const { models, failedProviders } = await getRegistry().listAllModels();
-      const catalogSignature = JSON.stringify(
-        models.map((model) => [model.provider, model.id, model.displayName ?? '']),
-      );
-      if (opts.state.catalogSignature !== catalogSignature) {
+      const signature = catalogSignature(models);
+      if (opts.state.catalogSignature !== signature) {
         if (opts.state.catalogSignature !== undefined) opts.state.catalogRevision += 1;
-        opts.state.catalogSignature = catalogSignature;
+        opts.state.catalogSignature = signature;
       }
       const available = new Set(models.map((model) => composeModelId(model.provider, model.id)));
       const defaultModel = cfg.defaultModel;
