@@ -47,6 +47,7 @@ export {
   AutoRouter,
   parseRateLimitError,
   parseModelUnavailableError,
+  retryAfterSeconds,
   scoreModel,
   formatResetTime,
   formatModelId,

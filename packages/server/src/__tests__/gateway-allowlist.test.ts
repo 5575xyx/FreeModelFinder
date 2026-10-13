@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import {
   ProviderRegistry,
+  resetAutoPoolCursor,
   updateConfig,
   type AppConfig,
   type ChatResponse,
@@ -9,7 +10,7 @@ import {
   type ProviderId,
 } from '@freemodelfinder/core';
 import type { FastifyInstance } from 'fastify';
-import { keyModelAllowlist } from '../routes/openai.js';
+import { keyModelAllowlist, withinAllowlist } from '../routes/openai.js';
 import { createServer } from '../server.js';
 
 const apps: FastifyInstance[] = [];
@@ -53,6 +54,10 @@ async function appWithBaseline(gateway: AppConfig['gateway']): Promise<FastifyIn
 
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
+  // Sticky picks are keyed by the request's opening message, and these tests
+  // reuse the same one — so a pick made by an earlier test would otherwise be
+  // replayed here instead of a fresh automatic route.
+  resetAutoPoolCursor();
 });
 
 // No `model` here: the fake provider echoes the id it was actually asked for
@@ -290,6 +295,28 @@ describe('keyModelAllowlist', () => {
   });
 });
 
+describe('withinAllowlist', () => {
+  const allow = keyModelAllowlist(key(['custom:fx:fast']));
+
+  it('leaves an unrestricted caller unrestricted', () => {
+    assert.equal(withinAllowlist('custom:fx:plain', null, []), true);
+  });
+
+  it('matches a bare catalog id against its composed allowlist entry', () => {
+    assert.ok(allow, 'one valid entry must still restrict the key');
+    assert.equal(withinAllowlist('fx:fast', allow, CATALOG), true);
+    assert.equal(withinAllowlist('fx:plain', allow, CATALOG), false);
+  });
+
+  it('compares a non-catalog id as-is, case-insensitively', () => {
+    // An id configured straight into autoRoute.visionModel is not in the
+    // catalog, so it cannot be composed — the literal value is the id.
+    assert.ok(allow);
+    assert.equal(withinAllowlist('CUSTOM:fx:fast', allow, []), true);
+    assert.equal(withinAllowlist('custom:fx:plain', allow, []), false);
+  });
+});
+
 describe('gateway key model allowlist', () => {
   it('leaves a key without a modelAllowlist fully unrestricted', async () => {
     const app = await appWith(baseConfig({ requireAuth: true, keys: [key()] }));
@@ -415,18 +442,111 @@ describe('gateway key model allowlist', () => {
     assert.equal(res.statusCode, 200);
   });
 
-  it('rejects automatic routing for a restricted key', async () => {
-    const app = await appWith(baseConfig({ requireAuth: true, keys: [key(['custom:fx:fast'])] }));
+  it('serves automatic routing for a restricted key, inside its allowlist', async () => {
+    // `auto` is a first-class model for every key. Refusing it would make every
+    // allowlisted key lose automatic routing, which is not what a model
+    // allowlist is for — instead the automatic pick itself is constrained to the
+    // list (buildFallbackChain / rankCandidates receive it).
+    const hooks = { dispatchLog: [] as string[] };
+    const app = await appWith(
+      autoRouteConfig({ requireAuth: true, keys: [key(['custom:fx:fast'])] }),
+      CATALOG,
+      undefined,
+      hooks,
+    );
 
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      headers: KEY_HEADERS,
-      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }] },
-    });
-    assert.equal(res.statusCode, 403);
-    const body = res.json() as { error: { code: string } };
-    assert.equal(body.error.code, 'model_not_allowed');
+    const res = await chat(app, 'auto');
+    assert.equal(res.statusCode, 200, JSON.stringify(res.json()));
+    const body = res.json() as { model?: string };
+    assert.equal(body.model, 'custom:fx:fast', 'the pick must be the only allowed model');
+    assert.deepEqual(hooks.dispatchLog, ['fx:fast']);
+  });
+
+  it('never picks outside a restricted key\'s allowlist when auto-routing', async () => {
+    // The catalog also holds openrouter:gpt-4o-mini, which is NOT on this key's
+    // list. With `fx:fast` cooling, `fx:plain` is the only eligible model — an
+    // unconstrained pick would happily reach for the openrouter model instead.
+    const hooks = { dispatchLog: [] as string[] };
+    const app = await appWith(
+      autoRouteConfig({
+        requireAuth: true,
+        keys: [key(['custom:fx:fast', 'custom:fx:plain'])],
+      }),
+      CATALOG,
+      coolDown('custom:fx:fast'),
+      hooks,
+    );
+
+    const res = await chat(app, 'auto');
+    assert.equal(res.statusCode, 200, JSON.stringify(res.json()));
+    assert.deepEqual(hooks.dispatchLog, ['fx:plain']);
+    assert.equal(
+      (res.json() as { fmf_auto_route?: { picked?: string } }).fmf_auto_route?.picked,
+      'custom:fx:plain',
+    );
+  });
+
+  it('keeps the pool walk inside a restricted key\'s allowlist', async () => {
+    // No pre-request cooldown: `fx:fast` is picked, the provider 429s, and the
+    // whole-pool walk has to stay inside the list rather than stepping onto the
+    // openrouter model that `auto` would normally consider.
+    const hooks = { dispatchLog: [] as string[], rateLimitOnce: 'fx:fast' };
+    const app = await appWith(
+      autoRouteConfig({
+        requireAuth: true,
+        keys: [key(['custom:fx:fast', 'custom:fx:plain'])],
+      }),
+      CATALOG,
+      undefined,
+      hooks,
+    );
+
+    const res = await chat(app, 'auto');
+    assert.equal(res.statusCode, 200, JSON.stringify(res.json()));
+    assert.deepEqual(hooks.dispatchLog, ['fx:fast', 'fx:plain']);
+    assert.equal((res.json() as { model?: string }).model, 'custom:fx:plain');
+    assert.ok(!hooks.dispatchLog.includes('gpt-4o-mini'), 'the walk must not leave the list');
+  });
+
+  it('fails clearly when a restricted key\'s allowlist admits no model', async () => {
+    // The only allowed model is cooling, so `auto` has nothing legal to serve.
+    // It must NOT fall through to the first catalog model — that is the bypass.
+    const hooks = { dispatchLog: [] as string[] };
+    const app = await appWith(
+      autoRouteConfig({ requireAuth: true, keys: [key(['custom:fx:fast'])] }),
+      CATALOG,
+      coolDown('custom:fx:fast'),
+      hooks,
+    );
+
+    const res = await chat(app, 'auto');
+    assert.notEqual(res.statusCode, 200, 'nothing legal was eligible, so no 200');
+    assert.match(
+      JSON.stringify(res.json()),
+      /allowed list is available/,
+      'the failure must say the allowlist is the reason',
+    );
+    assert.deepEqual(hooks.dispatchLog, [], 'no model may be dispatched');
+  });
+
+  it('allows `default` when the default model is on the list, and refuses it otherwise', async () => {
+    // `default` is not automatic routing — it resolves to the configured default
+    // model, so it is checked like any other concrete model.
+    const withDefault = baseConfig({ requireAuth: true, keys: [key(['custom:fx:fast'])] });
+    withDefault.defaultModel = 'custom:fx:fast';
+    const appOk = await appWith(withDefault);
+    const ok = await chat(appOk, 'default');
+    assert.equal(ok.statusCode, 200, JSON.stringify(ok.json()));
+
+    const withoutDefault = baseConfig({ requireAuth: true, keys: [key(['custom:fx:plain'])] });
+    withoutDefault.defaultModel = 'custom:fx:fast';
+    const appDenied = await appWith(withoutDefault);
+    const denied = await chat(appDenied, 'default');
+    assert.equal(denied.statusCode, 403, JSON.stringify(denied.json()));
+    assert.equal(
+      (denied.json() as { error: { code: string } }).error.code,
+      'model_not_allowed',
+    );
   });
 
   it('keeps automatic routing working for an unrestricted key', async () => {

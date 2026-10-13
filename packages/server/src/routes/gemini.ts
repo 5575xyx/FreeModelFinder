@@ -4,13 +4,14 @@ import {
   composeModelId,
   geminiToChatRequest,
   parseRateLimitError,
+  retryAfterSeconds,
   type ChatRequest,
   type GeminiHttpRequest,
   type ProviderId,
   type ProviderRegistry,
   type SwitchNotice,
 } from '@freemodelfinder/core';
-import { keyModelAllowlist, resolveGatewayKey } from './openai.js';
+import { keyModelAllowlist, resolveGatewayKey, streamRetryAfter } from './openai.js';
 
 type GeminiRouteParams = { modelAction: string };
 type GeminiRouteRequest = FastifyRequest<{
@@ -47,14 +48,17 @@ async function handleGenerate(
   const pre = await router.preflight(chatReq.model, allowedModels);
   const notices: SwitchNotice[] = [];
   if (pre.switched) {
-    chatReq.model = pre.model.id;
+    // The substitute must be re-composed with ITS provider prefix: a bare
+    // catalog id (e.g. "agnes-3.0-flash") matches no resolveModel heuristic
+    // and would silently fall through to the openrouter default.
+    chatReq.model = composeModelId(pre.model.provider, pre.model.id);
     notices.push(pre.notice);
   }
 
   let attempt = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const { provider, modelId } = reg.resolveModel(chatReq.model);
+    const { provider, modelId } = reg.resolveModel(chatReq.model, { allowed: allowedModels });
     const dispatchReq: ChatRequest = { ...chatReq, model: modelId };
     try {
       const res = await provider.chat(dispatchReq);
@@ -119,11 +123,11 @@ async function handleStream(
   const pre = await router.preflight(chatReq.model, allowedModels);
   const preNotices: SwitchNotice[] = [];
   if (pre.switched) {
-    chatReq.model = pre.model.id;
+    chatReq.model = composeModelId(pre.model.provider, pre.model.id);
     preNotices.push(pre.notice);
   }
 
-  const { provider, modelId } = reg.resolveModel(chatReq.model);
+  const { provider, modelId } = reg.resolveModel(chatReq.model, { allowed: allowedModels });
   const dispatchReq: ChatRequest = { ...chatReq, model: modelId };
 
   reply.raw.writeHead(200, {
@@ -180,9 +184,9 @@ async function handleStream(
       router.rememberPreference(originalRequested);
     }
     const msg = err instanceof Error ? err.message : String(err);
-    reply.raw.write(
-      `data: ${JSON.stringify({ error: { message: msg, type: 'server_error' } })}\n\n`,
-    );
+    // The status line is already gone, so the hint must ride in the event body.
+    const error = { message: msg, type: 'server_error', ...streamRetryAfter(err) };
+    reply.raw.write(`data: ${JSON.stringify({ error })}\n\n`);
   } finally {
     reply.raw.end();
   }
@@ -198,13 +202,28 @@ export function registerGeminiRoutes(app: FastifyInstance, getRegistry: () => Pr
       }
       const { model, action } = parsed;
 
-      if (action === 'generateContent') {
-        return handleGenerate(req, reply, getRegistry, model);
+      try {
+        if (action === 'generateContent') {
+          return await handleGenerate(req, reply, getRegistry, model);
+        }
+        if (action === 'streamGenerateContent') {
+          return await handleStream(req, reply, getRegistry, model);
+        }
+        return reply.code(404).send({ error: `unsupported gemini action: ${action}` });
+      } catch (err) {
+        // `handleGenerate` rethrows upstream failures; without this they surface
+        // as Fastify's bare 500 and lose both the message and the back-off hint.
+        const msg = err instanceof Error ? err.message : String(err);
+        const retryAfter = retryAfterSeconds(err);
+        if (retryAfter !== null) reply.header('retry-after', String(retryAfter));
+        return reply.code(retryAfter !== null ? 429 : 502).send({
+          error: {
+            code: retryAfter !== null ? 429 : 502,
+            message: msg,
+            status: retryAfter !== null ? 'RATE_LIMIT_EXCEEDED' : 'UPSTREAM_ERROR',
+          },
+        });
       }
-      if (action === 'streamGenerateContent') {
-        return handleStream(req, reply, getRegistry, model);
-      }
-      return reply.code(404).send({ error: `unsupported gemini action: ${action}` });
     },
   );
 }

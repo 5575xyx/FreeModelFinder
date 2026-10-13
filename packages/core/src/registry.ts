@@ -433,6 +433,13 @@ export class ProviderRegistry {
       inputTokens?: number;
       sessionKey?: string;
       onPick?: (info: { sticky: boolean; pool: string[] }) => void;
+      /**
+       * Restricted composed model ids for the caller (a gateway key's
+       * allowlist), or null/undefined for an unrestricted caller. `auto` only
+       * ever picks from this set, so a restricted key can never be served a
+       * model outside its list.
+       */
+      allowed?: Set<string> | null;
     },
   ): { provider: BaseProvider; modelId: string; sticky?: boolean } {
     return this.resolveModelWithAlias(modelId, opts, 0);
@@ -445,6 +452,7 @@ export class ProviderRegistry {
           inputTokens?: number;
           sessionKey?: string;
           onPick?: (info: { sticky: boolean; pool: string[] }) => void;
+          allowed?: Set<string> | null;
         }
       | undefined,
     aliasHops: number,
@@ -463,6 +471,15 @@ export class ProviderRegistry {
       if (modelId === 'auto') {
         const picked = this.pickAutoModel(opts);
         if (picked) return picked;
+        // A restricted caller must NOT fall through to the first catalog model:
+        // pickAutoModel returns null when the allowlist admits nothing, and the
+        // unconstrained fallback below would bypass the list with a 200.
+        if (opts?.allowed) {
+          throw new Error(
+            `no model in this API key's allowed list is available ` +
+              `(allowed: ${[...opts.allowed].join(', ') || 'empty'})`,
+          );
+        }
       }
       const cached = this.modelsCache?.models;
       if (cached && cached.length > 0) {
@@ -589,7 +606,7 @@ export class ProviderRegistry {
     return { provider: this.getProvider('openrouter'), modelId };
   }
 
-  private buildFallbackChain(inputTokens?: number): ModelInfo[] {
+  private buildFallbackChain(inputTokens?: number, allowed?: Set<string> | null): ModelInfo[] {
     const cached = this.modelsCache?.models;
     if (!cached || cached.length === 0) return [];
     const strategy = this.autoRouter.getStrategy();
@@ -603,7 +620,12 @@ export class ProviderRegistry {
       }
       return false;
     };
-    const alive = cached.filter((m) => !cooling(m));
+    // Allowlists hold composed ids while the catalog keeps provider-native ids,
+    // so the composed form has to be built before the comparison.
+    const admitted = allowed
+      ? cached.filter((m) => allowed.has(composeModelId(m.provider, m.id).toLowerCase()))
+      : cached;
+    const alive = admitted.filter((m) => !cooling(m));
     const poolable = (m: ModelInfo): boolean => {
       if (inputTokens === undefined) return true;
       if (!m.contextWindow || m.contextWindow <= 0) return true;
@@ -646,8 +668,9 @@ export class ProviderRegistry {
     inputTokens?: number;
     sessionKey?: string;
     onPick?: (info: { sticky: boolean; pool: string[] }) => void;
+    allowed?: Set<string> | null;
   }): { provider: BaseProvider; modelId: string; sticky?: boolean } | null {
-    const chain = this.buildFallbackChain(opts?.inputTokens);
+    const chain = this.buildFallbackChain(opts?.inputTokens, opts?.allowed);
     if (chain.length === 0) return null;
     const pool = chain.map((m) => composeModelId(m.provider, m.id));
     const key = opts?.sessionKey;

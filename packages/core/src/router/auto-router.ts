@@ -19,7 +19,42 @@ export interface RateLimitParseResult {
   message: string;
 }
 
-const DEFAULT_COOLDOWN_MS = 60_000;
+const DEFAULT_COOLDOWN_SECONDS = 60;
+const DEFAULT_COOLDOWN_MS = DEFAULT_COOLDOWN_SECONDS * 1000;
+
+/**
+ * Never tell a caller to wait longer than this: the upstream value is self
+ * reported and a corrupt one (or a far-off reset timestamp) would otherwise
+ * stall a client pipeline for hours.
+ */
+const RETRY_AFTER_MAX_SECONDS = 3600;
+
+/**
+ * How many seconds the caller should wait before retrying, or `null` when the
+ * failure is not a rate limit.
+ *
+ * Providers build their error message from the status code and the response
+ * body, so the upstream's `Retry-After` survives only if it appears in that
+ * text. When it does not, the gateway's own cooldown window is the best answer
+ * available — the model really is being kept out of the pool for that long.
+ *
+ * `null` keeps the boundary honest: a client that cannot back off a non-rate
+ * limit would just hammer a broken upstream, so silence is the right answer.
+ */
+export function retryAfterSeconds(err: unknown): number | null {
+  const parsed = parseRateLimitError(err);
+  if (!parsed.isRateLimit) return null;
+
+  let seconds: number | undefined = parsed.retryAfterSec;
+  if (!seconds || !Number.isFinite(seconds) || seconds <= 0) {
+    if (parsed.resetAt !== undefined && Number.isFinite(parsed.resetAt)) {
+      seconds = (parsed.resetAt - Date.now()) / 1000;
+    }
+  }
+  seconds ??= DEFAULT_COOLDOWN_SECONDS;
+  return Math.min(RETRY_AFTER_MAX_SECONDS, Math.max(1, Math.round(seconds)));
+}
+
 const CONTEXT_OVERFLOW_COOLDOWN_MS = 60_000;
 
 const MODEL_UNAVAILABLE_PATTERNS: RegExp[] = [
@@ -462,12 +497,16 @@ export class AutoRouter {
    * routing (cooldown/removed models excluded). Used by the gateway to
    * walk the ENTIRE pool on failover instead of stopping at Top-3.
    * Ties break by model id.
+   *
+   * `allowed` restricts the walk to a caller's allowlist (composed ids), so a
+   * restricted key never walks onto a model it is not entitled to.
    */
-  async rankCandidates(): Promise<ModelInfo[]> {
+  async rankCandidates(allowed?: Set<string> | null): Promise<ModelInfo[]> {
     const settings = this.opts.getSettings();
     if (!settings?.enabled) return [];
     const all = await this.opts.listAllModels();
     const candidates = all.filter((m) => {
+      if (allowed && !allowed.has(composeModelId(m.provider, m.id).toLowerCase())) return false;
       if (this.isProviderRateLimited(m.provider)) return false;
       if (
         this.isRateLimited(bareModelId(m.provider, m.id)) ||

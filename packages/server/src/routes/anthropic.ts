@@ -4,6 +4,7 @@ import {
   chatResponseToAnthropic,
   composeModelId,
   parseRateLimitError,
+  retryAfterSeconds,
   type AnthropicMessagesRequest,
   type ChatRequest,
   type ChatResponse,
@@ -11,7 +12,7 @@ import {
   type ProviderRegistry,
   type SwitchNotice,
 } from '@freemodelfinder/core';
-import { keyModelAllowlist, resolveGatewayKey } from './openai.js';
+import { keyModelAllowlist, resolveGatewayKey, streamRetryAfter } from './openai.js';
 
 /**
  * Restricted composed model ids for the caller's gateway key, or null for an
@@ -29,14 +30,17 @@ async function dispatchWithAutoRoute(
 
   const pre = await router.preflight(chatReq.model, allowed);
   if (pre.switched) {
-    chatReq.model = pre.model.id;
+    // The substitute must be re-composed with ITS provider prefix: a bare
+    // catalog id (e.g. "agnes-3.0-flash") matches no resolveModel heuristic
+    // and would silently fall through to the openrouter default.
+    chatReq.model = composeModelId(pre.model.provider, pre.model.id);
     notices.push(pre.notice);
   }
 
   let attempt = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const { provider, modelId: realModelId } = reg.resolveModel(chatReq.model);
+    const { provider, modelId: realModelId } = reg.resolveModel(chatReq.model, { allowed });
     const dispatchReq: ChatRequest = { ...chatReq, model: realModelId };
     try {
       const res = await provider.chat(dispatchReq);
@@ -114,7 +118,13 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
           return reply.send(payload);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          return reply.code(502).send({ error: { message: msg, type: 'upstream_error' } });
+          // A rate limit used to surface as a 502, which tells a client the
+          // gateway is broken instead of telling it to back off.
+          const retryAfter = retryAfterSeconds(err);
+          if (retryAfter !== null) reply.header('retry-after', String(retryAfter));
+          return reply
+            .code(retryAfter !== null ? 429 : 502)
+            .send({ error: { message: msg, type: 'upstream_error' } });
         }
       }
 
@@ -123,11 +133,11 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
       const preNotices: SwitchNotice[] = [];
       const pre = await router.preflight(chatReq.model, allowedModels);
       if (pre.switched) {
-        chatReq.model = pre.model.id;
+        chatReq.model = composeModelId(pre.model.provider, pre.model.id);
         preNotices.push(pre.notice);
       }
 
-      const { provider, modelId } = reg.resolveModel(chatReq.model);
+      const { provider, modelId } = reg.resolveModel(chatReq.model, { allowed: allowedModels });
       const dispatchReq: ChatRequest = { ...chatReq, model: modelId };
 
       reply.raw.writeHead(200, {
@@ -248,7 +258,11 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
           router.rememberPreference(originalRequested);
         }
         const msg = err instanceof Error ? err.message : String(err);
-        write('error', { type: 'error', error: { type: 'api_error', message: msg } });
+        // The status line is already gone, so the hint must ride in the body.
+        write('error', {
+          type: 'error',
+          error: { type: 'api_error', message: msg, ...streamRetryAfter(err) },
+        });
       } finally {
         reply.raw.end();
       }

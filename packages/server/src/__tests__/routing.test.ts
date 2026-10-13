@@ -164,8 +164,11 @@ describe('routing and upstream errors', () => {
       url: '/v1beta/models/custom:primary:generateContent',
       payload: geminiPayload,
     });
-    assert.equal(geminiResult.statusCode, 500);
+    // Was Fastify's bare 500: `handleGenerate` rethrew upstream failures, so
+    // the caller got no envelope and no back-off hint at all.
+    assert.equal(geminiResult.statusCode, 502);
     assert.match(geminiResult.body, /unavailable/);
+    assert.match(geminiResult.body, /UPSTREAM_ERROR/);
   });
 
   it('emits streaming errors in protocol-native event streams', async () => {

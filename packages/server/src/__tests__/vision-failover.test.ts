@@ -305,4 +305,58 @@ describe('vision routing for an explicitly named model', () => {
       `expected the allowed vision model, saw ${JSON.stringify(chatModels())}`,
     );
   });
+
+  it('keeps the auto-route vision pool inside the caller key allowlist', async () => {
+    // `auto` + an image message picks from the vision pool. That pool must be
+    // intersected with the allowlist too, or auto would hand a restricted key a
+    // model it is not entitled to.
+    const denied = await appWithVisionFailover({
+      gateway: {
+        requireAuth: true,
+        keys: [
+          {
+            id: 'k1',
+            key: 'test-key',
+            createdAt: 0,
+            modelAllowlist: ['custom:text-only'],
+          },
+        ],
+      },
+    });
+    resetModalityCursors();
+    resetAutoPoolCursor();
+    const refused = await denied.app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-key' },
+      payload: { model: 'auto', messages: [imageMessage], stream: false },
+    });
+    assert.equal(refused.statusCode, 400, JSON.stringify(refused.json()));
+    assert.equal((refused.json() as { error: { type: string } }).error.type, 'no_vision_model');
+    assert.deepEqual(denied.chatModels(), [], 'no model may be dispatched');
+
+    const allowed = await appWithVisionFailover({
+      gateway: {
+        requireAuth: true,
+        keys: [
+          {
+            id: 'k1',
+            key: 'test-key',
+            createdAt: 0,
+            modelAllowlist: ['custom:vision-up'],
+          },
+        ],
+      },
+    });
+    resetModalityCursors();
+    resetAutoPoolCursor();
+    const served = await allowed.app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: 'Bearer test-key' },
+      payload: { model: 'auto', messages: [imageMessage], stream: false },
+    });
+    assert.equal(served.statusCode, 200, JSON.stringify(served.json()));
+    assert.deepEqual(allowed.chatModels(), ['vision-up']);
+  });
 });

@@ -11,6 +11,7 @@ import {
   openAIToChatRequest,
   parseModelUnavailableError,
   parseRateLimitError,
+  retryAfterSeconds,
   scoreModel,
   sessionKeyOf,
   streamChunkToOpenAI,
@@ -104,9 +105,17 @@ export function keyModelAllowlist(key: GatewayKeyEntry | undefined): Set<string>
  * Returns a human-readable denial reason, or null when the model is permitted.
  *
  * Allowlists are keyed on the REAL composed id, so the request is resolved all
- * the way through the alias chain first. `auto`/`default` are refused outright:
- * automatic routing could pick a model outside the list, which would silently
- * bypass the restriction.
+ * the way through the alias chain first.
+ *
+ * `auto` is permitted for restricted keys too: the automatic pick itself is
+ * constrained to this allowlist downstream (`buildFallbackChain`,
+ * `rankCandidates`, the modality pools), so `auto` can only ever land on a
+ * listed model. Refusing it here would make `auto` unusable for every
+ * allowlisted key, which is not what a model allowlist is for.
+ *
+ * `default` is NOT special-cased: it resolves to the configured default model,
+ * which is then checked like any other concrete model. So a key may use
+ * `default` when — and only when — the default model is on its list.
  *
  * `model` is used RAW, never trimmed, because the handler resolves and
  * dispatches the same raw value. Authorization and dispatch have to agree
@@ -125,9 +134,7 @@ export function modelAllowlistViolation(
   // authorization and dispatch must see byte-identical strings. A stray space is
   // reported as "not allowed" rather than silently forgiven — forgiving it would
   // make `model: " auto"` a working misspelling of automatic routing.
-  if (model === 'auto' || model === 'default') {
-    return 'This API key cannot use automatic routing; request a specific model.';
-  }
+  if (model === 'auto') return null;
   let real: string;
   try {
     const resolved = reg.resolveModel(model);
@@ -139,6 +146,27 @@ export function modelAllowlistViolation(
   }
   if (allowlist.has(real)) return null;
   return `This API key is not allowed to use model "${model}". Allowed models: ${[...allowlist].join(', ')}.`;
+}
+
+/**
+ * Whether a model id — catalog-native (e.g. `"fx:fast"`, `"gpt-4o-mini"`) or
+ * already composed (e.g. `"custom:fx:fast"`) — is inside the caller's
+ * allowlist.
+ *
+ * Allowlists hold composed ids while the catalog keeps provider-native ids, so
+ * the composed form has to be built before the comparison. An id that is not in
+ * the catalog (e.g. an id configured straight into `autoRoute.visionModel`) is
+ * compared as-is, which keeps hand-configured ids working.
+ */
+export function withinAllowlist(
+  id: string,
+  allowlist: Set<string> | null,
+  catalog: ModelInfo[],
+): boolean {
+  if (!allowlist) return true;
+  const match = catalog.find((m) => m.id === id);
+  const composed = match ? composeModelId(match.provider, match.id) : id;
+  return allowlist.has(composed.toLowerCase());
 }
 
 export function classifyStatus(err: unknown): { status: CallStatus; httpStatus?: number } {
@@ -204,10 +232,10 @@ function newFailoverSeq(): FailoverSeq {
  * apply the mark, then return the next candidate walking the ring. Returns
  * null once every candidate has been attempted.
  *
- * The pool is deliberately unfiltered by allowlist: this only runs for a
- * caller that asked for `auto` (the `allowPoolWalk && isAutoRequest` gate in
- * dispatchWithAutoRoute), and the preHandler already 403s `auto`/`default`
- * for a restricted gateway key — so a restricted caller never reaches here.
+ * This only runs for a caller that asked for `auto` (the
+ * `allowPoolWalk && isAutoRequest` gate in dispatchWithAutoRoute), so a
+ * restricted key reaches here — the walk therefore has to be given the
+ * allowlist, or it would step onto a model the key is not entitled to.
  */
 async function advanceFailover(
   router: AutoRouter,
@@ -215,8 +243,9 @@ async function advanceFailover(
   failedKey: string,
   kind: FailureKind,
   mark: () => void,
+  allowed?: Set<string> | null,
 ): Promise<ModelInfo | null> {
-  seq.ranked ??= await router.rankCandidates();
+  seq.ranked ??= await router.rankCandidates(allowed);
   seq.attempts++;
   seq.triedIds.push(failedKey);
   if (kind === 'unavailable') seq.counts.unavailable++;
@@ -289,6 +318,7 @@ async function dispatchWithAutoRoute(
     ? {
         inputTokens: estimateInputTokens(chatReq),
         sessionKey: sessionKeyOf(chatReq.messages),
+        allowed,
         onPick: (info: { sticky: boolean; pool: string[] }) => {
           stickyHit = info.sticky;
           routePool = info.pool;
@@ -299,7 +329,10 @@ async function dispatchWithAutoRoute(
   // 1. Pre-flight: honor existing cooldowns before we even try upstream.
   const pre = await router.preflight(chatReq.model, allowed);
   if (pre.switched) {
-    chatReq.model = pre.model.id;
+    // The substitute must be re-composed with ITS provider prefix: a bare
+    // catalog id (e.g. "agnes-3.0-flash") matches no resolveModel heuristic
+    // and would silently fall through to the openrouter default.
+    chatReq.model = composeModelId(pre.model.provider, pre.model.id);
     notices.push(pre.notice);
   }
 
@@ -340,7 +373,7 @@ async function dispatchWithAutoRoute(
       };
 
       if (allowPoolWalk && router.isEnabled() && failure.kind !== 'request') {
-        const next = await advanceFailover(router, seq, failedKey, failure.kind, mark);
+        const next = await advanceFailover(router, seq, failedKey, failure.kind, mark, allowed);
         if (next) {
           router.rememberPreference(originalRequested);
           const notice = buildFailoverNotice(router, failure.kind, failedKey, next);
@@ -522,6 +555,18 @@ function streamErrorType(msg: string, err: unknown): string {
   return 'server_error';
 }
 
+/**
+ * The `retry_after` field for a streaming error event, or nothing.
+ *
+ * A stream cannot change the status line after the first byte is out, so the
+ * back-off hint has to travel inside the event body instead. Shared with the
+ * Anthropic and Gemini routes, which write their own event shapes.
+ */
+export function streamRetryAfter(err: unknown): { retry_after: number } | Record<string, never> {
+  const seconds = retryAfterSeconds(err);
+  return seconds === null ? {} : { retry_after: seconds };
+}
+
 export function resetModalityCursors(): void {
   modalityCursor.clear();
 }
@@ -657,9 +702,9 @@ export function registerOpenAIRoutes(
       if (chatReq.model === 'auto' || chatReq.model === 'default') {
         if (detectedModality === 'vision') {
           const forced = asModelList(ar?.visionModel);
+          const { models } = await reg.listAllModels();
           let pool = forced;
           if (!pool.length) {
-            const { models } = await reg.listAllModels();
             const visionModels = models.filter((m) => isVisionCapable(m, forced));
             if (!visionModels.length) {
               return reply.code(400).send({
@@ -672,6 +717,8 @@ export function registerOpenAIRoutes(
             }
             pool = visionModels.map((m) => m.id);
           }
+          // A restricted key may only be handed a model on its own list.
+          pool = pool.filter((id) => withinAllowlist(id, allowedModels, models));
           visionCandidates = rotatePool('vision', pool);
           if (!visionCandidates.length) {
             return reply.code(400).send({
@@ -684,27 +731,36 @@ export function registerOpenAIRoutes(
           }
           chatReq.model = visionCandidates[0]!;
         } else if (detectedModality === 'image') {
-          const pool = asModelList(ar?.imageModel);
+          const { models } = await reg.listAllModels();
+          const pool = asModelList(ar?.imageModel).filter((id) =>
+            withinAllowlist(id, allowedModels, models),
+          );
           const picked = nextFromPool('image', pool);
           if (picked) {
             chatReq.model = picked;
             forcedImageModality = true;
           } else {
             const discovered = await findImageModelId(reg);
-            if (discovered) {
+            if (discovered && withinAllowlist(discovered, allowedModels, models)) {
               chatReq.model = discovered;
               forcedImageModality = true;
             }
-            // 未发现则保持 auto → 原文本链路
+            // 未发现（或不在白名单内）则保持 auto → 原文本链路
           }
         } else if (detectedModality === 'video') {
-          const pool = asModelList(ar?.videoModel);
+          const { models } = await reg.listAllModels();
+          const pool = asModelList(ar?.videoModel).filter((id) =>
+            withinAllowlist(id, allowedModels, models),
+          );
           const picked = nextFromPool('video', pool);
           if (picked) chatReq.model = picked;
         } else if (detectedModality === 'text' && ar?.textTiers) {
           const tierText = chatReq.messages.map((m) => m.content).join('\n');
           const tier = classifyTextComplexity(tierText);
-          const pool = asModelList(ar.textTiers[tier]);
+          const { models } = await reg.listAllModels();
+          const pool = asModelList(ar.textTiers[tier]).filter((id) =>
+            withinAllowlist(id, allowedModels, models),
+          );
           const picked = nextFromPool(`text:${tier}`, pool);
           if (picked) chatReq.model = picked;
         }
@@ -726,13 +782,10 @@ export function registerOpenAIRoutes(
         if (!canSee) {
           const discovered = models.filter((m) => isVisionCapable(m, forced));
           // Allowlists hold composed ids while the catalog keeps provider-native
-          // ones, so build the composed form before comparing.
-          const pool = (forced.length ? forced : discovered.map((m) => m.id)).filter((id) => {
-            if (!allowedModels) return true;
-            const m = models.find((x) => x.id === id);
-            const composed = m ? composeModelId(m.provider, m.id) : id;
-            return allowedModels.has(composed.toLowerCase());
-          });
+          // ones, so the composed form must be built before comparing.
+          const pool = (forced.length ? forced : discovered.map((m) => m.id)).filter((id) =>
+            withinAllowlist(id, allowedModels, models),
+          );
           visionCandidates = rotatePool('vision', pool);
           if (visionCandidates.length) chatReq.model = visionCandidates[0]!;
           // Nothing that can see: keep the model the caller named rather than
@@ -977,6 +1030,7 @@ export function registerOpenAIRoutes(
           const match = msg.match(/failed\s+(\d{3})/i);
           const upstream = match ? Number(match[1]) : undefined;
           const { status, httpStatus } = classifyStatus(err);
+          const retryAfter = retryAfterSeconds(err);
           record(req, t0, {
             kind: 'chat',
             ...resolvePM(reg, chatReq.model),
@@ -989,9 +1043,16 @@ export function registerOpenAIRoutes(
               error: { message: msg, type: 'vision_input_error' },
             });
           }
-          return reply
-            .code(upstream && upstream >= 400 && upstream < 600 ? upstream : 502)
-            .send({ error: { message: msg, type: 'upstream_error', upstream } });
+          // A rate limit is 429 even when the upstream never stated the number,
+          // so the header below has something meaningful to attach itself to.
+          const code =
+            status === 'rate_limited'
+              ? 429
+              : upstream && upstream >= 400 && upstream < 600
+                ? upstream
+                : 502;
+          if (retryAfter !== null) reply.header('retry-after', String(retryAfter));
+          return reply.code(code).send({ error: { message: msg, type: 'upstream_error', upstream } });
         }
       }
 
@@ -1015,6 +1076,7 @@ export function registerOpenAIRoutes(
         ? {
             inputTokens: estimateInputTokens(chatReq),
             sessionKey: sessionKeyOf(chatReq.messages),
+            allowed: allowedModels,
             onPick: (info: { sticky: boolean; pool: string[] }) => {
               stickyHit = info.sticky;
               routePool = info.pool;
@@ -1025,7 +1087,10 @@ export function registerOpenAIRoutes(
       const preNotices: SwitchNotice[] = [];
       const pre = await router.preflight(chatReq.model, allowedModels);
       if (pre.switched) {
-        chatReq.model = pre.model.id;
+        // The substitute must be re-composed with ITS provider prefix: a bare
+        // catalog id (e.g. "agnes-3.0-flash") matches no resolveModel heuristic
+        // and would silently fall through to the openrouter default.
+        chatReq.model = composeModelId(pre.model.provider, pre.model.id);
         preNotices.push(pre.notice);
       }
 
@@ -1181,7 +1246,7 @@ export function registerOpenAIRoutes(
               !wroteChunk &&
               failure.kind !== 'request'
             ) {
-              const next = await advanceFailover(router, seq, failedKey, failure.kind, mark);
+              const next = await advanceFailover(router, seq, failedKey, failure.kind, mark, allowedModels);
               if (next) {
                 router.rememberPreference(originalRequested);
                 const notice = buildFailoverNotice(router, failure.kind, failedKey, next);
@@ -1224,6 +1289,9 @@ export function registerOpenAIRoutes(
                     reportErr instanceof CandidatesExhaustedError
                       ? 'model_unavailable'
                       : streamErrorType(msg, reportErr),
+                  // The status line is already gone here, so the hint travels
+                  // in the body or the client has no way to back off at all.
+                  ...streamRetryAfter(reportErr),
                 },
               })}\n\n`,
             );
