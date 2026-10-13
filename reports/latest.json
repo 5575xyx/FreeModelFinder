@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
-  "date": "2026-10-12",
-  "generatedAt": "2026-10-12T01:23:42.130Z",
-  "reportPath": "reports/provider-free-model-audit-2026-10-12.md",
+  "date": "2026-10-13",
+  "generatedAt": "2026-10-13T03:04:33.591Z",
+  "reportPath": "reports/provider-free-model-audit-2026-10-13.md",
   "totalModels": 94,
   "providers": [
     {
@@ -639,28 +639,9 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-10-11",
+    "comparedWith": "2026-10-12",
     "added": [],
-    "removed": [
-      {
-        "provider": "opencode",
-        "id": "opencode:exo-free",
-        "displayName": "exo-free",
-        "contextWindow": null
-      },
-      {
-        "provider": "opencode",
-        "id": "opencode:ling-3.0-flash-fin-free",
-        "displayName": "ling-3.0-flash-fin-free",
-        "contextWindow": null
-      },
-      {
-        "provider": "opencode",
-        "id": "opencode:nemotron-3-ultra-free",
-        "displayName": "nemotron-3-ultra-free",
-        "contextWindow": null
-      }
-    ],
+    "removed": [],
     "comparedProviders": [
       "openrouter",
       "zhipu",
