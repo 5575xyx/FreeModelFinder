@@ -320,6 +320,7 @@ export const zh: Dict = {
   'settings.autoRoute.textTiers.complexPh': '例如 custom:grok:gpt-5.5',
   'settings.autoRoute.roundRobinHint': '多个模型将按顺序轮流使用',
 
+  'modelMultiSelect.search': '搜索模型…',
   'modelMultiSelect.placeholder': '选择模型…',
   'modelMultiSelect.clear': '清空',
   'modelMultiSelect.empty': '无匹配模型',
@@ -973,6 +974,7 @@ export const en: Dict = {
   'settings.autoRoute.textTiers.complexPh': 'e.g. custom:grok:gpt-5.5',
   'settings.autoRoute.roundRobinHint': 'Multiple models take turns (round-robin)',
 
+  'modelMultiSelect.search': 'Search models…',
   'modelMultiSelect.placeholder': 'Select models…',
   'modelMultiSelect.clear': 'Clear',
   'modelMultiSelect.empty': 'No matching models',

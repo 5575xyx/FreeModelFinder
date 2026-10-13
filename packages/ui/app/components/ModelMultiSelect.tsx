@@ -13,6 +13,8 @@ export interface ModelOption {
   displayName?: string;
   capabilities?: string[];
   vision?: boolean;
+  /** user-facing alias name; searched alongside the other fields (Task 6 fills it) */
+  alias?: string;
 }
 
 interface ModelMultiSelectProps {
@@ -54,6 +56,16 @@ export function matchesCapability(
   return caps!.includes('text') || (!caps!.includes('image') && !caps!.includes('video'));
 }
 
+/** Case-insensitive substring match over every user-visible field of an option. */
+function matchesQuery(option: ModelOption, q: string): boolean {
+  return (
+    option.id.toLowerCase().includes(q) ||
+    option.provider.toLowerCase().includes(q) ||
+    (option.displayName?.toLowerCase().includes(q) ?? false) ||
+    (option.alias?.toLowerCase().includes(q) ?? false)
+  );
+}
+
 export function ModelMultiSelect({
   label,
   hint,
@@ -66,7 +78,13 @@ export function ModelMultiSelect({
 }: ModelMultiSelectProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // The search query only makes sense for the current panel session.
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -88,10 +106,13 @@ export function ModelMultiSelect({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open]);
 
-  const filtered = useMemo(
-    () => options.filter((o) => matchesCapability(o, filterCapability)),
-    [options, filterCapability],
-  );
+  const filtered = useMemo(() => {
+    const byCapability = options.filter((o) => matchesCapability(o, filterCapability));
+    const q = query.trim().toLowerCase();
+    // An empty/whitespace-only query is "no filter", not "no matches".
+    if (!q) return byCapability;
+    return byCapability.filter((o) => matchesQuery(o, q));
+  }, [options, filterCapability, query]);
 
   const selectedSet = useMemo(() => new Set(value), [value]);
 
@@ -110,6 +131,7 @@ export function ModelMultiSelect({
   function clear() {
     if (disabled) return;
     onChange([]);
+    setQuery('');
   }
 
   const displayPlaceholder = placeholder ?? t('modelMultiSelect.placeholder');
@@ -184,49 +206,58 @@ export function ModelMultiSelect({
         </button>
 
         {open && !disabled && (
-          <ul
-            role="listbox"
-            aria-label={label}
-            className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-surface py-1 shadow-md"
-          >
-            {filtered.length === 0 && (
-              <li className="px-3 py-2 text-xs text-muted-foreground">
-                {t('modelMultiSelect.empty')}
-              </li>
-            )}
-            {filtered.map((opt) => {
-              const selected = selectedSet.has(opt.id);
-              return (
-                <li key={`${opt.provider}:${opt.id}`} role="option" aria-selected={selected}>
-                  <button
-                    type="button"
-                    onClick={() => toggle(opt)}
-                    className={classNames(
-                      'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition',
-                      selected
-                        ? 'bg-primary/10 text-foreground'
-                        : 'text-muted-foreground hover:bg-surface-muted/60 hover:text-foreground',
-                    )}
-                  >
-                    <span
+          <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-border bg-surface shadow-md">
+            <div className="border-b border-border px-2 py-1.5">
+              <input
+                type="search"
+                role="searchbox"
+                aria-label={label}
+                placeholder={t('modelMultiSelect.search')}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full rounded-md border border-input bg-surface px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+            <ul role="listbox" aria-label={label} className="max-h-56 overflow-auto py-1">
+              {filtered.length === 0 && (
+                <li className="px-3 py-2 text-xs text-muted-foreground">
+                  {t('modelMultiSelect.empty')}
+                </li>
+              )}
+              {filtered.map((opt) => {
+                const selected = selectedSet.has(opt.id);
+                return (
+                  <li key={`${opt.provider}:${opt.id}`} role="option" aria-selected={selected}>
+                    <button
+                      type="button"
+                      onClick={() => toggle(opt)}
                       className={classNames(
-                        'flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border',
+                        'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition',
                         selected
-                          ? 'border-primary bg-primary text-primary-foreground'
-                          : 'border-input bg-surface',
+                          ? 'bg-primary/10 text-foreground'
+                          : 'text-muted-foreground hover:bg-surface-muted/60 hover:text-foreground',
                       )}
                     >
-                      {selected && <Check size={10} strokeWidth={2.5} />}
-                    </span>
-                    <span className="truncate font-mono text-[11px]">{opt.id}</span>
-                    <span className="ml-auto shrink-0 truncate text-[11px] text-muted-foreground">
-                      {optionLabel(opt) !== opt.id ? optionLabel(opt) : opt.provider}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                      <span
+                        className={classNames(
+                          'flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border',
+                          selected
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-input bg-surface',
+                        )}
+                      >
+                        {selected && <Check size={10} strokeWidth={2.5} />}
+                      </span>
+                      <span className="truncate font-mono text-[11px]">{opt.id}</span>
+                      <span className="ml-auto shrink-0 truncate text-[11px] text-muted-foreground">
+                        {optionLabel(opt) !== opt.id ? optionLabel(opt) : opt.provider}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
       </div>
 
