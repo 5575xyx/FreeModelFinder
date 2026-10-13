@@ -256,14 +256,24 @@ describe('Gemini Retry-After passthrough', () => {
 });
 
 describe('no fabricated hints', () => {
-  it('exhausting the automatic pool returns 503 without a retry-after', async () => {
-    // The exhaustion message contains the words "rate-limited", so it must not
-    // be misread as a rate limit and answered with a backoff hint.
+  it('an exhausted pool reports the last candidate\'s real hint, not a guess', async () => {
+    // The exhaustion message itself contains the words "rate-limited", so a hint
+    // derived by reading that message would be a coincidence rather than a
+    // measurement. The value must come from the failure the router actually saw.
     const app = await failingApp(RATE_LIMIT, true);
     const res = await chat(app, 'auto');
 
     assert.equal(res.statusCode, 503, JSON.stringify(res.json()));
     assert.equal((res.json().error as { type: string }).type, 'model_unavailable');
-    assert.equal(res.headers['retry-after'], undefined);
+    assert.equal(res.headers['retry-after'], '45');
+  });
+
+  it('does not invent a hint when the pool died of something else', async () => {
+    const app = await failingApp('custom chat failed 500: internal error', true);
+    const res = await chat(app, 'auto');
+
+    assert.equal(res.statusCode, 503, JSON.stringify(res.json()));
+    assert.equal((res.json().error as { type: string }).type, 'model_unavailable');
+    assert.equal(res.headers['retry-after'], undefined, 'a 503 with no backoff, not a false one');
   });
 });

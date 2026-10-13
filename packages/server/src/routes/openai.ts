@@ -181,7 +181,31 @@ export function classifyStatus(err: unknown): { status: CallStatus; httpStatus?:
   return { status: 'error', httpStatus: upstream };
 }
 
-type FailureKind = 'unavailable' | 'rate-limit' | 'context' | 'request' | 'upstream';
+export type FailureKind = 'unavailable' | 'rate-limit' | 'context' | 'request' | 'upstream';
+
+/**
+ * The outgoing status line and error type for a dispatch failure.
+ *
+ * Shared by every protocol so that "the pool is exhausted" and "one upstream
+ * rate-limited me" read identically on each route. Before this existed each
+ * protocol had its own mapping, and an exhausted pool on `/v1/messages` came
+ * back looking exactly like a single rate limit.
+ */
+export function dispatchFailureShape(err: unknown): {
+  httpStatus: number;
+  type: 'model_unavailable' | 'upstream_error';
+  retryAfter: number | null;
+} {
+  if (err instanceof CandidatesExhaustedError) {
+    return { httpStatus: 503, type: 'model_unavailable', retryAfter: err.retryAfter };
+  }
+  const retryAfter = retryAfterSeconds(err);
+  return {
+    httpStatus: retryAfter !== null ? 429 : 502,
+    type: 'upstream_error',
+    retryAfter,
+  };
+}
 
 export function classifyFailure(err: unknown): { kind: FailureKind; message: string } {
   const message = err instanceof Error ? err.message : String(err);
@@ -202,22 +226,37 @@ export class CandidatesExhaustedError extends Error {
     readonly tried: number,
     readonly counts: { unavailable: number; rateLimit: number; upstream: number },
     readonly triedIds: string[],
+    /**
+     * The last candidate's failure. Kept so its back-off hint survives the walk:
+     * the composed message names every candidate but carries no timing of its own.
+     */
+    readonly lastError?: unknown,
   ) {
     super(
       `tried ${tried} models: ${counts.unavailable} unavailable, ${counts.rateLimit} rate-limited, ${counts.upstream} upstream errors (attempted: ${triedIds.join(', ')})`,
     );
     this.name = 'CandidatesExhaustedError';
   }
+
+  /**
+   * The last rate-limited candidate's back-off hint, or null.
+   *
+   * Without it a caller whose entire pool is cooling gets a 503 and no idea
+   * when to try again — the very information the router already computed.
+   */
+  get retryAfter(): number | null {
+    return retryAfterSeconds(this.lastError);
+  }
 }
 
-type FailoverSeq = {
+export type FailoverSeq = {
   ranked: ModelInfo[] | null;
   attempts: number;
   counts: { unavailable: number; rateLimit: number; upstream: number };
   triedIds: string[];
 };
 
-function newFailoverSeq(): FailoverSeq {
+export function newFailoverSeq(): FailoverSeq {
   return {
     ranked: null,
     attempts: 0,
@@ -232,12 +271,12 @@ function newFailoverSeq(): FailoverSeq {
  * apply the mark, then return the next candidate walking the ring. Returns
  * null once every candidate has been attempted.
  *
- * This only runs for a caller that asked for `auto` (the
- * `allowPoolWalk && isAutoRequest` gate in dispatchWithAutoRoute), so a
- * restricted key reaches here — the walk therefore has to be given the
- * allowlist, or it would step onto a model the key is not entitled to.
+ * Shared by all three gateway protocols so that "the pool is exhausted" means
+ * the same thing on every route. A restricted key can reach here, so the walk
+ * has to be given the allowlist — otherwise it would step onto a model the key
+ * is not entitled to.
  */
-async function advanceFailover(
+export async function advanceFailover(
   router: AutoRouter,
   seq: FailoverSeq,
   failedKey: string,
@@ -257,7 +296,7 @@ async function advanceFailover(
   return seq.ranked[(idx + 1) % seq.ranked.length] ?? null;
 }
 
-function buildFailoverNotice(
+export function buildFailoverNotice(
   router: AutoRouter,
   kind: FailureKind,
   failedKey: string,
@@ -387,7 +426,7 @@ async function dispatchWithAutoRoute(
         // this call via resolvePM(chatReq.model), and a leftover `auto` would
         // consume a fresh pool pick while merely logging the failure.
         chatReq.model = failedKey;
-        throw new CandidatesExhaustedError(seq.attempts, seq.counts, seq.triedIds);
+        throw new CandidatesExhaustedError(seq.attempts, seq.counts, seq.triedIds, err);
       }
 
       // Explicit (or router disabled / request-shape errors): mark, then the
@@ -563,7 +602,10 @@ function streamErrorType(msg: string, err: unknown): string {
  * Anthropic and Gemini routes, which write their own event shapes.
  */
 export function streamRetryAfter(err: unknown): { retry_after: number } | Record<string, never> {
-  const seconds = retryAfterSeconds(err);
+  // An exhausted pool is not itself a rate limit, but it remembers the hint the
+  // last rate-limited candidate carried.
+  const seconds =
+    err instanceof CandidatesExhaustedError ? err.retryAfter : retryAfterSeconds(err);
   return seconds === null ? {} : { retry_after: seconds };
 }
 
@@ -1025,6 +1067,11 @@ export function registerOpenAIRoutes(
               httpStatus: 503,
               error: msg,
             });
+            // Every candidate was down. When that is rate-limit driven the caller
+            // still needs to know when to come back — otherwise it cannot time a
+            // retry at all.
+            const exhaustedAfter = err.retryAfter;
+            if (exhaustedAfter !== null) reply.header('retry-after', String(exhaustedAfter));
             return reply.code(503).send({ error: { message: msg, type: 'model_unavailable' } });
           }
           const match = msg.match(/failed\s+(\d{3})/i);
@@ -1153,13 +1200,17 @@ export function registerOpenAIRoutes(
                   // on context propagation across a network read.
                   if (chunk.usage) lastChunkUsage = chunk.usage;
                   const payload = streamChunkToOpenAI(chunk);
-                  // Echo the alias (when one is configured) instead of the
-                  // upstream's bare model id, without touching the
-                  // non-aliased path that clients already rely on.
+                  // Always name the model the gateway served. Some upstreams are
+                  // routers in their own right and report the underlying model they
+                  // used, which would make a client believe the request went to a
+                  // provider it never asked for — while the very same frame's
+                  // fmf_auto_route says otherwise.
                   const chunkComposed = `${provider.id}:${realModelId}`;
-                  const chunkClientFacing = reg.toClientFacingModel(chunkComposed);
-                  if (chunkClientFacing !== chunkComposed) {
-                    (payload as Record<string, unknown>).model = chunkClientFacing;
+                  (payload as Record<string, unknown>).model =
+                    reg.toClientFacingModel(chunkComposed);
+                  if (chunk.model && chunk.model !== chunkComposed) {
+                    // The upstream's own report, kept rather than silently dropped.
+                    (payload as Record<string, unknown>).fmf_upstream_model = chunk.model;
                   }
                   if (body.model === 'auto') {
                     const autoRoute: Record<string, unknown> = {
@@ -1266,7 +1317,12 @@ export function registerOpenAIRoutes(
                   // fall through to error reporting below
                 }
               } else {
-                reportErr = new CandidatesExhaustedError(seq.attempts, seq.counts, seq.triedIds);
+                reportErr = new CandidatesExhaustedError(
+                  seq.attempts,
+                  seq.counts,
+                  seq.triedIds,
+                  err,
+                );
               }
             } else {
               mark();
