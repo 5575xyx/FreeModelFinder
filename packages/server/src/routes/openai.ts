@@ -544,10 +544,25 @@ function classifyTextComplexity(text: string): TextTier {
   return 'simple';
 }
 
+/**
+ * Generation-model markers, matched as whole tokens.
+ *
+ * A bare substring match turned ordinary chat into generation requests:
+ * `/vid/i` matched the "vid" inside "nvidia", so every `nvidia/…` model was
+ * dispatched to generateVideo — which that provider does not implement — and the
+ * reply came back as a 502 instead of a chat completion. `/image/i` had the same
+ * shape. The catalog's `capabilities` field would be the principled source, but
+ * real providers rarely populate it for generation models, so the name marker
+ * stays; it is narrowed to a whole token so the false positive can no longer be
+ * destructive.
+ */
+const MODEL_MARKER_IMAGE = /(^|[^a-z0-9])image($|[^a-z0-9])/i;
+const MODEL_MARKER_VIDEO = /(^|[^a-z0-9])vid(eo)?($|[^a-z0-9])/i;
+
 async function findImageModelId(reg: ProviderRegistry): Promise<string | null> {
   try {
     const { models } = await reg.listAllModels();
-    const byId = models.find((m) => /image/i.test(m.id.split(':').pop() ?? m.id));
+    const byId = models.find((m) => MODEL_MARKER_IMAGE.test(m.id.split(':').pop() ?? m.id));
     if (byId) return byId.id;
     const byCap = models.find((m) => m.capabilities?.includes('image'));
     return byCap ? byCap.id : null;
@@ -838,9 +853,9 @@ export function registerOpenAIRoutes(
 
       // Fast-path: infer capabilities from model ID without async calls
       const rawModelId = chatReq.model.split(':').pop() ?? chatReq.model;
-      const inferredCaps: ('text' | 'image' | 'video')[] = /vid(eo)?/i.test(rawModelId)
+      const inferredCaps: ('text' | 'image' | 'video')[] = MODEL_MARKER_VIDEO.test(rawModelId)
         ? ['video']
-        : /image/i.test(rawModelId) || forcedImageModality
+        : MODEL_MARKER_IMAGE.test(rawModelId) || forcedImageModality
           ? ['image']
           : [];
 

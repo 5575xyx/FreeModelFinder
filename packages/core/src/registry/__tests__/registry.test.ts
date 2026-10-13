@@ -1260,3 +1260,58 @@ describe('ProviderRegistry model aliases', () => {
     assert.equal(resolved.modelId, 'gpt-4o-mini');
   });
 });
+
+describe('resolveModel honours ids published by /v1/models', () => {
+  // The heuristics in resolveModel only cover well-known name prefixes. Anything
+  // else fell through to openrouter, which re-composed the id and then failed the
+  // caller's allowlist as "model not allowed" for a model that was on it. These
+  // two ids match no heuristic and live under providers that do.
+  function withCatalog(models: ModelInfo[]): ProviderRegistry {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        openrouter: { enabled: true, credentials: { apiKey: 'k' } },
+        nvidia: { enabled: true, credentials: { apiKey: 'k' } },
+        agnes: { enabled: true, credentials: { apiKey: 'k' } },
+      } as unknown as AppConfig['providers']),
+    );
+    (registry as unknown as { modelsCache: unknown }).modelsCache = {
+      models,
+      succeededProviders: ['nvidia', 'agnes'],
+      failedProviders: [],
+    };
+    return registry;
+  }
+
+  it('resolves a published slashed id to its own provider, not openrouter', () => {
+    const registry = withCatalog([
+      {
+        id: 'nvidia/nemotron-3-super-120b-a12b',
+        provider: 'nvidia',
+        displayName: 'N',
+        free: true,
+      },
+    ]);
+
+    const resolved = registry.resolveModel('nvidia/nemotron-3-super-120b-a12b');
+    assert.equal(resolved.provider.id, 'nvidia');
+    assert.equal(resolved.modelId, 'nvidia/nemotron-3-super-120b-a12b');
+  });
+
+  it('resolves a published bare id to its own provider, not openrouter', () => {
+    const registry = withCatalog([
+      { id: 'agnes-3.0-flash', provider: 'agnes', displayName: 'A', free: true },
+    ]);
+
+    const resolved = registry.resolveModel('agnes-3.0-flash');
+    assert.equal(resolved.provider.id, 'agnes');
+    assert.equal(resolved.modelId, 'agnes-3.0-flash');
+  });
+
+  it('still falls through to openrouter for an id absent from the catalog', () => {
+    const registry = withCatalog([]);
+
+    const resolved = registry.resolveModel('some/unknown-model');
+    assert.equal(resolved.provider.id, 'openrouter');
+    assert.equal(resolved.modelId, 'some/unknown-model');
+  });
+});

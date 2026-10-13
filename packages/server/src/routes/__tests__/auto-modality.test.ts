@@ -587,6 +587,35 @@ describe('auto modality HTTP routing', () => {
     );
   });
 
+  it('does not turn a text model whose id contains "vid" into a video request', async () => {
+    await withApp(
+      {
+        autoRoute: { enabled: false, strategy: 'capability' },
+        models: [textOnlyModel],
+      },
+      async (app, handles) => {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/chat/completions',
+          payload: {
+            // "nvidia" contains "vid". A bare substring match dispatched this
+            // ordinary chat request to generateVideo, which that provider does
+            // not implement, and answered 502 instead of a chat completion.
+            model: 'nvidia/nvidia/nemotron-3-super-120b-a12b',
+            messages: [{ role: 'user', content: 'Reply with only: OK' }],
+            stream: false,
+          },
+        });
+        assert.equal(res.statusCode, 200, JSON.stringify(res.json()));
+        assert.equal(
+          handles.videoCallCount(),
+          0,
+          'a text chat must not be dispatched to generateVideo',
+        );
+      },
+    );
+  });
+
   it('falls back to text when no image model is discoverable', async () => {
     await withApp(
       {

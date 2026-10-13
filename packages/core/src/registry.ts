@@ -602,6 +602,26 @@ export class ProviderRegistry {
         // fallthrough
       }
     }
+    // Catalog lookup: an id published by /v1/models must be requestable by
+    // exactly that id. The heuristics above only cover well-known name prefixes,
+    // so without this an id such as nvidia/nemotron-… reached the openrouter
+    // fallthrough below, was re-composed as openrouter:nvidia/… and then failed
+    // the caller's allowlist as "model not allowed" for a model that was on it.
+    const catalog = this.modelsCache?.models;
+    if (catalog) {
+      const hit = catalog.find((m) => m.id === modelId);
+      if (hit) {
+        try {
+          return {
+            provider: this.getProvider(hit.provider),
+            modelId: bareModelId(hit.provider, hit.id),
+          };
+        } catch {
+          // that provider is not enabled; keep falling through
+        }
+      }
+    }
+
     // default to openrouter
     return { provider: this.getProvider('openrouter'), modelId };
   }
