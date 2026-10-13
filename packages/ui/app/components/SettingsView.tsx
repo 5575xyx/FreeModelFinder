@@ -33,6 +33,7 @@ import { ModelMultiSelect, type ModelOption } from './ModelMultiSelect';
 import { SegmentedTabs, type SegmentedItem } from './SegmentedTabs';
 import { classNames, copyToClipboard, GATEWAY, withUiHeaders } from '../lib/utils';
 import { modelValue } from '../lib/models';
+import { invertAliases } from '../lib/modelAliases';
 import { SETTINGS_PROVIDERS, providerHintKey, providerLabelKey } from '../lib/platforms';
 import { useI18n } from '../i18n';
 
@@ -596,6 +597,7 @@ export function SettingsView({
   compact = false,
   models = [],
   model = '',
+  aliases,
   onModelChange,
   onModelsRefresh,
   adminPasswordFocus = 0,
@@ -603,6 +605,8 @@ export function SettingsView({
   compact?: boolean;
   models?: ModelItem[];
   model?: string;
+  /** Alias map (别名名 → composed real model id) used to mark aliased models. */
+  aliases: Record<string, string>;
   onModelChange?: (value: string) => void;
   onModelsRefresh?: () => Promise<ModelItem[]> | ModelItem[] | void;
   /** Non-zero bumps land the user on the gateway tab with the password panel open. */
@@ -705,6 +709,19 @@ export function SettingsView({
       cancelled = true;
     };
   }, []);
+
+  // Aliases are fetched separately and can land after (or change after) the
+  // model-options fetch, so the alias augmentation is derived at render time
+  // from both inputs instead of being baked into the fetch handler.
+  const aliasByTarget = useMemo(() => invertAliases(aliases), [aliases]);
+  const aliasedModelOptions = useMemo(
+    () =>
+      modelOptions.map((opt) => {
+        const alias = aliasByTarget.get(opt.id);
+        return alias === undefined ? opt : { ...opt, alias };
+      }),
+    [modelOptions, aliasByTarget],
+  );
 
   function applyAutoRouteState(data: AutoRouteInfo): void {
     const pending = autoRoutePendingRef.current;
@@ -1746,11 +1763,17 @@ export function SettingsView({
               {models.length === 0 && (
                 <option value="">{t('settings.section.currentModel.selectEmpty')}</option>
               )}
-              {models.map((m) => (
-                <option key={`${m.provider}:${m.id}`} value={modelValue(m)}>
-                  [{m.provider}] {m.display_name ?? m.id}
-                </option>
-              ))}
+              {models.map((m) => {
+                const alias = aliasByTarget.get(modelValue(m));
+                return (
+                  <option key={`${m.provider}:${m.id}`} value={modelValue(m)}>
+                    [{m.provider}] {m.display_name ?? m.id}
+                    {alias === undefined
+                      ? ''
+                      : ` · ${t('settings.modelSelector.alias', { alias })}`}
+                  </option>
+                );
+              })}
             </select>
             <p className="mt-2 text-xs text-muted-foreground">
               {t('settings.section.currentModel.help')}
@@ -1935,7 +1958,7 @@ export function SettingsView({
                     void saveAutoRoute({ imageModel: next });
                   }}
                   filterCapability="image"
-                  options={modelOptions}
+                  options={aliasedModelOptions}
                 />
                 <ModelMultiSelect
                   label={t('settings.autoRoute.modality.videoModel')}
@@ -1946,7 +1969,7 @@ export function SettingsView({
                     void saveAutoRoute({ videoModel: next });
                   }}
                   filterCapability="video"
-                  options={modelOptions}
+                  options={aliasedModelOptions}
                 />
                 <ModelMultiSelect
                   label={t('settings.autoRoute.modality.visionModel')}
@@ -1957,7 +1980,7 @@ export function SettingsView({
                     void saveAutoRoute({ visionModel: next });
                   }}
                   filterCapability="vision"
-                  options={modelOptions}
+                  options={aliasedModelOptions}
                 />
               </div>
             </div>
@@ -1999,7 +2022,7 @@ export function SettingsView({
                       void saveAutoRoute({ textTiers });
                     }}
                     filterCapability="text"
-                    options={modelOptions}
+                    options={aliasedModelOptions}
                   />
                 ))}
               </div>
@@ -2277,7 +2300,7 @@ export function SettingsView({
                               hint={t('settings.gateway.models.hint')}
                               value={entry.modelAllowlist ?? []}
                               onChange={(next) => void saveGatewayKeyModels(entry.id, next)}
-                              options={modelOptions}
+                              options={aliasedModelOptions}
                               disabled={gatewayBusy !== 'idle'}
                             />
                           </div>

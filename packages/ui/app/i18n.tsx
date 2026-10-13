@@ -272,6 +272,7 @@ export const zh: Dict = {
   'settings.section.currentModel.empty': '暂无可用模型',
   'settings.section.currentModel.selectEmpty': '暂无模型 — 请先在下方配置 API Key',
   'settings.section.currentModel.help': '选择后将用于"测试模型"页面的对话请求。',
+  'settings.modelSelector.alias': '别名：{alias}',
   'settings.ping.test': '测试连通性',
   'settings.ping.testing': '测试中…',
   'settings.ping.ok': '连接正常',
@@ -912,6 +913,7 @@ export const en: Dict = {
   'settings.section.currentModel.selectEmpty':
     'No models — please configure an API key below first',
   'settings.section.currentModel.help': 'Selection is used for the "Chat test" page requests.',
+  'settings.modelSelector.alias': 'alias: {alias}',
   'settings.ping.test': 'Test connectivity',
   'settings.ping.testing': 'Testing…',
   'settings.ping.ok': 'Connection OK',

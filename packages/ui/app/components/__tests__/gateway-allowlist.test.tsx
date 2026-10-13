@@ -87,7 +87,7 @@ async function waitForRows(min = 1): Promise<void> {
 describe('per-key model allowlist in the gateway settings', () => {
   it('shows the allowed count, or all models when none are configured', async () => {
     serveGateway([makeKey('k-a', '应用甲', []), makeKey('k-b', '应用乙', ['custom:fx:fast'])]);
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     await waitForRows(2);
 
     // [] and absent are the same thing: unrestricted.
@@ -99,7 +99,7 @@ describe('per-key model allowlist in the gateway settings', () => {
     const user = userEvent.setup();
     const saves = recordGatewaySaves([makeKey('k-a', '应用甲', [])]);
     serveGateway([makeKey('k-a', '应用甲', [])]);
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     await waitForRows();
 
     const r = row('应用甲');
@@ -123,7 +123,7 @@ describe('per-key model allowlist in the gateway settings', () => {
     const user = userEvent.setup();
     const saves = recordGatewaySaves([makeKey('k-b', '应用乙', ['custom:fx:fast'])]);
     serveGateway([makeKey('k-b', '应用乙', ['custom:fx:fast'])]);
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     await waitForRows();
 
     const r = row('应用乙');
@@ -141,7 +141,7 @@ describe('per-key model allowlist in the gateway settings', () => {
     const keys = [makeKey('k-a', '应用甲', []), makeKey('k-b', '应用乙', ['custom:fx:fast'])];
     const saves = recordGatewaySaves(keys);
     serveGateway(keys);
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     await waitForRows(2);
 
     const a = row('应用甲');

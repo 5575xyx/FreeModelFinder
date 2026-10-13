@@ -556,7 +556,7 @@ describe('cline card state', () => {
     [{ enabled: false, hasKey: true }, '未配置'],
   ])('renders the key badge for enabled=%s hasKey=%s as %s', async (cline, expected) => {
     server.use(http.get(`${gateway}/api/config`, () => HttpResponse.json(clineConfig(cline))));
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     const badgeInCard = () => {
       const label = screen.getByText('Cline');
       const card = label.closest('.rounded-lg');
@@ -605,7 +605,7 @@ describe('cline card state', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     await user.click(await screen.findByRole('button', { name: '登录 Cline 账号' }));
     expect(await screen.findByText('CARD-0001')).toBeTruthy();
@@ -640,7 +640,7 @@ describe('cline dynamic models checkbox', () => {
         HttpResponse.json(clineConfig({ enabled: true, hasKey: true })),
       ),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     await waitForLoadedConfig();
     await waitFor(() => {
       const box = screen.getByRole('checkbox', {
@@ -656,7 +656,7 @@ describe('cline dynamic models checkbox', () => {
         HttpResponse.json(clineConfig({ enabled: true, hasKey: true, dynamicModels: false })),
       ),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     await waitForLoadedConfig();
     await waitFor(() => {
       const box = screen.getByRole('checkbox', {

@@ -1,12 +1,31 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { SettingsView } from '../components/SettingsView';
 import { ThemeToggle } from '../theme';
 import { LanguageToggle, useI18n } from '../i18n';
+import { GATEWAY, withUiHeaders } from '../lib/utils';
 
 export default function Settings() {
   const { t } = useI18n();
+  // Alias table for the model pickers: supplemental, never blocks the page,
+  // and a failure just leaves the pickers without their alias names.
+  const [aliases, setAliases] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(`${GATEWAY}/api/model-aliases`, withUiHeaders())
+      .then(async (response) => {
+        if (!response.ok) return;
+        const payload = (await response.json()) as { modelAliases?: Record<string, string> };
+        if (!cancelled) setAliases(payload.modelAliases ?? {});
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col bg-background text-foreground">
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 backdrop-blur">
@@ -31,7 +50,7 @@ export default function Settings() {
         </div>
       </header>
       <div className="flex-1">
-        <SettingsView compact />
+        <SettingsView compact aliases={aliases} />
       </div>
     </main>
   );

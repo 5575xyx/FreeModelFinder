@@ -48,7 +48,7 @@ describe('SettingsView', () => {
       http.get(`${gateway}/api/config`, () => HttpResponse.json(configPayload)),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const providerKey = await screen.findByLabelText('OpenRouter API Key');
     await user.type(providerKey, 'provider-secret');
@@ -91,7 +91,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     // Configure the source from its own tab, where the old alias editor lived.
     await user.click(await screen.findByRole('tab', { name: '自定义' }));
@@ -147,7 +147,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     expect(await screen.findByText('…abcd')).toBeTruthy();
     const providerKey = await screen.findByLabelText(/OpenRouter API Key/);
     const controls = providerKey.parentElement?.parentElement;
@@ -187,7 +187,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     expect(await screen.findByText('…abcd')).toBeTruthy();
     const providerKey = await screen.findByLabelText(/OpenRouter API Key/);
     const controls = providerKey.parentElement?.parentElement;
@@ -224,7 +224,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     const row = await screen.findByText('http://***@a:1/');
     const controls = row.parentElement;
     expect(controls).not.toBeNull();
@@ -257,7 +257,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     await user.click(await screen.findByRole('button', { name: '清空全部' }));
     await waitFor(() => expect(writes.length).toBeGreaterThan(0));
     expect(writes[0]).toMatchObject({ provider: 'opencode', extra: { proxies: [] } });
@@ -273,7 +273,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     expect((await screen.findAllByText('…a1b2')).length).toBeGreaterThan(0);
     const customSection = screen.getByLabelText('自定义模型');
     await user.click(within(customSection).getByRole('button', { name: '删除 Key 1' }));
@@ -307,7 +307,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     expect(await screen.findByText('…abcd')).toBeTruthy();
     const providerKey = await screen.findByLabelText(/OpenRouter API Key/);
     const controls = providerKey.parentElement?.parentElement;
@@ -338,7 +338,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     await waitFor(() => expect(gatewayLoaded).toBe(true));
     const generate = await screen.findByRole('button', { name: '生成 API Key' });
     await user.click(generate);
@@ -362,7 +362,7 @@ describe('SettingsView', () => {
         }),
       ),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     expect((await screen.findAllByText('https://192.0.2.10')).length).toBeGreaterThan(0);
     expect(screen.getByText(/当前管理地址仅供 Tailscale 使用/)).toBeTruthy();
@@ -374,7 +374,7 @@ describe('SettingsView', () => {
 
   it('filters the image multi-select by image capability', async () => {
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     const trigger = await screen.findByRole('button', { name: '图片生成模型' });
     await user.click(trigger);
     const listbox = await screen.findByRole('listbox', { name: '图片生成模型' });
@@ -386,7 +386,7 @@ describe('SettingsView', () => {
 
   it('text tier multi-select hides pure image models and shows text/legacy', async () => {
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     const trigger = await screen.findByRole('button', {
       name: '⚡ 简单（问候/翻译/简答）',
     });
@@ -409,7 +409,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     const trigger = await screen.findByRole('button', { name: '图片生成模型' });
     await user.click(trigger);
     const option = await screen.findByRole('option', { name: /custom:fixture:img-a/ });
@@ -430,7 +430,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     expect(await screen.findByText('custom:img')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: '清空' }));
     await waitFor(() => expect(writes.length).toBeGreaterThan(0));
@@ -438,7 +438,7 @@ describe('SettingsView', () => {
   });
 
   it('renders the vision model multi-select in the modality card', async () => {
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     expect(await screen.findByRole('button', { name: '视觉理解模型' })).toBeTruthy();
   });
 
@@ -452,7 +452,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     const trigger = await screen.findByRole('button', { name: '视觉理解模型' });
     await user.click(trigger);
     const listbox = await screen.findByRole('listbox', { name: '视觉理解模型' });
@@ -483,7 +483,7 @@ describe('SettingsView', () => {
         }),
       ),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     expect(await screen.findByText(/永久剔除/)).toBeTruthy();
     expect(screen.queryByText(/Invalid Date/)).toBeNull();
     expect(screen.getAllByText(/^重置：/).length).toBe(2);
@@ -501,7 +501,7 @@ describe('SettingsView', () => {
         }),
       ),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     await screen.findByText('…a1b2');
     const card = screen.getByTestId('provider-card-opencode');
     await waitFor(() => expect(within(card).getByText('已配置')).toBeTruthy());
@@ -526,7 +526,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     await screen.findByText('…a1b2');
     const card = screen.getByTestId('provider-card-opencode');
     await user.click(within(card).getByRole('checkbox', { name: '匿名通道' }));
@@ -556,7 +556,7 @@ describe('SettingsView', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
     await screen.findByText('…a1b2');
     const card = screen.getByTestId('provider-card-opencode');
     const save = within(card).getByRole('button', { name: '保存' });
@@ -569,7 +569,7 @@ describe('SettingsView', () => {
 
   it('switches the settings panel on tab click', async () => {
     const user = userEvent.setup();
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const selected = () =>
       screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-selected'));
@@ -594,7 +594,7 @@ describe('SettingsView copy buttons', () => {
     const user = userEvent.setup();
     override(navigator, 'clipboard', undefined);
     const staged = recordExecCommand(true);
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     await user.click(await screen.findByRole('button', { name: '复制 Base URL' }));
 
@@ -608,7 +608,7 @@ describe('SettingsView copy buttons', () => {
     const user = userEvent.setup();
     override(navigator, 'clipboard', { writeText: vi.fn().mockRejectedValue(new Error('denied')) });
     const staged = recordExecCommand(false);
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     await user.click(await screen.findByRole('button', { name: '复制 Base URL' }));
 
@@ -639,7 +639,7 @@ describe('SettingsView copy buttons', () => {
         return HttpResponse.json({ value: 'sk-revealed-value' });
       }),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const hint = await screen.findByText('…wxyz');
     expect(JSON.stringify(configPayload)).not.toContain('sk-revealed-value');
@@ -677,7 +677,7 @@ describe('SettingsView copy buttons', () => {
         HttpResponse.json({ value: 'sk-copy-me' }),
       ),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const hint = await screen.findByText('…wxyz');
     const controls = hint.parentElement;
@@ -721,7 +721,7 @@ describe('SettingsView copy buttons', () => {
         return HttpResponse.json({ ok: true });
       }),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const first = await screen.findByText('…1111');
     const controls = first.parentElement;
@@ -755,7 +755,7 @@ describe('SettingsView copy buttons', () => {
         return HttpResponse.json({ value: 'sk-source-plaintext' });
       }),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const customSection = await screen.findByLabelText('自定义模型');
     const hint = await within(customSection).findByText('…9xyz');
@@ -788,7 +788,7 @@ describe('SettingsView copy buttons', () => {
         HttpResponse.json({ value: 'sk-source-copy' }),
       ),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const customSection = await screen.findByLabelText('自定义模型');
     const hint = await within(customSection).findByText('…9xyz');
@@ -826,7 +826,7 @@ describe('SettingsView copy buttons', () => {
         return HttpResponse.json({ ok: true });
       }),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const customSection = await screen.findByLabelText('自定义模型');
     const first = await within(customSection).findByText('…1111');
@@ -886,7 +886,7 @@ describe('SettingsView copy buttons', () => {
         return HttpResponse.json({ ok: true });
       }),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const first = await screen.findByText('…aaaa');
     const controls = first.parentElement;
@@ -917,7 +917,7 @@ describe('SettingsView copy buttons', () => {
       ),
       reveal.handler,
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const customSection = await screen.findByLabelText('自定义模型');
     const first = await within(customSection).findByText('…cccc');
@@ -955,7 +955,7 @@ describe('SettingsView copy buttons', () => {
       ),
       reveal.handler,
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const row = await screen.findByText('http://***@a:1/');
     const controls = row.parentElement;
@@ -995,7 +995,7 @@ describe('SettingsView copy buttons', () => {
       ),
       reveal.handler,
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const row = await screen.findByText('http://***@a:1/');
     const card = row.closest('[data-testid="provider-card-opencode"]') as HTMLElement;
@@ -1054,7 +1054,7 @@ describe('SettingsView copy buttons', () => {
         return HttpResponse.json({ ok: true });
       }),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const second = await screen.findByText('…2222');
     await user.click(
@@ -1123,7 +1123,7 @@ describe('gateway key masking', () => {
         }),
       ),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     await screen.findAllByText(/^•+$/);
     expect(gatewayKeyMask('短钥匙')).toBe('•'.repeat(36));
@@ -1156,7 +1156,7 @@ describe('gateway key masking', () => {
         }),
       ),
     );
-    render(<SettingsView />);
+    render(<SettingsView aliases={{}} />);
 
     const row = () => gatewayKeyRow('短钥匙');
     await waitFor(() =>

@@ -830,6 +830,7 @@ export default function Home() {
                 <SettingsView
                   models={models}
                   model={model}
+                  aliases={aliases}
                   onModelChange={selectModel}
                   onModelsRefresh={() => refreshModels(false)}
                   adminPasswordFocus={adminPasswordFocus}
