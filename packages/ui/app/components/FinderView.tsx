@@ -24,8 +24,10 @@ import {
   type ProviderFailure,
   type QuotaWindow,
 } from '../lib/models';
+import { invertAliases } from '../lib/modelAliases';
 import { classNames, GATEWAY } from '../lib/utils';
 import { useI18n } from '../i18n';
+import { ModelAliasInput } from './ModelAliasInput';
 
 type SortMode = 'capability' | 'provider' | 'context' | 'name';
 
@@ -63,6 +65,8 @@ export function FinderView({
   gatewayReachable,
   loading,
   failures,
+  aliases,
+  onSaveAlias,
   onSelectModel,
   onOpenTester,
   onOpenSettings,
@@ -76,6 +80,10 @@ export function FinderView({
   gatewayReachable: boolean | null;
   loading: boolean;
   failures: ProviderFailure[];
+  /** Global alias map (name → composed target) driving the per-card editors. */
+  aliases: Record<string, string>;
+  /** Persists one alias edit; an empty name clears the alias. */
+  onSaveAlias: (target: string, name: string) => Promise<void>;
   onSelectModel: (model: string) => void;
   onOpenTester: () => void;
   onOpenSettings: () => void;
@@ -88,6 +96,8 @@ export function FinderView({
   const [query, setQuery] = useState('');
   const [provider, setProvider] = useState('all');
   const [sort, setSort] = useState<SortMode>('provider');
+
+  const aliasByTarget = useMemo(() => invertAliases(aliases), [aliases]);
 
   const providers = useMemo(
     () => Array.from(new Set(models.map((model) => model.provider))).sort(),
@@ -105,6 +115,7 @@ export function FinderView({
           model.display_name,
           model.description,
           providerLabel(model.provider, t),
+          aliasByTarget.get(modelValue(model)),
         ].some((value) => value?.toLowerCase().includes(normalizedQuery));
       })
       .sort((a, b) => {
@@ -126,7 +137,7 @@ export function FinderView({
           (a.display_name ?? a.id).localeCompare(b.display_name ?? b.id)
         );
       });
-  }, [models, provider, query, sort, t]);
+  }, [aliasByTarget, models, provider, query, sort, t]);
 
   const largestContext = useMemo(
     () => models.reduce((largest, model) => Math.max(largest, model.context_window ?? 0), 0),
@@ -338,6 +349,15 @@ export function FinderView({
                     t={t}
                     language={language}
                   />
+
+                  <div className="mt-4">
+                    <ModelAliasInput
+                      target={value}
+                      alias={aliasByTarget.get(value)}
+                      aliases={aliases}
+                      onSave={onSaveAlias}
+                    />
+                  </div>
 
                   <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
                     <span className="text-xs font-medium text-foreground">

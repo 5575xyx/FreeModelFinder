@@ -38,6 +38,7 @@ import {
   type ProviderFailure,
 } from './lib/models';
 import { GATEWAY, classNames, withUiHeaders } from './lib/utils';
+import { saveAlias } from './lib/saveAlias';
 import { toWireContent } from './lib/chat';
 
 type TabKey = 'stats' | 'finder' | 'tester' | 'imagegen' | 'videogen' | 'settings';
@@ -99,6 +100,7 @@ export default function Home() {
   const [gatewayReachable, setGatewayReachable] = useState<boolean | null>(null);
   const [failures, setFailures] = useState<ProviderFailure[]>([]);
   const [probingModels, setProbingModels] = useState<string[]>([]);
+  const [aliases, setAliases] = useState<Record<string, string>>({});
   const [onboardingMode, setOnboardingMode] = useState<OnboardingMode>('loading');
   const [authStatus, setAuthStatus] = useState<AdminStatus | null>(null);
   const [adminBannerDismissed, setAdminBannerDismissed] = useState(isAdminBannerDismissed);
@@ -179,6 +181,15 @@ export default function Home() {
     let cancelled = false;
     void (async () => {
       setModelLoading(true);
+      // Alias table for the model cards: supplemental, never blocks startup,
+      // and a failure just leaves the cards without their alias names.
+      void fetch(`${GATEWAY}/api/model-aliases`, withUiHeaders())
+        .then(async (response) => {
+          if (!response.ok) return;
+          const payload = (await response.json()) as { modelAliases?: Record<string, string> };
+          if (!cancelled) setAliases(payload.modelAliases ?? {});
+        })
+        .catch(() => undefined);
       try {
         const config = await fetch(`${GATEWAY}/api/config`, withUiHeaders()).then(
           async (response) => {
@@ -360,6 +371,13 @@ export default function Home() {
     },
     [applyQuotas],
   );
+
+  // Persists one alias edit through the serialized GET→apply→POST helper; on
+  // failure saveAlias throws and this state stays untouched, leaving the card
+  // to surface the error via ModelAliasInput's own alert.
+  const onSaveAlias = useCallback(async (target: string, name: string) => {
+    setAliases(await saveAlias(target, name));
+  }, []);
 
   const selectModel = useCallback(async (value: string) => {
     if (!value) return;
@@ -775,6 +793,8 @@ export default function Home() {
                   gatewayReachable={gatewayReachable}
                   loading={modelLoading}
                   failures={failures}
+                  aliases={aliases}
+                  onSaveAlias={onSaveAlias}
                   onSelectModel={selectModel}
                   onOpenTester={() => setTab('tester')}
                   onOpenSettings={() => setTab('settings')}
