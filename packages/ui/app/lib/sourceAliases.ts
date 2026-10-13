@@ -26,12 +26,14 @@ export type LegacyAliasRow = { alias: string; target: string };
  * Each source in `changes` is authoritative for its own namespace:
  *  1. delete *all* `change.id/*` entries from the baseline;
  *  2. write one entry per edited alias row (`change.id/alias` →
- *     `custom:<id>:<targetModel>`).
+ *     `custom:<id>:<targetModel>`), skipping any row whose target model is no
+ *     longer in `change.models`.
  *
  * Because the namespace is cleared wholesale, an alias whose model still
- * exists but whose row the user removed is genuinely deleted, and a
- * `来源id/*` entry pointing at a removed model cannot survive (its row can no
- * longer be hydrated, so it is never written back).
+ * exists but whose row the user removed is genuinely deleted. Step 2's model
+ * guard is what stops a `来源id/*` entry pointing at a removed model from
+ * surviving: the editor hydrates once per source and therefore still reports
+ * the removed model's row, so the rewrite must drop it here.
  *
  * Prefixed entries of untouched sources and all bare legacy entries are
  * preserved.
@@ -44,12 +46,14 @@ export function deriveSourceAliases(
 
   for (const change of changes) {
     const prefix = `${change.id}/`;
+    const modelSet = new Set(change.models);
 
     for (const key of Object.keys(out)) {
       if (key.startsWith(prefix)) delete out[key];
     }
 
     for (const edit of change.aliases) {
+      if (!modelSet.has(edit.targetModel)) continue;
       out[`${change.id}/${edit.alias}`] = `custom:${change.id}:${edit.targetModel}`;
     }
   }

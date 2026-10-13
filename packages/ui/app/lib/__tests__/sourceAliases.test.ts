@@ -54,6 +54,24 @@ describe('deriveSourceAliases', () => {
     expect(out).toEqual({ 'novaway/glm': 'custom:novaway:qwen-8b' });
   });
 
+  it('drops a reported row whose target model was removed from the source', () => {
+    // The editor hydrates once per source, so after the user deletes model
+    // `old-model` it still reports the `old` row. The rewrite must drop it
+    // rather than write back a dangling `novaway/old`.
+    const prev = {};
+    const out = deriveSourceAliases(prev, [
+      {
+        id: 'novaway',
+        models: ['glm-5.3'],
+        aliases: [
+          { alias: 'glm', targetModel: 'glm-5.3' },
+          { alias: 'old', targetModel: 'old-model' },
+        ],
+      },
+    ]);
+    expect(out).toEqual({ 'novaway/glm': 'custom:novaway:glm-5.3' });
+  });
+
   it('findLegacyBareAliases returns only prefix-less entries', () => {
     const rows = findLegacyBareAliases({ 'novaway/glm': 'x', legacy1: 'y', legacy2: 'z' });
     expect(rows.map((r) => r.alias).sort()).toEqual(['legacy1', 'legacy2']);
