@@ -366,6 +366,16 @@ describe('SettingsView saveCustomProvider alias rewrite', () => {
     // 基底 { 'cpa/gpt': '...', 'legacy1': '...' }，只保存 novaway
     // → POST /api/model-aliases 的 body 仍含 'cpa/gpt' 和 'legacy1'
   });
+
+  it('removes a still-valid alias row when its source reports an empty list (R1)', async () => {
+    // 基底 { 'novaway/glm': 'custom:novaway:glm-5.3' }，novaway.models 仍含 glm-5.3，
+    // 但编辑器对该来源上报 aliases=[]（用户删了行）→ body 不含 'novaway/glm'
+  });
+
+  it('leaves an unreported source untouched (R1)', async () => {
+    // 基底 { 'cpa/gpt': 'custom:cpa:gpt-mini' }，cpa 的编辑器未上报（customAliases['cpa'] === undefined）
+    // 只保存 novaway → body 仍含 'cpa/gpt'
+  });
 });
 ```
 
@@ -380,8 +390,8 @@ Expected: FAIL
 1. **搬家**：删 L2065 `{tab === 'models' && <ModelAliasesSection />}` 与 import；Custom 标签每个来源 `<li>` 卡片内（模型列表之后）嵌 `<SourceAliasesEditor sourceId={src.id} sourceLabel={src.label} sourceModels={src.models.map(m => m.id)} onAliasesChange={...} />`，`onAliasesChange` 把该来源的编辑行存进 `customAliases` state（`Record<sourceId, SourceAliasEdit[]>`）。
 2. **`saveCustomProvider` 扩展**：
    - 保存前 `GET /api/model-aliases` 取基底 `prevGlobal`。
-   - 构造 `SourceChanges` = 本次要保存的所有来源（id + 新 models 列表 + `customAliases[sourceId] ?? []`）。
-   - `const nextGlobal = deriveSourceAliases(prevGlobal, SourceChanges)`。
+   - 构造 `SourceChanges` = **仅纳入已上报过的来源**（`customAliases[src.id] !== undefined`；由 `SourceAliasesEditor` hydrate 完成后的首次上报或任何行变更标记）。每个 entry = `{ id, models: 该来源保存后的模型列表, aliases: customAliases[src.id] }`。**未上报的来源不纳入**——按 R1 其 `来源id/*` 条目原样保留（避免把用户没打开过的来源命名空间清空）。Custom 标签必须渲染**全部**来源卡片，使所有来源 hydrate 后都成为权威。
+   - `const nextGlobal = deriveSourceAliases(prevGlobal, SourceChanges)`（R1：被纳入来源的 `来源id/*` 先整体清空再按上报行写入）。
    - **先** `POST /api/model-aliases { modelAliases: nextGlobal }`；成功后**再** `POST /api/providers`（sources 整表）。
    - sources 提交失败 → `setToast({ kind:'error', text: t('settings.custom.saveFailed', { msg: '别名已保存但来源未同步，请重试保存来源' }) })`（**Review Focus 1**）；aliases 提交失败 → 整体报错不继续。
    - 成功 → 现有 success toast + refresh config。
