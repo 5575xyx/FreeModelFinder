@@ -646,6 +646,10 @@ export function SettingsView({
   const [customSectionOpen, setCustomSectionOpen] = useState(true);
   const [customSources, setCustomSources] = useState<CustomSourceDef[]>([]);
   const [customAliases, setCustomAliases] = useState<Record<string, SourceAliasEdit[]>>({});
+  // Source ids deleted this session (whose editors have unmounted). Folded into
+  // the alias rewrite as an empty namespace so their `sourceId/*` entries are
+  // stripped on save (design §2).
+  const [removedSourceIds, setRemovedSourceIds] = useState<string[]>([]);
   const [globalAliases, setGlobalAliases] = useState<Record<string, string>>({});
   // Latches once the Custom tab has been opened so its editors stay mounted
   // (preserving in-progress edits) while other tabs pay no alias round-trips.
@@ -1120,11 +1124,14 @@ export function SettingsView({
       id = `${id}-${i}`;
     }
     setCustomSources((list) => [...list, { id, label: name, baseUrl: '', apiKey: '', models: [] }]);
+    // Re-adding a previously removed id: it is no longer a deletion.
+    setRemovedSourceIds((ids) => ids.filter((x) => x !== id));
     setCustomNewSourceName('');
   }
 
   function removeCustomSource(sourceId: string) {
     setCustomSources((list) => list.filter((s) => s.id !== sourceId));
+    setRemovedSourceIds((ids) => (ids.includes(sourceId) ? ids : [...ids, sourceId]));
   }
 
   function patchCustomSource(sourceId: string, patch: Partial<CustomSourceDef>) {
@@ -1265,13 +1272,20 @@ export function SettingsView({
       };
       // Only sources whose alias editor reported this round are authoritative
       // for their namespace; untouched sources keep every `sourceId/*` entry.
-      const changes: SourceChanges = customSources
+      const reportedChanges: SourceChanges = customSources
         .filter((s) => customAliases[s.id] !== undefined)
         .map((s) => ({
           id: s.id,
           models: s.models.map((m) => m.id),
           aliases: customAliases[s.id] ?? [],
         }));
+      // Deleted sources are forced into the rewrite with an empty namespace so
+      // their `sourceId/*` entries are stripped (design §2). Dropped again if the
+      // id was re-added in the meantime.
+      const removedChanges: SourceChanges = removedSourceIds
+        .filter((id) => !customSources.some((s) => s.id === id))
+        .map((id) => ({ id, models: [], aliases: [] }));
+      const changes: SourceChanges = [...reportedChanges, ...removedChanges];
       const commit = await commitCustomAliasSave({ changes, sourcesBody: body });
       if (!commit.ok) {
         setToast({
@@ -1285,6 +1299,7 @@ export function SettingsView({
         setTimeout(() => setCustomSaveState('idle'), 1800);
         return;
       }
+      setRemovedSourceIds([]);
       const pendingKeys = customSources
         .map((s) => ({
           sourceId: s.id,

@@ -465,8 +465,6 @@ export const zh: Dict = {
   'settings.sourceAliases.add': '添加别名',
   'settings.sourceAliases.remove': '删除别名 {index}',
   'settings.sourceAliases.lockedPrefix': '{sourceId}/',
-  'settings.sourceAliases.legacyHint':
-    '检测到旧格式别名（如 {names}），建议在本标签重建为 “来源id/别名” 形式；旧名仍有效，不会自动迁移，删除需手改 config.json。',
   'settings.hideKey': '隐藏 Key',
   'settings.showKey': '显示 Key',
   'settings.copy.baseUrl': '复制 Base URL',
@@ -1117,8 +1115,6 @@ export const en: Dict = {
   'settings.sourceAliases.add': 'Add alias',
   'settings.sourceAliases.remove': 'Remove alias {index}',
   'settings.sourceAliases.lockedPrefix': '{sourceId}/',
-  'settings.sourceAliases.legacyHint':
-    'Legacy aliases detected (e.g. {names}). Recreate them here as "source-id/alias"; old names keep working and are not migrated automatically — remove them by editing config.json.',
   'settings.hideKey': 'Hide key',
   'settings.showKey': 'Show key',
   'settings.copy.baseUrl': 'Copy Base URL',

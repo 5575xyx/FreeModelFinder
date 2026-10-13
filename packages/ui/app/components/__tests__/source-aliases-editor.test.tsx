@@ -104,34 +104,6 @@ describe('SourceAliasesEditor', () => {
     });
   });
 
-  it('shows the legacy-bare-alias migration hint only when bare entries exist', async () => {
-    server.use(
-      http.get(`${gateway}/api/model-aliases`, () =>
-        HttpResponse.json({
-          modelAliases: {
-            legacy1: TARGET_GL,
-            'novay/glm': TARGET_GL,
-          },
-        }),
-      ),
-    );
-    renderEditor();
-    await waitFor(() => expect(screen.getByText(/旧格式别名/)).toBeTruthy(), { timeout: 3000 });
-  });
-
-  it('omits the legacy hint when only source-scoped entries exist', async () => {
-    server.use(
-      http.get(`${gateway}/api/model-aliases`, () =>
-        HttpResponse.json({
-          modelAliases: { 'novay/glm': TARGET_GL },
-        }),
-      ),
-    );
-    renderEditor();
-    await waitFor(() => expect(screen.getByDisplayValue('glm')).toBeTruthy(), { timeout: 3000 });
-    expect(screen.queryByText(/旧格式别名/)).toBeNull();
-  });
-
   it('reports hydrated rows after load without a user edit', async () => {
     server.use(
       http.get(`${gateway}/api/model-aliases`, () =>

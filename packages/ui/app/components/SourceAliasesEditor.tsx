@@ -70,18 +70,17 @@ export function SourceAliasesEditor({
 }: SourceAliasesEditorProps) {
   const { t } = useI18n();
   const [rows, setRows] = useState<SourceAliasEdit[]>([]);
-  const [legacyNames, setLegacyNames] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
 
   // Hydration runs once per sourceId: back-fill rows from `sourceId/*` entries
-  // of the global table; bare (prefix-less) entries only drive the legacy
-  // migration hint. On success, report the hydrated rows once (even when empty)
-  // so the source becomes an authoritative namespace. It must NOT re-run when
-  // the parent re-renders with a fresh `sourceModels` array identity (the parent
-  // passes `source.models.map(m => m.id)`) nor when the model list gains/loses a
-  // model mid-edit — either would wipe the user's in-progress alias rows. The
-  // latest models are read through a ref for reporting/filtering instead.
+  // of the global table. On success, report the hydrated rows once (even when
+  // empty) so the source becomes an authoritative namespace. It must NOT re-run
+  // when the parent re-renders with a fresh `sourceModels` array identity (the
+  // parent passes `source.models.map(m => m.id)`) nor when the model list
+  // gains/loses a model mid-edit — either would wipe the user's in-progress
+  // alias rows. The latest models are read through a ref for reporting/filtering
+  // instead.
   const sourceModelsRef = useRef(sourceModels);
   sourceModelsRef.current = sourceModels;
   const onAliasesChangeRef = useRef(onAliasesChange);
@@ -105,8 +104,9 @@ export function SourceAliasesEditor({
         const prefix = `${sourceId}/`;
         const expectedTargetPrefix = `custom:${sourceId}:`;
         const nextRows: SourceAliasEdit[] = [];
-        const bare: string[] = [];
         for (const [key, value] of Object.entries(aliases)) {
+          // Bare (prefix-less) legacy entries are surfaced once, section-level,
+          // by SettingsView; they are ignored here.
           if (key.startsWith(prefix)) {
             const alias = key.slice(prefix.length);
             // Strict: only accept a composed target of *this* source; no
@@ -117,12 +117,9 @@ export function SourceAliasesEditor({
                 nextRows.push({ alias: alias.trim(), targetModel });
               }
             }
-          } else if (!key.includes('/')) {
-            bare.push(key);
           }
         }
         setRows(nextRows);
-        setLegacyNames(bare);
         // Authoritative report: exactly once per hydration run.
         onAliasesChangeRef.current(toReportedEdits(nextRows, modelSet));
       } catch {
@@ -168,11 +165,6 @@ export function SourceAliasesEditor({
       </p>
       {hydrated && rows.length === 0 && (
         <p className="text-xs text-muted-foreground">{t('settings.aliases.empty')}</p>
-      )}
-      {legacyNames.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {t('settings.sourceAliases.legacyHint', { names: legacyNames.join(', ') })}
-        </p>
       )}
       {rows.map((row, index) => (
         <div key={index} className="flex items-center gap-2">

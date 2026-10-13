@@ -40,30 +40,34 @@ export async function commitCustomAliasSave({
   changes,
   sourcesBody,
 }: CustomAliasSaveInput): Promise<CustomAliasSaveResult> {
-  let prevGlobal: Record<string, string>;
-  try {
-    const res = await fetch(`${GATEWAY}/api/model-aliases`, withUiHeaders());
-    if (!res.ok) return { ok: false, stage: 'aliases', detail: await errorDetail(res) };
-    const json = (await res.json()) as { modelAliases?: Record<string, string> };
-    prevGlobal = json.modelAliases ?? {};
-  } catch (err) {
-    return { ok: false, stage: 'aliases', detail: errorMessage(err) };
-  }
+  // Nothing to rewrite: skip the baseline read and the (no-op) aliases POST so a
+  // transient `/api/model-aliases` failure cannot block a sources-only save.
+  if (changes.length > 0) {
+    let prevGlobal: Record<string, string>;
+    try {
+      const res = await fetch(`${GATEWAY}/api/model-aliases`, withUiHeaders());
+      if (!res.ok) return { ok: false, stage: 'aliases', detail: await errorDetail(res) };
+      const json = (await res.json()) as { modelAliases?: Record<string, string> };
+      prevGlobal = json.modelAliases ?? {};
+    } catch (err) {
+      return { ok: false, stage: 'aliases', detail: errorMessage(err) };
+    }
 
-  const modelAliases = deriveSourceAliases(prevGlobal, changes);
+    const modelAliases = deriveSourceAliases(prevGlobal, changes);
 
-  try {
-    const res = await fetch(
-      `${GATEWAY}/api/model-aliases`,
-      withUiHeaders({
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ modelAliases }),
-      }),
-    );
-    if (!res.ok) return { ok: false, stage: 'aliases', detail: await errorDetail(res) };
-  } catch (err) {
-    return { ok: false, stage: 'aliases', detail: errorMessage(err) };
+    try {
+      const res = await fetch(
+        `${GATEWAY}/api/model-aliases`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ modelAliases }),
+        }),
+      );
+      if (!res.ok) return { ok: false, stage: 'aliases', detail: await errorDetail(res) };
+    } catch (err) {
+      return { ok: false, stage: 'aliases', detail: errorMessage(err) };
+    }
   }
 
   try {
