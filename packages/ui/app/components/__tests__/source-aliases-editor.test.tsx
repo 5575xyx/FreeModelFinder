@@ -46,7 +46,7 @@ describe('SourceAliasesEditor', () => {
     // 'novay/' prefix is display text, not an editable input value.
     expect(screen.getByText('novay/')).toBeTruthy();
     expect(screen.queryByDisplayValue('novay/')).toBeNull();
-    const select = screen.getByRole('combobox');
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
     const opts = Array.from(select.options).map((o) => o.value);
     expect(opts).toContain(TARGET_GL);
     expect(opts).toContain('custom:novay:qwen-8b');
@@ -67,8 +67,8 @@ describe('SourceAliasesEditor', () => {
 
     // Reserved word "auto" with a picked target: still not reported.
     await user.click(await screen.findByRole('button', { name: /添加别名/ }));
-    await user.type(screen.getAllByPlaceholderText(/别名名/)[1], 'auto');
-    await user.selectOptions(screen.getAllByRole('combobox')[1], TARGET_GL);
+    await user.type(screen.getAllByPlaceholderText(/别名名/)[1]!, 'auto');
+    await user.selectOptions(screen.getAllByRole('combobox')[1]!, TARGET_GL);
     expect(reports.flat().some((ed) => (ed as { alias?: string }).alias === 'auto')).toBe(false);
 
     // Every alias reported in any snapshot is prefix-free and non-reserved.
@@ -88,9 +88,7 @@ describe('SourceAliasesEditor', () => {
     await user.click(await screen.findByRole('button', { name: /添加别名/ }));
     await user.type(screen.getByPlaceholderText(/别名名/), 'glm');
     // Picking a target completes the row and reports it immediately.
-    const select = screen.getByRole('combobox');
-    select.value = TARGET_GL;
-    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await user.selectOptions(screen.getByRole('combobox') as HTMLSelectElement, TARGET_GL);
     await waitFor(
       () => {
         const flat = reports.flat() as Array<{ alias?: string; targetModel?: string }>;
