@@ -64,13 +64,16 @@
 - `31c4181` feat(ui): 别名入口搬到 Custom 来源卡片；先 aliases 后 sources
 - `763caed` fix(ui): 删来源剥前缀；单一迁移提示；钉住 R1 排除
 - `e935be6` / `27f9798` / `a73cc88` / `d192826` docs + 小修 + 测试超时余量
+- `ed0e7df` fix(ui): 删除来源内模型时丢弃指向它的上报别名行（最终评审 I1，防悬空别名）
 
 **关键裁决（实现期）：**
 
 - R1：被纳入改写集合的来源，其 `来源id/*` 命名空间先整体清空再按编辑器上报行重写；仅纳入已上报来源，被删除来源强制以空命名空间纳入。core 解析内核零改动。
 - R2/R3：编辑器 `sourceId` 维度 hydrate 一次，hydrate 后无条件上报（含空表）成为权威；上报别名做 trim、hydrate 校验、严格目标前缀、非 2xx/无效 JSON 视为加载失败且不上报。
 
-**验证：** core 635 / server 360 / cli / ui 218 全绿；`pnpm typecheck`、`pnpm lint`（0 警告）通过；`pnpm test:coverage` 整仓 exit 0（UI coverage 行覆盖 ≥70 阈值）。`pnpm format:check` 本地因 CRLF 工作树噪声失败，改动集内文件逐个 prettier 校验干净（CI LF 检出通过）。
+**验证：** core 635 / server 360 / cli / ui 219 全绿；`pnpm typecheck`、`pnpm lint`（0 警告）通过；`pnpm test:coverage` 整仓 exit 0（UI coverage 行覆盖 ≥70 阈值）。`pnpm format:check` 本地因 CRLF 工作树噪声失败，改动集内文件逐个 prettier 校验干净（CI LF 检出通过）。
+
+**最终整分支评审：** 结论 ship（0 Critical / 2 Important，其中 I1 已修 `ed0e7df`；I2「清空全部不剥 `custom:*` 别名」与缩进两处遗留记录见下）。
 
 **未做（记录）：** `clearCustomProvider`（清空全部）不剥 `custom:*` 别名；旧格式裸名为设计上的"接受滞留"、保留在全局表。
 
