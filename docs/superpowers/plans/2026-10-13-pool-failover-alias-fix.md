@@ -1,7 +1,7 @@
 # 候选池故障切换与限流修复（含衍生 Bug A/B）
 
 - **Date:** 2026-10-13
-- **Status:** 进行中（Bug A/B 代码已改，新测试未跑 GREEN）
+- **Status:** Bug A/B 已修复并推送（`4ccc60d`）；别名来源级功能已实现并全量回归通过（本地领先 origin/main，未推送）
 - **分支:** `main`（远端 `https://github.com/5575xyx/FreeModelFinder.git`）
 - **Git:** 本地 = `origin/main` = `ac221e3`（已推送批次 1）；工作树有未提交改动（Bug A/B）
 
@@ -33,9 +33,9 @@
 - [x] Bug B：`registry.ts` `resolveModel` 启发式链末尾加目录精确查找兜底
 - [x] Bug A 测试：`auto-modality.test.ts` 新增「text model whose id contains "vid"」（RED 已确认）
 - [x] Bug B 测试：`registry.test.ts` 新增「resolveModel honours ids published by /v1/models」3 条（RED 已确认）
-- [ ] **跑 `registry.test.ts` + `auto-modality.test.ts`，确认 4 条新测试全绿**
-- [ ] 跑完整 core + server 测试、typecheck、lint
-- [ ] 提交 Bug A/B 修复
+- [x] **跑 `registry.test.ts` + `auto-modality.test.ts`，确认 4 条新测试全绿**
+- [x] 跑完整 core + server 测试、typecheck、lint
+- [x] 提交 Bug A/B 修复
 - [ ] 向用户提醒推送（等用户「推送」二字再推）
 
 ## 已完成（4ccc60d 已推）
@@ -46,19 +46,38 @@
 
 ## 进行中：别名配置入口挪到来源级（最小侵入版）
 
-- [ ] 设计讨论（进行中）
-  - [x] 动机：客户端（调网关的 key）使用别名，入口挪到 Custom 标签
-  - [x] 作用域：来源限定命名空间
-  - [x] 落地范围：最小侵入版（不动 core 解析内核，别名存全局 map，UI 按来源分组编辑+自动加前缀）
-  - [ ] 剩余问题：
-    - 别名前缀格式（`来源id/别名名` 还是别的）
-    - 来源删除/重命名时别名的清理策略
-    - 客户端调用形式（`novaway/glm` 是否可被现有 resolveModel 原样命中）
-    - 现有已配置的别名（如 novaway2）如何迁移
+- [x] 设计定稿（`docs/superpowers/specs/2026-10-13-source-scoped-aliases-design.md`，含 2 轮 builder check + 实现期 R1 裁决）
+- [x] 实现计划（`docs/superpowers/plans/2026-10-13-source-scoped-aliases.md`，5 个 Task + TDD）
+- [x] 实现完成（subagent-driven：每 Task 实现 + 评审，关键裁决见下）
+
+**实现提交（4ccc60d..HEAD）：**
+
+- `878c54d` docs: design + plan + builder-check notes
+- `6f01580` feat(ui): 纯函数 `deriveSourceAliases`
+- `7098268` test(server): `/` 名 round-trip + 反查回显（零实现代码）
+- `1109d6d` feat(ui): `SourceAliasesEditor` 组件 + i18n
+- `a4029aa` fix(ui): **R1** `deriveSourceAliases` 来源权威化（删除行生效）
+- `ff1aea3` fix(ui): **R2** hydration 按内容键、hydrate 后权威上报、校验/裁剪
+- `d359f9d` test(ui): 测试 TS 收窄（typecheck 门禁）
+- `e98440b` fix(ui): 加载失败/无效 JSON 不视为权威空表（防误清命名空间）
+- `804067d` fix(ui): **R3** 每来源只 hydrate 一次（增删模型不覆盖别名编辑）
+- `31c4181` feat(ui): 别名入口搬到 Custom 来源卡片；先 aliases 后 sources
+- `763caed` fix(ui): 删来源剥前缀；单一迁移提示；钉住 R1 排除
+- `e935be6` / `27f9798` / `a73cc88` / `d192826` docs + 小修 + 测试超时余量
+
+**关键裁决（实现期）：**
+
+- R1：被纳入改写集合的来源，其 `来源id/*` 命名空间先整体清空再按编辑器上报行重写；仅纳入已上报来源，被删除来源强制以空命名空间纳入。core 解析内核零改动。
+- R2/R3：编辑器 `sourceId` 维度 hydrate 一次，hydrate 后无条件上报（含空表）成为权威；上报别名做 trim、hydrate 校验、严格目标前缀、非 2xx/无效 JSON 视为加载失败且不上报。
+
+**验证：** core 635 / server 360 / cli / ui 218 全绿；`pnpm typecheck`、`pnpm lint`（0 警告）通过；`pnpm test:coverage` 整仓 exit 0（UI coverage 行覆盖 ≥70 阈值）。`pnpm format:check` 本地因 CRLF 工作树噪声失败，改动集内文件逐个 prettier 校验干净（CI LF 检出通过）。
+
+**未做（记录）：** `clearCustomProvider`（清空全部）不剥 `custom:*` 别名；旧格式裸名为设计上的"接受滞留"、保留在全局表。
 
 ## 可选验证
 
 - 远端 `119.29.157.227:11435` 上用 key `fmf-XQuXTJB1AcMTw98JeZV5KXoYJupwttNV` 回归验证 `nvidia/nemotron-3-super-120b-a12b` 原样可发、`auto` 不再落到 `openrouter/free`
+- 本地 `pnpm dev:ui` + `pnpm dev:server`：Custom 标签为某来源加别名（如 `glm`）保存后，用客户端 key 调 `POST /v1/chat/completions` `model: "novaway/glm"` 验证 200 且响应 `model` 回显 `novaway/glm`
 
 ## 关键文件
 
