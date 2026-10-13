@@ -71,8 +71,7 @@ export abstract class OpenAICompatibleProvider extends BaseProvider {
       }),
     );
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`${this.id} chat failed ${res.status}: ${text}`);
+      await this.failUpstream('chat', res);
     }
     const data = (await res.json()) as OpenAILikeResponse;
     this.observeUsage(req.model, data.usage);
@@ -106,8 +105,7 @@ export abstract class OpenAICompatibleProvider extends BaseProvider {
       }),
     );
     if (!res.ok || !res.body) {
-      const text = await res.text();
-      throw new Error(`${this.id} stream failed ${res.status}: ${text}`);
+      return this.failUpstream('stream', res);
     }
 
     const reader = res.body.getReader();

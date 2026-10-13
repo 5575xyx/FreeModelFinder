@@ -163,8 +163,7 @@ export class AgnesIntlProvider extends OpenAICompatibleProvider {
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`agnes-intl image generation failed ${res.status}: ${text}`);
+      await this.failUpstream('image generation', res);
     }
 
     return (await res.json()) as ImageGenerationResponse;
@@ -246,8 +245,7 @@ export class AgnesIntlProvider extends OpenAICompatibleProvider {
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`agnes-intl video creation failed ${res.status}: ${text}`);
+      await this.failUpstream('video creation', res);
     }
 
     const data = (await res.json()) as Record<string, unknown>;
@@ -272,8 +270,7 @@ export class AgnesIntlProvider extends OpenAICompatibleProvider {
     );
 
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`agnes-intl video query failed ${res.status}: ${text}`);
+      await this.failUpstream('video query', res);
     }
 
     const data = (await res.json()) as Record<string, unknown>;

@@ -314,7 +314,9 @@ export class GeminiProvider extends BaseProvider {
         body: JSON.stringify(this.buildBody(req)),
       }),
     );
-    if (!res.ok) throw new Error(`gemini chat failed ${res.status}: ${await res.text()}`);
+    if (!res.ok) {
+      await this.failUpstream('chat', res);
+    }
     const data = (await res.json()) as GeminiResponse;
     const usage = data.usageMetadata
       ? {
@@ -352,7 +354,7 @@ export class GeminiProvider extends BaseProvider {
       }),
     );
     if (!res.ok || !res.body) {
-      throw new Error(`gemini stream failed ${res.status}: ${await res.text()}`);
+      return this.failUpstream('stream', res);
     }
 
     const reader = res.body.getReader();

@@ -1,4 +1,5 @@
 export { BaseProvider } from './base.js';
+export { UpstreamError } from './upstream-error.js';
 export { OpenRouterProvider } from './openrouter.js';
 export { GeminiProvider } from './gemini.js';
 export { ZhipuProvider } from './zhipu.js';

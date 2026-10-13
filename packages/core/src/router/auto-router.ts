@@ -110,14 +110,29 @@ export function parseRateLimitError(err: unknown): RateLimitParseResult {
   }
 
   let retryAfterSec: number | undefined;
+  let resetAt: number | undefined;
+
+  // Prefer the structured hint from an `UpstreamError`. It can be either of
+  // RFC 9110's two forms, and deciding between them here is what keeps an
+  // HTTP-date from being read as "2026 seconds".
+  const hint = (err as { retryAfter?: unknown } | null)?.retryAfter;
+  if (typeof hint === 'string' && hint.trim() !== '') {
+    const value = hint.trim();
+    if (/^\d+$/.test(value)) {
+      retryAfterSec = Number(value);
+    } else {
+      const ts = Date.parse(value);
+      if (!Number.isNaN(ts)) resetAt = ts;
+    }
+  }
+
   const retryAfterMatch = message.match(/retry[\s-]?after[^0-9]*(\d+)/i);
-  if (retryAfterMatch) retryAfterSec = Number(retryAfterMatch[1]);
+  if (retryAfterSec === undefined && retryAfterMatch) retryAfterSec = Number(retryAfterMatch[1]);
   const secondsMatch = message.match(/(?:in|after|wait)\s+(\d+)\s*(?:s|seconds?)\b/i);
   if (retryAfterSec === undefined && secondsMatch) retryAfterSec = Number(secondsMatch[1]);
 
-  let resetAt: number | undefined;
   const isoMatch = message.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^\s"'}]*)/);
-  if (isoMatch) {
+  if (resetAt === undefined && isoMatch) {
     const ts = Date.parse(isoMatch[1]!);
     if (!Number.isNaN(ts)) resetAt = ts;
   }

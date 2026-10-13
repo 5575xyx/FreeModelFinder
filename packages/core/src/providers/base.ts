@@ -12,6 +12,7 @@ import type {
   VideoGenerationRequest,
   VideoGenerationResponse,
 } from '../types.js';
+import { UpstreamError } from './upstream-error.js';
 
 export interface ProviderContext {
   credentials: ProviderCredentials;
@@ -77,6 +78,23 @@ export abstract class BaseProvider {
       headers: response.headers,
     });
     return response;
+  }
+
+  /**
+   * Throw for a failed upstream call, keeping the status and the `Retry-After`
+   * hint out of the prose message.
+   *
+   * The body is best-effort: some upstreams close the socket on an error, and
+   * a diagnostic that cannot be read is still worth reporting.
+   */
+  protected async failUpstream(action: string, response: Response): Promise<never> {
+    let body = '';
+    try {
+      body = await response.text();
+    } catch {
+      body = '';
+    }
+    throw new UpstreamError(`${this.id} ${action} failed ${response.status}: ${body}`, response);
   }
 
   protected observeUsage(model: string, usage?: ChatResponse['usage']): void {
