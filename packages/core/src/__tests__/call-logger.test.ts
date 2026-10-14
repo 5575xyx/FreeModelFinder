@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { CallLogger } from '../call-logger.js';
+import { CallLogger, startOfBucket } from '../call-logger.js';
 import type { CallLogEntry } from '../types.js';
 
 function entry(overrides: Partial<CallLogEntry> = {}): CallLogEntry {
@@ -99,19 +99,22 @@ describe('CallLogger', () => {
     assert.equal(list.length, 1);
   });
 
-  it('cleans up files older than retention', async () => {
-    // Write an entry dated 40 days ago, then run cleanup with a future "now".
-    const oldTs = Date.now() - 40 * 86_400_000;
-    logger.record(entry({ ts: oldTs, model: 'ancient' }));
-    await logger.flush();
+  it('cleans up files older than the 90-day retention window', async () => {
+    // Own directory: the shared logger's files from other cases would be
+    // deleted too, so the exact removal count could not be asserted.
+    const cleanupDir = await mkdtemp(join(tmpdir(), 'fmf-call-logger-cleanup-'));
+    const own = new CallLogger(cleanupDir);
+    own.record(entry({ ts: Date.now() - 91 * 86_400_000, model: 'ancient' }));
+    own.record(entry({ ts: Date.now() - 89 * 86_400_000, model: 'recent' }));
+    await own.flush();
 
-    const removed = await logger.cleanup(Date.now());
-    assert.ok(removed >= 1);
+    const removed = await own.cleanup(Date.now());
+    assert.equal(removed, 1, '只有 91 天前的文件被删');
 
-    // Old entry should no longer be readable from disk (memory buffer still
-    // holds it, so filter by model to confirm it only survives in memory).
-    const stillInMemory = await logger.list({ model: 'ancient' });
-    assert.ok(stillInMemory.length >= 1);
+    // The 89-day-old entry is still readable (from memory or disk).
+    const kept = await own.list({ model: 'recent' });
+    assert.ok(kept.length >= 1);
+    await rm(cleanupDir, { recursive: true, force: true });
   });
 
   it('pages by cursor without losing or repeating entries that share a timestamp', async () => {
@@ -158,5 +161,51 @@ describe('CallLogger', () => {
     const all = await paged.list({ limit: 10 });
     assert.equal(page.data.length, all.length);
     await rm(pagedDir, { recursive: true, force: true });
+  });
+
+  it('buckets a series by local day and zero-fills empty days', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'fmf-call-logger-series-'));
+    const logger = new CallLogger(dir);
+    const now = new Date(2026, 9, 14, 12, 0, 0).getTime(); // 2026-10-14 本地
+    logger.record(
+      entry({
+        ts: new Date(2026, 9, 12, 9, 0, 0).getTime(),
+        model: 'series-a',
+        promptTokens: 10,
+      }),
+    );
+    logger.record(
+      entry({
+        ts: new Date(2026, 9, 14, 9, 0, 0).getTime(),
+        model: 'series-a',
+        status: 'error',
+        promptTokens: 5,
+      }),
+    );
+    await logger.flush();
+
+    const series = await logger.series('7d', 'day', now);
+    assert.equal(series.points.length, 8, '7 天范围应含 8 个日桶（10-07..10-14）');
+    const byDate = new Map(series.points.map((p) => [new Date(p.start).getDate(), p]));
+    assert.equal(byDate.get(13)!.calls, 0, '空缺日必须补 0');
+    assert.equal(byDate.get(12)!.calls, 1);
+    assert.equal(byDate.get(14)!.calls, 1);
+    assert.equal(byDate.get(14)!.errors, 1);
+    assert.equal(byDate.get(14)!.promptTokens, 5);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('starts weeks on Monday in local time', () => {
+    const sunday = new Date(2026, 9, 11, 23, 59, 0).getTime(); // 周日
+    const monday = new Date(2026, 9, 12, 0, 1, 0).getTime(); // 周一
+    assert.notEqual(startOfBucket(sunday, 'week'), startOfBucket(monday, 'week'));
+    assert.equal(new Date(startOfBucket(monday, 'week')).getDay(), 1);
+  });
+
+  it('starts months at the local first day', () => {
+    const monthEnd = new Date(2026, 8, 30, 23, 59, 0).getTime();
+    const nextMonth = new Date(2026, 9, 1, 0, 1, 0).getTime();
+    assert.notEqual(startOfBucket(monthEnd, 'month'), startOfBucket(nextMonth, 'month'));
+    assert.equal(new Date(startOfBucket(nextMonth, 'month')).getDate(), 1);
   });
 });

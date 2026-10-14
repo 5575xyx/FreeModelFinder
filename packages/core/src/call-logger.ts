@@ -17,8 +17,10 @@ export function emitUsageCapture(usage?: ChatResponse['usage']): void {
 }
 
 const MEMORY_BUFFER = 1000;
-const RETENTION_DAYS = 30;
+const RETENTION_DAYS = 90;
 const FILE_PREFIX = 'calls-';
+/** Guard against a pathological "all" range producing thousands of points. */
+const MAX_SERIES_BUCKETS = 366;
 
 export interface CallLogFilter {
   limit?: number;
@@ -82,7 +84,7 @@ export interface CallStatsModelRow {
 }
 
 export interface CallStatsResult {
-  range: 'today' | '7d' | '30d' | 'all';
+  range: CallStatsRange;
   since: number;
   totals: {
     calls: number;
@@ -99,6 +101,56 @@ export interface CallStatsResult {
   byModel: CallStatsModelRow[];
 }
 
+export type CallStatsRange = 'today' | '7d' | '30d' | '90d' | 'all';
+export type CallStatsBucket = 'day' | 'week' | 'month';
+
+export interface CallStatsSeriesPoint {
+  start: number;
+  calls: number;
+  errors: number;
+  rateLimited: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+}
+
+export interface CallStatsSeries {
+  range: CallStatsRange;
+  /** May be coarser than requested when the bucket count exceeded the guard. */
+  bucket: CallStatsBucket;
+  since: number;
+  until: number;
+  points: CallStatsSeriesPoint[];
+}
+
+/** Local-time start of the bucket containing `ts`. Weeks start on Monday. */
+export function startOfBucket(ts: number, bucket: CallStatsBucket): number {
+  const d = new Date(ts);
+  if (bucket === 'day') {
+    d.setHours(0, 0, 0, 0);
+  } else if (bucket === 'week') {
+    d.setHours(0, 0, 0, 0);
+    // getDay(): Sunday=0. Shift so Monday becomes 0.
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  } else {
+    d.setHours(0, 0, 0, 0);
+    d.setDate(1);
+  }
+  return d.getTime();
+}
+
+/** Exclusive upper bound of the bucket containing `ts`. */
+export function nextBucket(ts: number, bucket: CallStatsBucket): number {
+  const d = new Date(ts);
+  if (bucket === 'day') d.setDate(d.getDate() + 1);
+  else if (bucket === 'week') d.setDate(d.getDate() + 7);
+  else {
+    d.setDate(1);
+    d.setMonth(d.getMonth() + 1);
+  }
+  return d.getTime();
+}
+
 function dayKey(ts: number): string {
   const d = new Date(ts);
   const y = d.getFullYear();
@@ -111,6 +163,18 @@ function startOfToday(now: number): number {
   const d = new Date(now);
   d.setHours(0, 0, 0, 0);
   return d.getTime();
+}
+
+function sinceForRange(range: CallStatsRange, now: number): number {
+  return range === 'today'
+    ? startOfToday(now)
+    : range === '7d'
+      ? now - 7 * 86_400_000
+      : range === '30d'
+        ? now - 30 * 86_400_000
+        : range === '90d'
+          ? now - 90 * 86_400_000
+          : 0;
 }
 
 function parseLine(line: string): CallLogEntry | null {
@@ -221,16 +285,9 @@ export class CallLogger {
     return (await this.listPage(filter)).data;
   }
 
-  async aggregate(range: CallStatsResult['range'] = 'today'): Promise<CallStatsResult> {
+  async aggregate(range: CallStatsRange = 'today'): Promise<CallStatsResult> {
     const now = Date.now();
-    const since =
-      range === 'today'
-        ? startOfToday(now)
-        : range === '7d'
-          ? now - 7 * 86_400_000
-          : range === '30d'
-            ? now - 30 * 86_400_000
-            : 0;
+    const since = sinceForRange(range, now);
 
     const entries = await this.collect({ since });
     const byModel = new Map<string, CallStatsModelRow>();
@@ -296,6 +353,69 @@ export class CallLogger {
 
     const rows = [...byModel.values()].sort((a, b) => b.calls - a.calls);
     return { range, since, totals, byModel: rows };
+  }
+
+  /**
+   * Time-bucketed call counts and tokens for trend charts. Empty buckets are
+   * zero-filled so the time axis stays continuous ("which day went quiet?" is
+   * the whole point of the chart). Weeks start Monday, buckets are local time.
+   */
+  async series(
+    range: CallStatsRange,
+    bucket: CallStatsBucket,
+    now: number = Date.now(),
+  ): Promise<CallStatsSeries> {
+    const since = sinceForRange(range, now);
+    const entries = await this.collect({ since });
+    // For "all", anchor the first bucket at the earliest record rather than
+    // epoch zero; otherwise the series would contain millions of empty buckets.
+    const earliest =
+      range === 'all' && entries.length > 0 ? Math.min(...entries.map((e) => e.ts)) : since;
+    let effectiveBucket = bucket;
+    if (
+      Math.ceil(
+        (startOfBucket(now, bucket) - startOfBucket(earliest, bucket)) /
+          (nextBucket(now, bucket) - startOfBucket(now, bucket)),
+      ) > MAX_SERIES_BUCKETS
+    ) {
+      effectiveBucket = 'month';
+    }
+
+    const points = new Map<number, CallStatsSeriesPoint>();
+    let cursor = startOfBucket(earliest, effectiveBucket);
+    const lastStart = startOfBucket(now, effectiveBucket);
+    while (cursor <= lastStart) {
+      points.set(cursor, {
+        start: cursor,
+        calls: 0,
+        errors: 0,
+        rateLimited: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        cachedTokens: 0,
+      });
+      cursor = nextBucket(cursor, effectiveBucket);
+    }
+
+    for (const e of entries) {
+      const start = startOfBucket(e.ts, effectiveBucket);
+      const point = points.get(start);
+      if (!point) continue;
+      point.calls += 1;
+      if (e.status === 'error') point.errors += 1;
+      else if (e.status === 'rate_limited') point.rateLimited += 1;
+      point.promptTokens += e.promptTokens ?? 0;
+      point.completionTokens += e.completionTokens ?? 0;
+      point.cachedTokens += e.cachedTokens ?? 0;
+    }
+
+    return {
+      range,
+      bucket: effectiveBucket,
+      since,
+      until: now,
+      points: [...points.values()].sort((a, b) => a.start - b.start),
+    };
   }
 
   /** Today's usage attributed to one gateway key (for limit enforcement). */
