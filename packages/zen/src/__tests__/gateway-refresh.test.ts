@@ -212,6 +212,90 @@ describe('zen refresher', () => {
     assert.equal(catalog.protocolFor('doc-only', 'zen'), 'chat');
   });
 
+  // raw.githubusercontent.com is routinely slow or blackholed from mainland
+  // hosts. registry.ts bounds provider listModels at 20s, and the docs fallback
+  // runs serially after the fast Promise.all, so a hung docs source alone pushes
+  // a refresh past that ceiling: the model page then reports
+  // "opencode listModels timed out after 20000ms" while every other upstream
+  // answered in under a second.
+  function hangingDocsFetch(): { fetchImpl: typeof fetch; peakInFlight: () => number } {
+    const inner = makeFetch({ fail: false });
+    let inFlight = 0;
+    let peak = 0;
+    const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (!url.endsWith('.mdx')) return inner(input, init);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      try {
+        return await new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal?.aborted) {
+            reject(signal.reason);
+            return;
+          }
+          signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+      } finally {
+        inFlight -= 1;
+      }
+    };
+    return { fetchImpl: fetchImpl as unknown as typeof fetch, peakInFlight: () => peak };
+  }
+
+  const DOCS_HANG_GUARD_MS = 1_200;
+
+  function racingRefresh(
+    refresher: ZenRefresher,
+  ): Promise<{ completed: boolean; elapsed: number }> {
+    const started = Date.now();
+    return Promise.race([
+      refresher.refreshOnce().then(() => ({ completed: true, elapsed: Date.now() - started })),
+      new Promise<{ completed: boolean; elapsed: number }>((resolve) =>
+        setTimeout(
+          () => resolve({ completed: false, elapsed: Date.now() - started }),
+          DOCS_HANG_GUARD_MS,
+        ),
+      ),
+    ]);
+  }
+
+  it('bounds the docs fallback so a hanging docs source cannot stall a refresh', async () => {
+    const { fetchImpl } = hangingDocsFetch();
+    const refresher = new ZenRefresher({
+      config,
+      catalog: new ZenCatalog('go', {}),
+      pricing: new ZenPricingStore(),
+      fetchImpl,
+      docsTimeoutMs: 150,
+    });
+
+    const { completed, elapsed } = await racingRefresh(refresher);
+
+    assert.equal(
+      completed,
+      true,
+      `refresh must finish despite a hanging docs source, elapsed=${elapsed}ms`,
+    );
+    assert.ok(elapsed < DOCS_HANG_GUARD_MS, `refresh took ${elapsed}ms`);
+  });
+
+  it('fetches the zen and go docs sources concurrently', async () => {
+    const { fetchImpl, peakInFlight } = hangingDocsFetch();
+    const refresher = new ZenRefresher({
+      config,
+      catalog: new ZenCatalog('go', {}),
+      pricing: new ZenPricingStore(),
+      fetchImpl,
+      docsTimeoutMs: 150,
+    });
+
+    const { completed } = await racingRefresh(refresher);
+
+    assert.equal(completed, true, 'refresh must finish');
+    assert.equal(peakInFlight(), 2, 'zen and go docs must be requested together, not serially');
+  });
+
   it('refreshes models.dev once, then serves pricing from the 24h window', async () => {
     const state: FakeState = { fail: false };
     const pricing = new ZenPricingStore();

@@ -22,6 +22,16 @@ export const GO_DOCS_URL =
   'https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/web/src/content/docs/go.mdx';
 export const MODELS_DEV_URL = 'https://models.dev/api.json';
 
+/**
+ * Budget for one docs source.
+ *
+ * The .mdx tables only supplement capabilities that models.opencode.ai already
+ * supplied, so a slow or blackholed raw.githubusercontent.com must never extend
+ * a refresh: registry.ts bounds provider listModels at 20s, and a hung docs
+ * fetch (36s+ per source, serially) overruns it and blanks the model page.
+ */
+export const DOCS_TIMEOUT_MS = 5_000;
+
 // Mirrors modelCatalogCacheSchemaVersion in internal/models/cache.go:20.
 export const CATALOG_CACHE_SCHEMA_VERSION = 3;
 
@@ -75,6 +85,8 @@ export interface ZenRefresherOptions {
   monitor?: ZenAttemptMonitor;
   logger?: ZenRefreshLogger;
   now?: () => number;
+  /** Budget per docs source; injectable so a hanging source can be tested fast. */
+  docsTimeoutMs?: number;
 }
 
 interface ParsedCatalogCache {
@@ -177,9 +189,13 @@ function protocolForEndpoint(kind: string | undefined): ZenNativeProtocol | unde
 export async function fetchProtocolDocs(
   endpoint: string,
   fetchImpl: typeof fetch,
+  timeoutMs: number = DOCS_TIMEOUT_MS,
 ): Promise<Record<string, ZenNativeProtocol>> {
   const response = await fetchImpl(endpoint, {
     headers: { accept: 'text/plain, text/markdown, */*', 'user-agent': openCodeUserAgent() },
+    // The signal covers response.text() too, so a source that answers headers
+    // and then stalls cannot hold the refresh open either.
+    ...(timeoutMs > 0 ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
   });
   if (!response.ok) {
     throw new Error(`endpoint documentation returned HTTP ${response.status}`);
@@ -208,6 +224,7 @@ export class ZenRefresher {
   private readonly cachePaths: { catalog?: string; pricing?: string };
   private readonly logger: ZenRefreshLogger;
   private readonly now: () => number;
+  private readonly docsTimeoutMs: number;
   private readonly intervalMs: number;
   private zenModels: string[] = [];
   private goModels: string[] = [];
@@ -235,6 +252,7 @@ export class ZenRefresher {
     this.cachePaths = options.cachePaths ?? {};
     this.logger = options.logger ?? {};
     this.now = options.now ?? (() => Date.now());
+    this.docsTimeoutMs = options.docsTimeoutMs ?? DOCS_TIMEOUT_MS;
     this.intervalMs = Math.max(1, this.config.models.refreshSeconds) * 1000;
     this.catalog.setRefreshIntervalMs(this.intervalMs);
   }
@@ -420,19 +438,30 @@ export class ZenRefresher {
       { tier: 'zen', url: ZEN_DOCS_URL },
       { tier: 'go', url: GO_DOCS_URL },
     ];
-    for (const doc of docs) {
-      try {
-        const protocols = await fetchProtocolDocs(doc.url, this.fetchImpl);
-        const layer = (caps.native[doc.tier] ??= {});
-        const unsupported = caps.unsupported[doc.tier];
-        for (const [modelId, protocol] of Object.entries(protocols)) {
-          layer[modelId] = protocol;
-          if (unsupported) delete unsupported[modelId];
-        }
-      } catch {
+    // Both sources are independent, so they are fetched together: run serially
+    // their timeouts add up (2 x 42s was observed on a blackholed route) and the
+    // refresh alone blows past the provider's 20s listModels ceiling. Writing
+    // into caps is deferred until after the settle so concurrent tasks cannot
+    // interleave on the same tier object.
+    const results = await Promise.allSettled(
+      docs.map(async (doc) => ({
+        doc,
+        protocols: await fetchProtocolDocs(doc.url, this.fetchImpl, this.docsTimeoutMs),
+      })),
+    );
+    results.forEach((result, index) => {
+      const doc = docs[index]!;
+      if (result.status === 'rejected') {
         this.logger.debug?.('zen docs fallback unavailable', { tier: doc.tier });
+        return;
       }
-    }
+      const layer = (caps.native[doc.tier] ??= {});
+      const unsupported = caps.unsupported[doc.tier];
+      for (const [modelId, protocol] of Object.entries(result.value.protocols)) {
+        layer[modelId] = protocol;
+        if (unsupported) delete unsupported[modelId];
+      }
+    });
   }
 
   private async tryRefreshPricing(now: number, errors: string[]): Promise<number> {
