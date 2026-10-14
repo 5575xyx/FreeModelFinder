@@ -24,18 +24,19 @@ after(() => {
 const UI_HEADERS = { origin: 'http://127.0.0.1:11435', 'x-fmf-client': 'ui' };
 
 /** Minimal registry; the stats routes only read from the CallLogger. */
-function stubRegistry(): ProviderRegistry {
+function stubRegistry() {
   const registry = new ProviderRegistry({
     version: 2,
     port: 0,
     providers: {},
     gateway: { requireAuth: false },
   });
-  registry.listAllModels = async () => ({
-    models: [{ id: 'p:m', provider: 'p', displayName: 'm', free: true, capabilities: ['text'] }],
-    succeededProviders: ['p'],
-    failedProviders: [],
-  });
+  registry.listAllModels = async () =>
+    ({
+      models: [{ id: 'p:m', provider: 'p', displayName: 'm', free: true, capabilities: ['text'] }],
+      succeededProviders: ['p'],
+      failedProviders: [],
+    }) as unknown as Awaited<ReturnType<typeof registry.listAllModels>>;
   return registry;
 }
 

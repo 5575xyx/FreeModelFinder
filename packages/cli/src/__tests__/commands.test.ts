@@ -59,13 +59,14 @@ function configStore(initial = config()) {
   };
 }
 
-function registryWithModels(): ProviderRegistry {
+function registryWithModels() {
   const registry = new ProviderRegistry(config());
-  registry.listAllModels = async () => ({
-    models: [{ id: 'fixture', provider: 'custom', displayName: 'Fixture', free: true }],
-    succeededProviders: ['custom'],
-    failedProviders: [{ id: 'github', error: 'temporarily offline' }],
-  });
+  registry.listAllModels = async () =>
+    ({
+      models: [{ id: 'fixture', provider: 'custom', displayName: 'Fixture', free: true }],
+      succeededProviders: ['custom'],
+      failedProviders: [{ id: 'github', error: 'temporarily offline' }],
+    }) as unknown as Awaited<ReturnType<typeof registry.listAllModels>>;
   return registry;
 }
 
