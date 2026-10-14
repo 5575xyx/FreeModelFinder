@@ -1,24 +1,19 @@
 {
   "schemaVersion": 2,
-  "date": "2026-10-13",
-  "generatedAt": "2026-10-13T03:04:33.591Z",
-  "reportPath": "reports/provider-free-model-audit-2026-10-13.md",
+  "date": "2026-10-14",
+  "generatedAt": "2026-10-14T01:16:37.394Z",
+  "reportPath": "reports/provider-free-model-audit-2026-10-14.md",
   "totalModels": 94,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 15,
+      "count": 14,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
       "models": [
-        {
-          "id": "apodex/apodex-1.1-mini:free",
-          "displayName": "Apodex: Apodex 1.1 Mini (free)",
-          "contextWindow": 262144
-        },
         {
           "id": "cohere/north-mini-code:free",
           "displayName": "Cohere: North Mini Code (free)",
@@ -585,7 +580,7 @@
       "id": "opencode",
       "display": "OpenCode Zen",
       "status": "ok",
-      "count": 9,
+      "count": 10,
       "freeType": "实时零价模型（匿名通道）",
       "freeBasis": "实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public）",
       "risk": "匿名通道与免费层有速率和并发限制；部分免费模型只在 Go tier 提供；上游目录与定价可能随时变化",
@@ -593,6 +588,11 @@
         {
           "id": "opencode:big-pickle",
           "displayName": "big-pickle",
+          "contextWindow": null
+        },
+        {
+          "id": "opencode:cat-jam-free",
+          "displayName": "cat-jam-free",
           "contextWindow": null
         },
         {
@@ -639,9 +639,23 @@
     }
   ],
   "changes": {
-    "comparedWith": "2026-10-12",
-    "added": [],
-    "removed": [],
+    "comparedWith": "2026-10-13",
+    "added": [
+      {
+        "provider": "opencode",
+        "id": "opencode:cat-jam-free",
+        "displayName": "cat-jam-free",
+        "contextWindow": null
+      }
+    ],
+    "removed": [
+      {
+        "provider": "openrouter",
+        "id": "apodex/apodex-1.1-mini:free",
+        "displayName": "Apodex: Apodex 1.1 Mini (free)",
+        "contextWindow": 262144
+      }
+    ],
     "comparedProviders": [
       "openrouter",
       "zhipu",
