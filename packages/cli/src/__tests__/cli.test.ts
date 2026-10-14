@@ -156,7 +156,14 @@ describe('fmf CLI', () => {
     }
     assert.ok(health?.ok, 'gateway did not become healthy');
     assert.equal(((await health.json()) as { version: string }).version, expectedVersion);
-    assert.match(stdout, new RegExp(`127\\.0\\.0\\.1:${port}`));
+    // stdout 经管道异步到达：healthz 就绪与 console.log 落到父进程之间存在竞态，
+    // 覆盖率插桩下延迟会被放大，因此轮询等待而不是立即断言。
+    const urlPattern = new RegExp(`127\\.0\\.0\\.1:${port}`);
+    const stdoutDeadline = Date.now() + 5_000;
+    while (Date.now() < stdoutDeadline && !urlPattern.test(stdout)) {
+      await new Promise((resolveStdout) => setTimeout(resolveStdout, 50));
+    }
+    assert.match(stdout, urlPattern);
     child.kill('SIGTERM');
     await once(child, 'exit');
   });

@@ -1,15 +1,25 @@
 import assert from 'node:assert/strict';
-import { afterEach, describe, it } from 'node:test';
-import {
-  ProviderRegistry,
-  type AppConfig,
-  type ChatRequest,
-  type StreamChunk,
-} from '@freemodelfinder/core';
-import { chatCommand } from '../commands/chat.js';
-import { adminCommand } from '../commands/admin.js';
-import { keyCommand } from '../commands/key.js';
-import { modelCommand } from '../commands/model.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, afterEach, describe, it } from 'node:test';
+import type { AppConfig, ChatRequest, StreamChunk } from '@freemodelfinder/core';
+
+// CONFIG_DIR 在模块加载期解析，必须在 import core 之前设置 HOME，
+// 否则真实 ProviderRegistry 触发的 models.dev 上下文兜底会把缓存写进开发机。
+const testHome = await mkdtemp(join(tmpdir(), 'freemodelfinder-cli-commands-'));
+process.env.FREEMODELFINDER_HOME = testHome;
+
+const { ProviderRegistry } = await import('@freemodelfinder/core');
+const { chatCommand } = await import('../commands/chat.js');
+const { adminCommand } = await import('../commands/admin.js');
+const { keyCommand } = await import('../commands/key.js');
+const { modelCommand } = await import('../commands/model.js');
+
+after(async () => {
+  await rm(testHome, { recursive: true, force: true });
+  delete process.env.FREEMODELFINDER_HOME;
+});
 
 function config(): AppConfig {
   return {
