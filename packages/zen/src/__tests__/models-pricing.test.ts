@@ -149,3 +149,72 @@ describe('models.dev edge cases', () => {
     assert.equal(decision.outputCost, 4);
   });
 });
+
+// models.dev publishes per-model limits under "limit". The opencode capability
+// catalog omits them, so discovery clients only learn a model's context and
+// output ceilings from here.
+describe('models.dev limits', () => {
+  it('reads per-model context and output limits', () => {
+    const models = decodeModelsDev({
+      opencode: {
+        id: 'opencode',
+        models: {
+          m: {
+            id: 'm',
+            cost: { input: 0, output: 0 },
+            limit: { context: 128000, input: 100000, output: 8192 },
+          },
+        },
+      },
+    });
+    assert.equal(models['m']?.contextWindow, 128000);
+    assert.equal(models['m']?.maxInput, 100000);
+    assert.equal(models['m']?.maxOutput, 8192);
+  });
+
+  it('omits limits models.dev did not publish', () => {
+    const models = decodeModelsDev({
+      opencode: { id: 'opencode', models: { m: { id: 'm' } } },
+    });
+    assert.equal(models['m']?.contextWindow, undefined);
+    assert.equal(models['m']?.maxInput, undefined);
+    assert.equal(models['m']?.maxOutput, undefined);
+  });
+
+  it('merges secondary opencode providers instead of stopping at the first', () => {
+    const models = decodeModelsDev({
+      opencode: {
+        id: 'opencode',
+        models: { shared: { id: 'shared', cost: { input: 1, output: 2 } } },
+      },
+      'my-opencode-custom': {
+        id: '',
+        name: 'my-opencode-custom',
+        models: {
+          shared: { id: 'shared', cost: { input: 9, output: 9 } },
+          extra: { id: 'extra', cost: { input: 0, output: 0 } },
+        },
+      },
+    });
+    // the primary block alone must not end the scan: later opencode providers
+    // still contribute models it did not list.
+    assert.ok(models['extra'], 'model from a secondary opencode provider was dropped');
+    // and the primary stays authoritative for a duplicate id.
+    assert.equal(models['shared']?.input, 1);
+  });
+
+  it('exposes limits through the pricing store', () => {
+    const store = new ZenPricingStore();
+    store.replace(
+      decodeModelsDev({
+        opencode: {
+          id: 'opencode',
+          models: { m: { id: 'm', limit: { context: 1000, output: 500 } } },
+        },
+      }),
+      Date.now(),
+    );
+    assert.deepEqual(store.limits('m'), { contextWindow: 1000, maxOutput: 500 });
+    assert.equal(store.limits('absent'), undefined);
+  });
+});

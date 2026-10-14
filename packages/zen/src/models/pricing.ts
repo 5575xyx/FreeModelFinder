@@ -1,9 +1,15 @@
-import type { AnonymousDecision, PricingDecider } from './types.js';
+import type { AnonymousDecision, ModelLimits, PricingDecider } from './types.js';
 
 export interface ZenPrice {
   id: string;
   input?: number;
   output?: number;
+  /** models.dev limit.context */
+  contextWindow?: number;
+  /** models.dev limit.input */
+  maxInput?: number;
+  /** models.dev limit.output */
+  maxOutput?: number;
   deprecated: boolean;
 }
 
@@ -60,6 +66,11 @@ export function decodeModelsDev(data: unknown): Record<string, ZenPrice> {
     if (rank !== 0) return rank;
     return a < b ? -1 : a > b ? 1 : 0;
   });
+  // Providers are sorted with opencode first. Decoding therefore merges every
+  // opencode-family block into one map and keeps the primary's values for a
+  // duplicate id: stopping at the first block dropped models that only a
+  // secondary opencode tier listed.
+  const result: Record<string, ZenPrice> = {};
   for (const key of keys) {
     const rank = providerRank(key);
     if (rank > 1) continue;
@@ -71,22 +82,29 @@ export function decodeModelsDev(data: unknown): Record<string, ZenPrice> {
     }
     const models = asRecord(provider['models']);
     if (!models) continue;
-    const result: Record<string, ZenPrice> = {};
     for (const [id, raw] of Object.entries(models)) {
       const model = asRecord(raw) ?? {};
       const modelId = String(model['id'] ?? id);
+      if (modelId in result) continue;
       const cost = asRecord(model['cost']);
+      const limit = asRecord(model['limit']);
       const input = numberAt(cost, 'input');
       const output = numberAt(cost, 'output');
+      const contextWindow = numberAt(limit, 'context');
+      const maxInput = numberAt(limit, 'input');
+      const maxOutput = numberAt(limit, 'output');
       result[modelId] = {
         id: modelId,
         ...(input !== undefined ? { input } : {}),
         ...(output !== undefined ? { output } : {}),
+        ...(contextWindow !== undefined ? { contextWindow } : {}),
+        ...(maxInput !== undefined ? { maxInput } : {}),
+        ...(maxOutput !== undefined ? { maxOutput } : {}),
         deprecated: isDeprecated(model),
       };
     }
-    if (Object.keys(result).length > 0) return result;
   }
+  if (Object.keys(result).length > 0) return result;
   throw new Error('models.dev contains no OpenCode model metadata');
 }
 
@@ -107,6 +125,18 @@ export class ZenPricingStore implements PricingDecider {
 
   price(model: string): ZenPrice | undefined {
     return this.models[model];
+  }
+
+  /** models.dev limits for a model, or undefined when it publishes none. */
+  limits(model: string): ModelLimits | undefined {
+    const price = this.models[model];
+    if (!price) return undefined;
+    const limits: ModelLimits = {
+      ...(price.contextWindow !== undefined ? { contextWindow: price.contextWindow } : {}),
+      ...(price.maxInput !== undefined ? { maxInput: price.maxInput } : {}),
+      ...(price.maxOutput !== undefined ? { maxOutput: price.maxOutput } : {}),
+    };
+    return Object.keys(limits).length > 0 ? limits : undefined;
   }
 
   decide(model: string): AnonymousDecision {

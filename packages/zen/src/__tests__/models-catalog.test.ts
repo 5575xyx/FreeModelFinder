@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ZenCatalog } from '../models/catalog.js';
-import type { PricingDecider } from '../models/types.js';
+import type { ModelLimits, PricingDecider } from '../models/types.js';
 
 function catalog(): ZenCatalog {
   const c = new ZenCatalog('go', {});
@@ -242,5 +242,52 @@ describe('zen catalog routing', () => {
     assert.equal(zen.anonymous, true);
     assert.equal(zen.tier, 'zen');
     assert.deepEqual(zen.keyTiers, ['zen', 'go']);
+  });
+});
+
+// The opencode capability catalog is authoritative, but it omits context and
+// output ceilings. models.dev publishes them, so metadataForTier fills only the
+// fields the catalog left empty.
+describe('zen catalog limit backfill', () => {
+  const limitsStore = (limits: Record<string, ModelLimits>): PricingDecider => ({
+    decide: () => ({
+      allowed: false,
+      source: 'metadata_paid',
+      known: true,
+      deprecated: false,
+    }),
+    limits: (model) => limits[model],
+  });
+
+  it('fills omitted context limits from the pricing store', () => {
+    const c = new ZenCatalog('zen', {});
+    c.replace({ zen: ['a'], go: [], metadata: { zen: {} } });
+    c.setPricing(limitsStore({ a: { contextWindow: 200000, maxOutput: 64000 } }));
+    const md = c.metadataForTier('a', 'zen');
+    assert.equal(md?.contextWindow, 200000);
+    assert.equal(md?.maxOutput, 64000);
+  });
+
+  it('keeps the catalog limit over models.dev', () => {
+    const c = catalog();
+    c.setPricing(limitsStore({ 'm-free': { contextWindow: 200000, maxOutput: 64000 } }));
+    const md = c.metadataForTier('m-free', 'zen');
+    assert.equal(md?.contextWindow, 1000, 'catalog limit must win');
+    assert.equal(md?.maxOutput, 64000, 'an omitted field still gets filled');
+    assert.equal(md?.reasoning, true, 'capability flags still come from the catalog');
+  });
+
+  it('returns no metadata without a pricing store', () => {
+    const c = new ZenCatalog('zen', {});
+    c.replace({ zen: ['a'], go: [], metadata: { zen: {} } });
+    assert.equal(c.metadataForTier('a', 'zen'), undefined);
+  });
+
+  it('returns a copy callers cannot use to mutate catalog state', () => {
+    const c = catalog();
+    c.setPricing(limitsStore({ 'm-free': { contextWindow: 200000 } }));
+    const first = c.metadataForTier('m-free', 'zen');
+    if (first) first.contextWindow = 7;
+    assert.equal(c.metadataForTier('m-free', 'zen')?.contextWindow, 1000);
   });
 });

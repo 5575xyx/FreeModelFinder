@@ -7,7 +7,7 @@ import { createNodeHttpClient } from '../http.js';
 import { canonicalSessionId } from '../identity/session.js';
 import { ZenCatalog } from '../models/catalog.js';
 import { ZenPricingStore, type PricingSnapshot } from '../models/pricing.js';
-import type { CatalogSnapshot, ZenRoute, ZenTier } from '../models/types.js';
+import type { CatalogSnapshot, ZenModelMetadata, ZenRoute, ZenTier } from '../models/types.js';
 import { parseProxyList, type ProxySpec } from '../proxy/spec.js';
 import { convertResponse } from '../protocol/response.js';
 import {
@@ -90,6 +90,8 @@ export interface ZenGatewaySnapshot {
 export interface ZenGateway {
   listRoutes(hasZenKeys: boolean, hasGoKeys: boolean, hasAnonymous: boolean): ZenRoute[];
   isFreeModel(model: string): boolean;
+  /** Capability metadata for a model on a tier, with models.dev limits backfilled. */
+  metadataForTier(model: string, tier: ZenTier): ZenModelMetadata | undefined;
   snapshot(): ZenGatewaySnapshot;
   chat(request: ZenRequest): Promise<ZenChatResponse>;
   stream(request: ZenRequest): AsyncIterable<ZenStreamChunk>;
@@ -452,6 +454,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
   return {
     listRoutes,
     isFreeModel: (model: string) => catalog.isFreeModel(model),
+    metadataForTier: (model: string, tier: ZenTier) => catalog.metadataForTier(model, tier),
     snapshot,
     chat,
     stream,

@@ -210,6 +210,16 @@ describe('zen gateway runtime', () => {
     assert.equal(paid.anonymous, false);
   });
 
+  it('exposes catalog metadata with limits for a route tier', async () => {
+    const gateway = makeGateway(new FakeClient(() => inboundJson(200, CHAT_BODY)));
+    await gateway.refresh();
+    const free = gateway.metadataForTier('free-model', 'zen');
+    assert.equal(free?.contextWindow, 128000, 'the capability limit should reach the metadata');
+    assert.equal(free?.maxOutput, 4096);
+    // a model whose capability block publishes no limit stays empty
+    assert.equal(gateway.metadataForTier('paid-model', 'zen')?.contextWindow, undefined);
+  });
+
   it('exposes catalog free-model eligibility through isFreeModel', async () => {
     const gateway = makeGateway(new FakeClient(() => inboundJson(200, CHAT_BODY)));
     await gateway.refresh();

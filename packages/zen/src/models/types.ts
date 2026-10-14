@@ -2,10 +2,17 @@ import type { ZenNativeProtocol } from '../config/index.js';
 
 export type ZenTier = 'zen' | 'go';
 
-export interface ZenModelMetadata {
+/**
+ * Context and output ceilings for one model. The opencode capability catalog
+ * omits these, so they are backfilled from models.dev.
+ */
+export interface ModelLimits {
   contextWindow?: number;
   maxInput?: number;
   maxOutput?: number;
+}
+
+export interface ZenModelMetadata extends ModelLimits {
   reasoning?: boolean;
   toolCall?: boolean;
   structuredOutput?: boolean;
@@ -43,6 +50,8 @@ export interface CatalogSnapshot {
 
 export interface PricingDecider {
   decide(model: string): AnonymousDecision;
+  /** models.dev limits for this model, when the store knows it. */
+  limits?(model: string): ModelLimits | undefined;
 }
 
 export interface CatalogCapabilities {

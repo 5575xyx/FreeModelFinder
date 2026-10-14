@@ -117,6 +117,9 @@ function recordingGateway(calls: string[]): ZenGateway {
   return {
     listRoutes: () => [{ id: 'free-model' }],
     isFreeModel: () => true,
+    // mirrors the capability limit opencode publishes for this model
+    metadataForTier: (model: string) =>
+      model === 'free-model' ? { contextWindow: 128000, maxOutput: 4096 } : {},
     snapshot: () => ({}),
     chat: async () => {
       calls.push('chat');
@@ -191,6 +194,15 @@ describe('zen (opencode) provider', () => {
       );
       assert.equal(models.find((model) => model.id === 'opencode:free-model')?.free, true);
       assert.equal(models.find((model) => model.id === 'opencode:paid-model')?.free, false);
+      // the capability limit must survive the whole trip into ModelInfo
+      assert.equal(
+        models.find((model) => model.id === 'opencode:free-model')?.contextWindow,
+        128000,
+      );
+      assert.equal(
+        models.find((model) => model.id === 'opencode:paid-model')?.contextWindow,
+        undefined,
+      );
     } finally {
       await cache.cleanup();
     }

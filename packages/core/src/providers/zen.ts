@@ -142,13 +142,20 @@ export class ZenProvider extends BaseProvider {
     if (routes.length === 0) {
       throw new Error('opencode model catalog unavailable');
     }
-    return routes.map((route: ZenRoute): ModelInfo => ({
-      id: `opencode:${route.id}`,
-      provider: 'opencode',
-      displayName: route.id,
-      free: gateway.isFreeModel(route.id),
-      capabilities: ['text'],
-    }));
+    // The catalog reports a model's context ceiling, and models.dev fills the
+    // ceiling opencode omits, so a listing client can size requests without
+    // guessing.
+    return routes.map((route: ZenRoute): ModelInfo => {
+      const contextWindow = gateway.metadataForTier(route.id, route.tier)?.contextWindow;
+      return {
+        id: `opencode:${route.id}`,
+        provider: 'opencode',
+        displayName: route.id,
+        ...(contextWindow ? { contextWindow } : {}),
+        free: gateway.isFreeModel(route.id),
+        capabilities: ['text'],
+      };
+    });
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {

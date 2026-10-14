@@ -142,9 +142,23 @@ export class ZenCatalog {
     return false;
   }
 
+  /**
+   * The opencode capability catalog is authoritative for a model, but it omits
+   * context and output ceilings. models.dev publishes those, so only the fields
+   * the catalog left empty are filled in.
+   */
   metadataForTier(model: string, tier: ZenTier): ZenModelMetadata | undefined {
     const md = this.metadata[tier].get(model);
-    return md ? copyMetadata(md) : undefined;
+    const base = md ? copyMetadata(md) : undefined;
+    const limits = this.pricing?.limits?.(model);
+    if (!limits) return base;
+    const filled: ZenModelMetadata = base ?? {};
+    if (filled.contextWindow == null && limits.contextWindow != null) {
+      filled.contextWindow = limits.contextWindow;
+    }
+    if (filled.maxInput == null && limits.maxInput != null) filled.maxInput = limits.maxInput;
+    if (filled.maxOutput == null && limits.maxOutput != null) filled.maxOutput = limits.maxOutput;
+    return filled;
   }
 
   snapshot(): CatalogSnapshot {
