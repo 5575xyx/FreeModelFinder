@@ -59,17 +59,38 @@ const CHAT_BODY = {
  * persists the catalog and pricing in the background, so without this the suite
  * reads and writes the developer's real ~/.freemodelfinder state and its result
  * depends on whatever another run left there.
+ *
+ * `availability` belongs to the same contract: the probe scheduler writes it
+ * through the same default CONFIG_DIR, so omitting it silently recreates the
+ * real file on every run.
  */
 async function tempCachePaths(): Promise<{
-  extra: { cachePaths: { catalog: string; pricing: string } };
+  extra: { cachePaths: { catalog: string; pricing: string; availability: string } };
   cleanup: () => Promise<void>;
 }> {
   const dir = await mkdtemp(join(tmpdir(), 'fmf-zen-provider-'));
   return {
     extra: {
-      cachePaths: { catalog: join(dir, 'catalog.json'), pricing: join(dir, 'pricing.json') },
+      cachePaths: {
+        catalog: join(dir, 'catalog.json'),
+        pricing: join(dir, 'pricing.json'),
+        availability: join(dir, 'availability.json'),
+      },
     },
     cleanup: () => rm(dir, { recursive: true, force: true }),
+  };
+}
+
+/**
+ * Probe transport that never leaves the process. A started gateway schedules
+ * availability probes against every free model; without an injected client those
+ * probes hit the real opencode.ai from a unit test.
+ */
+function offlineClient(): ZenHttpClient {
+  return {
+    send: async () => {
+      throw new Error('probes must not leave the test process');
+    },
   };
 }
 
@@ -183,7 +204,10 @@ describe('zen (opencode) provider', () => {
     const cache = await tempCachePaths();
     try {
       const provider = new ZenProvider({
-        credentials: { apiKey: 'zen-key', extra: cache.extra },
+        credentials: {
+          apiKey: 'zen-key',
+          extra: { ...cache.extra, httpClient: offlineClient() },
+        },
         fetchImpl: fixedFetch(),
       });
       const models = await provider.listModels();
@@ -214,9 +238,11 @@ describe('zen (opencode) provider', () => {
         apiKey: '',
         extra: {
           anonymous: true,
+          httpClient: offlineClient(),
           cachePaths: {
             catalog: join(tmpdir(), 'fmf-zen-no-cache', 'catalog.json'),
             pricing: join(tmpdir(), 'fmf-zen-no-cache', 'pricing.json'),
+            availability: join(tmpdir(), 'fmf-zen-no-cache', 'availability.json'),
           },
         },
       },
@@ -365,7 +391,15 @@ describe('zen (opencode) provider', () => {
       const provider = new ZenProvider({
         credentials: {
           apiKey: '',
-          extra: { anonymous: true, cachePaths: { catalog: catalogPath, pricing: pricingPath } },
+          extra: {
+            anonymous: true,
+            httpClient: offlineClient(),
+            cachePaths: {
+              catalog: catalogPath,
+              pricing: pricingPath,
+              availability: join(dir, 'availability.json'),
+            },
+          },
         },
         fetchImpl: (async () => {
           throw new Error('offline');
