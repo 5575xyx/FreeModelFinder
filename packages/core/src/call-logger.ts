@@ -31,6 +31,42 @@ export interface CallLogFilter {
   gatewayKeyId?: string;
 }
 
+/**
+ * Opaque paging token. Entries are append-only and listed newest-first, so
+ * "everything from this timestamp onward, skipping the first `skip` of them"
+ * is stable even when several entries share one millisecond — which is exactly
+ * the case a plain `before` timestamp would lose or repeat.
+ */
+export interface CallLogCursor {
+  ts: number;
+  skip: number;
+}
+
+export interface CallLogPage {
+  data: CallLogEntry[];
+  /** null when the returned page already reached the oldest matching entry. */
+  nextCursor: string | null;
+}
+
+export function encodeCursor(cursor: CallLogCursor): string {
+  return `${cursor.ts}:${cursor.skip}`;
+}
+
+/**
+ * Decodes a cursor from a query string. Malformed values (non-numeric parts,
+ * empty segments, negative skip) return null so callers can fall back to the
+ * newest page instead of failing the request.
+ */
+export function decodeCursor(raw: string | undefined): CallLogCursor | null {
+  if (!raw) return null;
+  const at = raw.lastIndexOf(':');
+  if (at <= 0 || at === raw.length - 1) return null;
+  const ts = Number(raw.slice(0, at));
+  const skip = Number(raw.slice(at + 1));
+  if (!Number.isFinite(ts) || !Number.isFinite(skip) || skip < 0) return null;
+  return { ts, skip };
+}
+
 export interface CallStatsModelRow {
   provider: string;
   model: string;
@@ -140,11 +176,49 @@ export class CallLogger {
     await this.writeChain;
   }
 
-  async list(filter: CallLogFilter = {}): Promise<CallLogEntry[]> {
+  /** Oldest-first single page, newest-first ordering. */
+  async listPage(filter: CallLogFilter & { cursor?: string }): Promise<CallLogPage> {
     const limit = Math.min(Math.max(filter.limit ?? 100, 1), 1000);
+    const cursor = decodeCursor(filter.cursor);
     const collected = await this.collect(filter);
     collected.sort((a, b) => b.ts - a.ts);
-    return collected.slice(0, limit);
+
+    let page: CallLogEntry[];
+    if (!cursor) {
+      page = collected.slice(0, limit);
+    } else {
+      // Skip everything newer than the cursor's timestamp, plus the entries at
+      // that exact timestamp the previous page already handed out.
+      let remaining = 0;
+      page = [];
+      for (const e of collected) {
+        if (e.ts > cursor.ts) continue;
+        if (e.ts === cursor.ts) {
+          if (remaining < cursor.skip) {
+            remaining += 1;
+            continue;
+          }
+        }
+        if (page.length >= limit) break;
+        page.push(e);
+      }
+    }
+
+    const last = page[page.length - 1];
+    const nextCursor =
+      page.length === limit && last
+        ? encodeCursor({
+            ts: last.ts,
+            skip:
+              page.filter((e) => e.ts === last.ts).length +
+              (cursor?.ts === last.ts ? cursor.skip : 0),
+          })
+        : null;
+    return { data: page, nextCursor };
+  }
+
+  async list(filter: CallLogFilter = {}): Promise<CallLogEntry[]> {
+    return (await this.listPage(filter)).data;
   }
 
   async aggregate(range: CallStatsResult['range'] = 'today'): Promise<CallStatsResult> {

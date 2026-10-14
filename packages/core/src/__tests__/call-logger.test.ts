@@ -113,4 +113,50 @@ describe('CallLogger', () => {
     const stillInMemory = await logger.list({ model: 'ancient' });
     assert.ok(stillInMemory.length >= 1);
   });
+
+  it('pages by cursor without losing or repeating entries that share a timestamp', async () => {
+    // Its own directory: the shared logger's JSONL files (other cases record at
+    // Date.now()) would otherwise appear in the newest-first pages.
+    const pagedDir = await mkdtemp(join(tmpdir(), 'fmf-call-logger-page-'));
+    const paged = new CallLogger(pagedDir);
+    const sameTs = 1_700_000_000_000;
+    for (const model of ['a', 'b', 'c']) {
+      paged.record(entry({ ts: sameTs, model }));
+    }
+    paged.record(entry({ ts: sameTs - 1, model: 'd' }));
+    await paged.flush();
+
+    const seen: string[] = [];
+    const pages: string[][] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 5; i += 1) {
+      const page = await paged.listPage({ limit: 2, cursor });
+      pages.push(page.data.map((e) => e.model));
+      seen.push(...page.data.map((e) => e.model));
+      if (!page.nextCursor) {
+        assert.equal(page.nextCursor, null, '最后一页必须没有 nextCursor');
+        break;
+      }
+      cursor = page.nextCursor;
+    }
+    // Nothing lost: every entry exactly once, across all pages.
+    assert.deepEqual([...seen].sort(), ['a', 'b', 'c', 'd']);
+    // Nothing repeated: the union of pages covers 4 entries over 2 pages.
+    assert.equal(seen.length, 4);
+    assert.equal(pages[0]?.length, 2);
+    assert.equal(pages[1]?.length, 2);
+    await rm(pagedDir, { recursive: true, force: true });
+  });
+
+  it('starts from the beginning when the cursor is malformed', async () => {
+    const pagedDir = await mkdtemp(join(tmpdir(), 'fmf-call-logger-page-'));
+    const paged = new CallLogger(pagedDir);
+    paged.record(entry({ ts: 2, model: 'cursor-fixture' }));
+    await paged.flush();
+    const page = await paged.listPage({ limit: 10, cursor: 'abc' });
+    assert.ok(page.data.some((e) => e.model === 'cursor-fixture'));
+    const all = await paged.list({ limit: 10 });
+    assert.equal(page.data.length, all.length);
+    await rm(pagedDir, { recursive: true, force: true });
+  });
 });
