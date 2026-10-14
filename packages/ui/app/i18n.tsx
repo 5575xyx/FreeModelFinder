@@ -201,6 +201,7 @@ export const zh: Dict = {
   'finder.reset.unknown': '未知',
 
   'models.ctx.unknown': '上下文未知',
+  'models.ctx.set': '填写上下文',
   'models.ctx.suffix': '上下文',
   'models.ctx.tokens': 'tokens',
 
@@ -837,6 +838,7 @@ export const en: Dict = {
   'finder.reset.unknown': 'unknown',
 
   'models.ctx.unknown': 'Context unknown',
+  'models.ctx.set': 'Set context',
   'models.ctx.suffix': 'context',
   'models.ctx.tokens': 'tokens',
 

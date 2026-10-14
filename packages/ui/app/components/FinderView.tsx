@@ -362,6 +362,15 @@ export function FinderView({
                   <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
                     <span className="text-xs font-medium text-foreground">
                       {formatContext(item.context_window, t)}
+                      {!item.context_window && item.provider === 'custom' && (
+                        <button
+                          type="button"
+                          onClick={onOpenSettings}
+                          className="ml-1.5 text-[11px] font-medium text-primary underline underline-offset-2 hover:text-foreground"
+                        >
+                          {t('models.ctx.set')}
+                        </button>
+                      )}
                     </span>
                     <button
                       type="button"
