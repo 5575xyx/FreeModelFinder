@@ -1,4 +1,5 @@
 import type { ZenNativeProtocol } from '../config/index.js';
+import type { ZenAvailabilityStore } from './availability.js';
 import {
   TIERS,
   type AnonymousDecision,
@@ -68,6 +69,7 @@ export class ZenCatalog {
   private metadata = cloneTierMetadata(undefined);
   private readonly overrides: Map<string, ZenNativeProtocol>;
   private pricing: PricingDecider | undefined;
+  private availability: ZenAvailabilityStore | undefined;
   private cachePath = '';
   private cacheSource = 'none';
   private updatedAt = 0;
@@ -83,6 +85,12 @@ export class ZenCatalog {
 
   setPricing(store: PricingDecider | undefined): void {
     this.pricing = store;
+  }
+
+  // Mirrors Catalog.SetAvailabilityStore: a model whose last probe failed must
+  // be rejected by routing until it is restored or re-probed successfully.
+  setAvailabilityStore(store: ZenAvailabilityStore | undefined): void {
+    this.availability = store;
   }
 
   setCachePath(path: string): void {
@@ -140,6 +148,15 @@ export class ZenCatalog {
     if (this.zen.has(model) && this.tierSupported(model, 'zen')) return true;
     if (this.go.has(model) && this.tierSupported(model, 'go')) return true;
     return false;
+  }
+
+  /**
+   * Whether the live catalog advertises the model on one tier. Mirrors
+   * `RouteDiagnostic.AvailableZen`, which the availability probe uses to skip
+   * models the tier does not even list (a pending catalog advertises nothing).
+   */
+  advertisedOn(model: string, tier: ZenTier): boolean {
+    return (tier === 'go' ? this.go : this.zen).has(model);
   }
 
   /**
@@ -211,6 +228,7 @@ export class ZenCatalog {
   }
 
   route(model: string, hasZenKeys: boolean, hasGoKeys: boolean, hasAnonymous: boolean): ZenRoute {
+    this.assertNotDisabled(model);
     const keyTiers = this.keyTierOrder(model, hasZenKeys, hasGoKeys);
     const decision = this.anonymousDecision(model);
     const advertised =
@@ -247,6 +265,7 @@ export class ZenCatalog {
   }
 
   routeForTier(model: string, tier: ZenTier, hasZenKeys: boolean, hasGoKeys: boolean): ZenRoute {
+    this.assertNotDisabled(model);
     const hasKeys = tier === 'go' ? hasGoKeys : hasZenKeys;
     if (!hasKeys) throw new Error(`no ${tier} key is configured`);
     const advertised =
@@ -270,6 +289,16 @@ export class ZenCatalog {
       anonymous: false,
       keyTiers: [tier],
     };
+  }
+
+  // Mirrors the availability guard at the top of Catalog.routeLocked: a failed
+  // probe takes the model out of rotation until the next probe restores it.
+  private assertNotDisabled(model: string): void {
+    if (this.availability?.disabled(model)) {
+      throw new Error(
+        `model "${model}" is disabled after a failed availability check; wait for the next probe or restore it manually`,
+      );
+    }
   }
 
   private keyTierOrder(model: string, hasZenKeys: boolean, hasGoKeys: boolean): ZenTier[] {

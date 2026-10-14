@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { ZenAvailabilityStore } from '../models/availability.js';
 import { ZenCatalog } from '../models/catalog.js';
 import type { ModelLimits, PricingDecider } from '../models/types.js';
 
@@ -289,5 +290,43 @@ describe('zen catalog limit backfill', () => {
     const first = c.metadataForTier('m-free', 'zen');
     if (first) first.contextWindow = 7;
     assert.equal(c.metadataForTier('m-free', 'zen')?.contextWindow, 1000);
+  });
+});
+
+describe('zen catalog availability guard', () => {
+  function guarded(): { c: ZenCatalog; store: ZenAvailabilityStore } {
+    const c = catalog();
+    c.setPricing(freeStore(['m-free']));
+    const store = new ZenAvailabilityStore();
+    c.setAvailabilityStore(store);
+    return { c, store };
+  }
+
+  it('rejects routing a model whose availability probe failed', async () => {
+    const { c, store } = guarded();
+    await store.record('m-free', 0, false, 'model_unavailable', 'anonymous', 1_000, {});
+    assert.throws(
+      () => c.route('m-free', true, true, true),
+      /disabled after a failed availability check/,
+    );
+    assert.throws(
+      () => c.routeForTier('m-free', 'zen', true, true),
+      /disabled after a failed availability check/,
+    );
+  });
+
+  it('serves the model again once a recheck succeeds', async () => {
+    const { c, store } = guarded();
+    await store.record('m-free', 0, false, 'model_unavailable', 'anonymous', 1_000, {});
+    await store.record('m-free', 0, true, 'probe_succeeded', 'anonymous', 2_000, {});
+    assert.equal(c.route('m-free', true, true, true).tier, 'zen');
+  });
+
+  it('reports tier advertisement, which gates the availability probe', () => {
+    const c = catalog();
+    assert.equal(c.advertisedOn('m-free', 'zen'), true);
+    assert.equal(c.advertisedOn('go-only', 'zen'), false);
+    assert.equal(c.advertisedOn('go-only', 'go'), true);
+    assert.equal(c.advertisedOn('ghost-free', 'zen'), false);
   });
 });

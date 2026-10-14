@@ -24,18 +24,23 @@ function stringKeys(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
 }
 
-// Cache the model catalog and pricing next to the rest of the config so the
-// zen gateway can serve models before the first network refresh. Tests may
-// override the paths through credentials.extra.cachePaths.
-function resolveCachePaths(extra: Record<string, unknown>): { catalog: string; pricing: string } {
+// Cache the model catalog, pricing and availability probes next to the rest of
+// the config so the zen gateway can serve models before the first network
+// refresh. Tests may override the paths through credentials.extra.cachePaths.
+function resolveCachePaths(extra: Record<string, unknown>): {
+  catalog: string;
+  pricing: string;
+  availability: string;
+} {
   const override = asRecord(extra.cachePaths);
-  const catalog =
-    typeof override?.catalog === 'string' && override.catalog ? override.catalog : undefined;
-  const pricing =
-    typeof override?.pricing === 'string' && override.pricing ? override.pricing : undefined;
+  const pick = (name: string): string | undefined =>
+    typeof override?.[name] === 'string' && override?.[name]
+      ? (override[name] as string)
+      : undefined;
   return {
-    catalog: catalog ?? join(CONFIG_DIR, 'zen.models.catalog.json'),
-    pricing: pricing ?? join(CONFIG_DIR, 'zen.models.dev.json'),
+    catalog: pick('catalog') ?? join(CONFIG_DIR, 'zen.models.catalog.json'),
+    pricing: pick('pricing') ?? join(CONFIG_DIR, 'zen.models.dev.json'),
+    availability: pick('availability') ?? join(CONFIG_DIR, 'zen.models.availability.json'),
   };
 }
 

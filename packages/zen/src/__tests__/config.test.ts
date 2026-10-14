@@ -21,6 +21,14 @@ describe('zen config', () => {
     assert.equal(result.success, false);
   });
 
+  it('accepts auto as a reasoning effort sentinel', () => {
+    const cfg = ZenConfigSchema.parse({
+      reasoning: { effort: 'auto', effortByModel: { m: 'auto' } },
+    });
+    assert.equal(cfg.reasoning.effort, 'auto');
+    assert.equal(cfg.reasoning.effortByModel['m'], 'auto');
+  });
+
   it('accepts only chat/responses/anthropic protocol overrides', () => {
     const ok = ZenConfigSchema.safeParse({ models: { protocols: { m: 'anthropic' } } });
     assert.equal(ok.success, true);

@@ -47,6 +47,11 @@ export interface ZenUpstreamOptions {
   retry: { maxAttempts: number };
   upstream: { zen: string; go: string };
   reasoning?: { effort?: ZenEffort; effortByModel?: Record<string, ZenEffort> };
+  /**
+   * Resolves the `auto` reasoning sentinel to the effort an availability probe
+   * confirmed (or `''` when nothing may be injected). See gateway/probe.ts.
+   */
+  resolveAutoEffort?: (model: string, tier: ZenTier, protocol: ZenProtocol) => string;
   isFreeModel?: (model: string) => boolean;
   logger?: ZenUpstreamLogger;
   now?: () => number;
@@ -245,16 +250,24 @@ function applyEffort(
   options: ZenUpstreamOptions,
   body: Record<string, unknown>,
   protocol: ZenProtocol,
+  tier: ZenTier,
   model: string,
 ): void {
   const reasoning = options.reasoning;
   if (!reasoning) return;
-  const effort = resolveEffort(model, reasoning.effort, reasoning.effortByModel ?? {});
-  if (effort !== undefined) applyForcedEffort(body, protocol, effort);
+  const configured = resolveEffort(model, reasoning.effort, reasoning.effortByModel ?? {});
+  if (configured === undefined) return;
+  // `auto` transfers the effort an availability probe confirmed for this exact
+  // model/tier/protocol; when nothing was confirmed, nothing is injected and
+  // the upstream applies its own default.
+  const effort =
+    configured === 'auto' ? (options.resolveAutoEffort?.(model, tier, protocol) ?? '') : configured;
+  if (effort !== '') applyForcedEffort(body, protocol, effort);
 }
 
-// Mirrors newUpstreamRequest in internal/gateway/upstream.go:785-814.
-function buildUpstreamRequest(
+// Mirrors newUpstreamRequest in internal/gateway/upstream.go:785-814. Exported
+// for gateway/probe.ts, which builds its own availability requests.
+export function buildUpstreamRequest(
   baseUrl: string,
   protocol: ZenProtocol,
   body: Record<string, unknown>,
@@ -448,7 +461,7 @@ export async function doAnonymousUpstream(
   const cursor = pool.cursorFor(ids.session);
   const protocol = protocolForTier(route, 'zen');
   const base = bodyOverride ?? prepareUpstreamBody(request, protocol);
-  applyEffort(options, base, protocol, route.id);
+  applyEffort(options, base, protocol, 'zen', route.id);
   const body = prepareAnonymousBody(base, protocol);
   const baseUrl = baseUrlFor(options, 'zen');
 
@@ -564,7 +577,7 @@ export async function doKeyUpstream(
     body = bodyOverride;
   } else {
     body = prepareUpstreamBody(request, protocol);
-    applyEffort(options, body, protocol, route.id);
+    applyEffort(options, body, protocol, route.tier, route.id);
   }
   if (options.isFreeModel?.(route.id) === true) {
     body = shapeKeyBody(body, protocol, true).body;
@@ -753,7 +766,7 @@ function stripTierBodies(
     const protocol = protocolForTier(route, tier);
     if (protocol !== 'responses') continue;
     const body = prepareUpstreamBody(request, protocol);
-    applyEffort(options, body, protocol, route.id);
+    applyEffort(options, body, protocol, tier, route.id);
     const stripped = stripStaleReasoningInputs(body);
     if (!stripped.changed) continue;
     overrides[tier] = stripped.body;

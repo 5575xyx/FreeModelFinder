@@ -134,6 +134,35 @@ describe('zen upstream execution', () => {
     assert.equal(body['stream'], true);
   });
 
+  it('resolves the auto sentinel through the effort a probe confirmed', async () => {
+    const client = new FakeClient(() => response(200, '{}'));
+    const seen: Array<[string, string, string]> = [];
+    const options = makeOptions(client, {
+      reasoning: { effort: 'auto' },
+      resolveAutoEffort: (model, tier, protocol) => {
+        seen.push([model, tier, protocol]);
+        return 'xhigh';
+      },
+    });
+    const result = await doUpstream(options, anonymousRoute(), request, ids);
+    assert.equal(result.response?.status, 200);
+    const body = JSON.parse(client.requests[0]!.body!) as Record<string, unknown>;
+    assert.equal(body['reasoning_effort'], 'xhigh');
+    // The resolver is asked about the exact lane the request will travel on.
+    assert.deepEqual(seen, [['m', 'zen', 'chat']]);
+  });
+
+  it('injects nothing for auto while no probe confirmed a level', async () => {
+    const client = new FakeClient(() => response(200, '{}'));
+    const options = makeOptions(client, {
+      reasoning: { effort: 'auto' },
+      resolveAutoEffort: () => '',
+    });
+    await doUpstream(options, anonymousRoute(), request, ids);
+    const body = JSON.parse(client.requests[0]!.body!) as Record<string, unknown>;
+    assert.equal(body['reasoning_effort'], undefined);
+  });
+
   it('moves to the next anonymous proxy after a 403', async () => {
     const client = new FakeClient((_req, index) =>
       index === 0 ? response(403, '{"error":{"message":"FreeTierError"}}') : response(200, '{}'),

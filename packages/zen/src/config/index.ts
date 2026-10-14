@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+/**
+ * `'auto'` lets the gateway inject the reasoning effort an availability probe
+ * confirmed for the model; every other value is forced verbatim.
+ */
 export const ReasoningEffortSchema = z.enum([
   'minimal',
   'low',
@@ -8,6 +12,7 @@ export const ReasoningEffortSchema = z.enum([
   'xhigh',
   'max',
   'none',
+  'auto',
 ]);
 
 export const NativeProtocolSchema = z.enum(['chat', 'responses', 'anthropic']);

@@ -1,6 +1,11 @@
 import type { ZenProtocol } from './types.js';
 
-export type ZenEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'none';
+/**
+ * `'auto'` is a sentinel only: it asks the gateway to use the effort a probe
+ * confirmed. `applyForcedEffort` deliberately keeps rejecting it, so it never
+ * reaches the wire as a literal field value.
+ */
+export type ZenEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'none' | 'auto';
 
 const VALID_EFFORTS: readonly string[] = [
   'minimal',

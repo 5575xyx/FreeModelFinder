@@ -5,10 +5,12 @@ import type { ZenConfig } from '../config/index.js';
 import type { ZenHttpClient, ZenHttpRequest, ZenHttpResponse } from '../http.js';
 import { createNodeHttpClient } from '../http.js';
 import { canonicalSessionId } from '../identity/session.js';
+import { ZenAvailabilityStore } from '../models/availability.js';
 import { ZenCatalog } from '../models/catalog.js';
 import { ZenPricingStore, type PricingSnapshot } from '../models/pricing.js';
 import type { CatalogSnapshot, ZenModelMetadata, ZenRoute, ZenTier } from '../models/types.js';
 import { parseProxyList, type ProxySpec } from '../proxy/spec.js';
+import { resolveEffort } from '../protocol/effort.js';
 import { convertResponse } from '../protocol/response.js';
 import {
   collapseChunks,
@@ -28,6 +30,7 @@ import type {
 import { ZenAttemptMonitor } from './monitor.js';
 import { setProxyHealthy } from './health.js';
 import { ZenAnonymousPool, ZenKeyPool, type ZenProxyTransport } from './pool.js';
+import { probeFreeModel, resolvedEffort, ZenAvailabilityChecker } from './probe.js';
 import { ZenRefresher, type ZenRefreshResult } from './refresh.js';
 import {
   checkHealth,
@@ -62,7 +65,7 @@ export interface ZenGatewayOptions {
   config: ZenConfig;
   proxies?: ProxySpec[];
   proxyfileContent?: string;
-  cachePaths?: { catalog?: string; pricing?: string };
+  cachePaths?: { catalog?: string; pricing?: string; availability?: string };
   httpClient?: ZenHttpClient;
   fetchImpl?: typeof fetch;
   logger?: ZenGatewayLogger;
@@ -98,7 +101,7 @@ export interface ZenGateway {
   start(): Promise<void>;
   stop(): void;
   refresh(): Promise<ZenRefreshResult>;
-  loadCache(): Promise<{ catalog: boolean; pricing: boolean }>;
+  loadCache(): Promise<{ catalog: boolean; pricing: boolean; availability: boolean }>;
   monitor(): ZenAttemptMonitor;
 }
 
@@ -293,6 +296,10 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
   const catalog = new ZenCatalog(config.prefer, config.models.protocols);
   const pricing = new ZenPricingStore();
   catalog.setPricing(pricing);
+  // Availability state is shared by the routing guard and the probe scheduler:
+  // a model whose last probe failed must not be served until it recovers.
+  const availability = new ZenAvailabilityStore(options.cachePaths?.availability);
+  catalog.setAvailabilityStore(availability);
   const refresher = new ZenRefresher({
     config,
     catalog,
@@ -304,6 +311,30 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     now,
   });
 
+  // Mirrors cfg.ForcedEffort: the configured effort for a model, with `auto`
+  // left for the caller (upstream) to resolve through the availability store.
+  const forcedEffort = (model: string): string =>
+    resolveEffort(model, config.reasoning?.effort, config.reasoning?.effortByModel ?? {}) ?? '';
+
+  const checker = new ZenAvailabilityChecker({
+    store: availability,
+    catalog,
+    probe: (model) =>
+      probeFreeModel(
+        {
+          catalog,
+          pools,
+          anonymousPool,
+          anonymous: config.anonymous,
+          upstream: { zen: config.upstream.zen, go: config.upstream.go },
+          forcedEffort,
+          now,
+        },
+        model,
+      ),
+    now,
+  });
+
   const upstreamOptions: ZenUpstreamOptions = {
     pools,
     anonymousPool,
@@ -311,6 +342,8 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     retry: { maxAttempts: config.retry.maxAttempts },
     upstream: { zen: config.upstream.zen, go: config.upstream.go },
     reasoning: config.reasoning,
+    resolveAutoEffort: (model, tier, protocol) =>
+      resolvedEffort({ forcedEffort, availability, catalog, now }, model, tier, protocol),
     isFreeModel: (model) => catalog.isFreeModel(model),
     logger,
     now,
@@ -423,8 +456,9 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
   let healthTimer: ReturnType<typeof setInterval> | undefined;
 
   async function start(): Promise<void> {
-    await refresher.loadCache();
+    await loadCache();
     refresher.start();
+    checker.start();
     if (healthTimer === undefined) {
       healthTimer = setInterval(() => {
         void runProxyHealthChecks();
@@ -435,6 +469,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
 
   function stop(): void {
     refresher.stop();
+    checker.stop();
     if (healthTimer !== undefined) {
       clearInterval(healthTimer);
       healthTimer = undefined;
@@ -447,8 +482,14 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     return refresher.refreshOnce();
   }
 
-  function loadCache(): Promise<{ catalog: boolean; pricing: boolean }> {
-    return refresher.loadCache();
+  async function loadCache(): Promise<{
+    catalog: boolean;
+    pricing: boolean;
+    availability: boolean;
+  }> {
+    const summary = await refresher.loadCache();
+    const availabilityLoaded = await availability.load();
+    return { ...summary, availability: availabilityLoaded };
   }
 
   return {

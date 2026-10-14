@@ -184,7 +184,7 @@ describe('zen gateway runtime', () => {
     assert.ok(gateway.monitor() instanceof ZenAttemptMonitor);
 
     const loaded = await gateway.loadCache();
-    assert.deepEqual(loaded, { catalog: false, pricing: false });
+    assert.deepEqual(loaded, { catalog: false, pricing: false, availability: false });
 
     await gateway.refresh();
     const snapshot = gateway.snapshot();
@@ -337,6 +337,46 @@ describe('zen gateway runtime', () => {
       assert.equal(snapshot.models.cacheSource, 'disk');
       assert.equal(snapshot.models.stale, true);
       assert.ok(snapshot.models.total >= 1);
+    } finally {
+      gateway.stop();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a model disabled by a failed availability probe', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'zen-availability-'));
+    const availabilityPath = join(dir, 'availability.json');
+    // The next probe is scheduled an hour out, so the scheduler leaves the
+    // disabled record alone for the duration of this test.
+    await writeFile(
+      availabilityPath,
+      JSON.stringify({
+        'free-model': {
+          model: 'free-model',
+          disabled: true,
+          next_check: new Date(Date.now() + 3_600_000).toISOString(),
+          reason: 'model_unavailable',
+          probe_version: 1,
+        },
+      }),
+      'utf8',
+    );
+    const gateway = createZenGateway({
+      config: normalizeZenConfig({ anonymous: true }),
+      proxies: PROXIES,
+      httpClient: new FakeClient(() => inboundJson(200, CHAT_BODY)),
+      fetchImpl: fixedFetch(),
+      cachePaths: { availability: availabilityPath },
+      logger: {},
+    });
+    try {
+      const loaded = await gateway.loadCache();
+      assert.equal(loaded.availability, true);
+      await gateway.refresh();
+      await assert.rejects(
+        gateway.chat({ model: 'free-model', messages: [{ role: 'user', content: 'hi' }] }),
+        /disabled after a failed availability check/,
+      );
     } finally {
       gateway.stop();
       await rm(dir, { recursive: true, force: true });
