@@ -1,3 +1,12 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { CONFIG_DIR } from './config/store.js';
+
+const CACHE_FILE = 'models.dev.context.json';
+const MODELS_DEV_URL = 'https://models.dev/api.json';
+const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 10_000;
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -59,4 +68,146 @@ export function decodeContextTable(data: unknown): Map<string, number> {
   }
   if (table.size === 0) throw new Error('models.dev contains no context metadata');
   return table;
+}
+
+export interface ModelsDevContextOptions {
+  dir?: string;
+  fetchImpl?: typeof fetch;
+  ttlMs?: number;
+  timeoutMs?: number;
+  now?: () => number;
+}
+
+/**
+ * Holds the decoded context table behind a synchronous `lookup`, so the model
+ * refresh path can backfill missing context windows without ever awaiting a
+ * network call. Disk and network loading are separate, explicitly-triggered
+ * operations that never reject — a gateway listing 114 models must not fail
+ * because models.dev is slow, and a corrupt cache must not take the process
+ * down with it.
+ */
+export class ModelsDevContextStore {
+  private table = new Map<string, number>();
+  private updatedAt = 0;
+  private lastError = '';
+  private loaded = false;
+  private readonly dir: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly ttlMs: number;
+  private readonly timeoutMs: number;
+  private readonly now: () => number;
+
+  constructor(options: ModelsDevContextOptions = {}) {
+    this.dir = options.dir ?? CONFIG_DIR;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.now = options.now ?? Date.now;
+  }
+
+  private get cachePath(): string {
+    return join(this.dir, CACHE_FILE);
+  }
+
+  /**
+   * Two-tier match: the id exactly as the gateway reported it, then — only
+   * when it carries a source prefix — its last segment. There is no fuzzy
+   * matching: a wrong context window routes a request into a truncation the
+   * user did not ask for, so an unknown id stays unknown.
+   */
+  lookup(model: { provider: string; id: string }): number | undefined {
+    const direct = this.table.get(model.id);
+    if (direct !== undefined) return direct;
+    const slash = model.id.lastIndexOf('/');
+    if (slash < 0 || slash === model.id.length - 1) return undefined;
+    return this.table.get(model.id.slice(slash + 1));
+  }
+
+  /** Idempotent warm-up: disk first, network only when the cache is missing or stale. */
+  async ensureFresh(): Promise<void> {
+    if (this.loaded) return;
+    this.loaded = true;
+    try {
+      await this.loadFromDisk();
+      if (this.table.size === 0 || this.now() - this.updatedAt > this.ttlMs) {
+        await this.refresh();
+      }
+    } catch (error) {
+      this.lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async loadFromDisk(): Promise<void> {
+    try {
+      const parsed = JSON.parse(readFileSync(this.cachePath, 'utf8')) as {
+        updated_at?: unknown;
+        table?: unknown;
+      };
+      const table = parsed?.table;
+      if (typeof table !== 'object' || table === null) return;
+      this.table = new Map(
+        Object.entries(table as Record<string, unknown>).filter(
+          (entry): entry is [string, number] => typeof entry[1] === 'number',
+        ),
+      );
+      this.updatedAt = typeof parsed.updated_at === 'number' ? parsed.updated_at : 0;
+      this.lastError = '';
+    } catch (error) {
+      // Missing or corrupt cache: keep whatever table we already hold.
+      this.lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async refresh(): Promise<void> {
+    try {
+      const response = await this.fetchImpl(MODELS_DEV_URL, {
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+      if (!response.ok) throw new Error(`models.dev responded with ${response.status}`);
+      const table = decodeContextTable(await response.json());
+      this.table = table;
+      this.updatedAt = this.now();
+      this.lastError = '';
+      this.writeToDisk();
+    } catch (error) {
+      // A payload with no context metadata throws inside decodeContextTable;
+      // swallowing it here keeps the previous table and its cache file alive.
+      this.lastError = error instanceof Error ? error.message : String(error);
+      await this.loadFromDisk();
+    }
+  }
+
+  private writeToDisk(): void {
+    try {
+      mkdirSync(this.dir, { recursive: true });
+      writeFileSync(
+        this.cachePath,
+        JSON.stringify({ updated_at: this.updatedAt, table: Object.fromEntries(this.table) }),
+      );
+    } catch (error) {
+      this.lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+}
+
+let singleton: ModelsDevContextStore | null = null;
+
+/**
+ * Deliberately cold: constructing the singleton loads nothing and fetches
+ * nothing, so tests that merely touch the registry can never reach the real
+ * cache directory or the network. Callers that want data call `ensureFresh()`
+ * on it (registry, background refresh) or `warmModelsDevContext()` at startup.
+ */
+export function modelsDevContextStore(): ModelsDevContextStore {
+  singleton ??= new ModelsDevContextStore();
+  return singleton;
+}
+
+export async function warmModelsDevContext(): Promise<void> {
+  await modelsDevContextStore().ensureFresh();
+}
+
+/** Test seam: pass a store to replace the singleton, or nothing to clear it. */
+export function __setModelsDevContextForTests(store?: ModelsDevContextStore): void {
+  singleton = store ?? null;
 }

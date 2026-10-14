@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { decodeContextTable } from '../models-dev-context.js';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, test } from 'node:test';
+import { decodeContextTable, ModelsDevContextStore } from '../models-dev-context.js';
 
 const model = (ctx?: number, canonical?: string) => ({
   ...(ctx !== undefined ? { limit: { context: ctx } } : {}),
@@ -62,4 +65,69 @@ test('rejects a payload that is not an object', () => {
 
 test('rejects a payload that yields no context metadata', () => {
   assert.throws(() => decodeContextTable({ a: { models: { x: { id: 'x' } } } }));
+});
+
+describe('ModelsDevContextStore', () => {
+  let home: string;
+  let previousHome: string | undefined;
+
+  const cachePath = () => join(home, 'models.dev.context.json');
+  const writeTable = (table: Record<string, number>) => {
+    writeFileSync(cachePath(), JSON.stringify({ updated_at: Date.now(), table }));
+  };
+  const storeOf = (
+    fetchImpl: typeof fetch = (async () => {
+      throw new Error('offline');
+    }) as typeof fetch,
+  ) => new ModelsDevContextStore({ dir: home, fetchImpl });
+
+  beforeEach(() => {
+    previousHome = process.env.FREEMODELFINDER_HOME;
+    home = mkdtempSync(join(tmpdir(), 'fmf-ctx-'));
+    process.env.FREEMODELFINDER_HOME = home;
+  });
+
+  afterEach(() => {
+    if (previousHome === undefined) delete process.env.FREEMODELFINDER_HOME;
+    else process.env.FREEMODELFINDER_HOME = previousHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  test('matches a prefixed cline id by its last segment', async () => {
+    writeTable({ 'deepseek-v4.1-flash': 1_000_000 });
+    const store = storeOf();
+    await store.loadFromDisk();
+    assert.equal(
+      store.lookup({ provider: 'cline', id: 'cline-free/deepseek-v4.1-flash' }),
+      1_000_000,
+    );
+    assert.equal(store.lookup({ provider: 'cline', id: 'deepseek/deepseek-v4-flash' }), undefined);
+  });
+
+  test('returns the raw id hit before trying the last segment', async () => {
+    writeTable({ 'a/b': 8_192, b: 65_536 });
+    const store = storeOf();
+    await store.loadFromDisk();
+    assert.equal(store.lookup({ provider: 'custom', id: 'a/b' }), 8_192);
+  });
+
+  test('returns undefined for unknown ids instead of guessing', async () => {
+    writeTable({ 'deepseek-v4.1-flash': 1_000_000 });
+    const store = storeOf();
+    await store.loadFromDisk();
+    assert.equal(store.lookup({ provider: 'custom', id: 'some/ghost-model' }), undefined);
+  });
+
+  test('ignores a corrupt cache file without throwing', async () => {
+    writeFileSync(cachePath(), '{ not json');
+    const store = storeOf();
+    await store.loadFromDisk();
+    assert.equal(store.lookup({ provider: 'custom', id: 'anything' }), undefined);
+  });
+
+  test('refresh survives a network failure', async () => {
+    const store = storeOf();
+    await store.refresh();
+    assert.equal(store.lookup({ provider: 'custom', id: 'anything' }), undefined);
+  });
 });
