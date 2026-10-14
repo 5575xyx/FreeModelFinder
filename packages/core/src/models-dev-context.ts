@@ -123,14 +123,19 @@ export class ModelsDevContextStore {
     return this.table.get(model.id.slice(slash + 1));
   }
 
-  /** Idempotent warm-up: disk first, network only when the cache is missing or stale. */
+  /**
+   * Idempotent warm-up: awaits only the local disk read, so callers on the
+   * model-listing path pay a few milliseconds at most. The network refresh it
+   * may kick off runs detached — models.dev answering in 10s must not become
+   * the next `listModels timed out after 20000ms` report.
+   */
   async ensureFresh(): Promise<void> {
     if (this.loaded) return;
     this.loaded = true;
     try {
       await this.loadFromDisk();
       if (this.table.size === 0 || this.now() - this.updatedAt > this.ttlMs) {
-        await this.refresh();
+        void this.refresh();
       }
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);

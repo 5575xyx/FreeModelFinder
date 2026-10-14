@@ -1,12 +1,35 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import type { CredentialRuntime } from '../../credentials/runtime.js';
+import { ModelsDevContextStore, __setModelsDevContextForTests } from '../../models-dev-context.js';
 import type { BaseProvider } from '../../providers/base.js';
 import { __resetCatalogCacheForTests } from '../../providers/cline-catalog.js';
 import { ProviderRegistry, resetAutoPoolCursor } from '../../registry.js';
 import { composeModelId, bareModelId } from '../../model-id.js';
 import { parseRateLimitError } from '../../router/auto-router.js';
 import type { AppConfig, ModelInfo, ProviderId } from '../../types.js';
+
+// Injected per test so the real singleton never warms itself here — its
+// ensureFresh() would fetch models.dev and write into the user's config dir
+// (the pollution class 478b70c fixed for availability probes).
+const contextDirs: string[] = [];
+const offlineFetch = (async () => {
+  throw new Error('offline');
+}) as typeof fetch;
+
+beforeEach(() => {
+  const dir = mkdtempSync(join(tmpdir(), 'fmf-ctx-'));
+  contextDirs.push(dir);
+  __setModelsDevContextForTests(new ModelsDevContextStore({ dir, fetchImpl: offlineFetch }));
+});
+
+afterEach(() => {
+  __setModelsDevContextForTests();
+  for (const dir of contextDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function configWithProviders(providers: AppConfig['providers']): AppConfig {
   return {

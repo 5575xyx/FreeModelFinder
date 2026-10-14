@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import type { ModelSnapshot } from '../../config/snapshot.js';
+import { ModelsDevContextStore, __setModelsDevContextForTests } from '../../models-dev-context.js';
 import type { BaseProvider } from '../../providers/base.js';
 import { ProviderRegistry } from '../../registry.js';
 import type { AppConfig, ModelInfo, ProviderId } from '../../types.js';
@@ -20,6 +24,35 @@ function installProvider(
     listModels,
   } as unknown as BaseProvider);
 }
+
+// Every test runs against an injected context store: the real singleton would
+// reach for `~/.freemodelfinder/models.dev.context.json` and models.dev itself
+// (the exact pollution 478b70c had to fix for availability probes).
+const contextDirs: string[] = [];
+const offlineFetch = (async () => {
+  throw new Error('offline');
+}) as typeof fetch;
+
+function newContextStore(table?: Record<string, number>): ModelsDevContextStore {
+  const dir = mkdtempSync(join(tmpdir(), 'fmf-ctx-'));
+  contextDirs.push(dir);
+  if (table) {
+    writeFileSync(
+      join(dir, 'models.dev.context.json'),
+      JSON.stringify({ updated_at: Date.now(), table }),
+    );
+  }
+  return new ModelsDevContextStore({ dir, fetchImpl: offlineFetch });
+}
+
+beforeEach(() => {
+  __setModelsDevContextForTests(newContextStore());
+});
+
+afterEach(() => {
+  __setModelsDevContextForTests();
+  for (const dir of contextDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 describe('ProviderRegistry listAllModels resilience', () => {
   it('bounds a stalled provider with a timeout and falls back to the snapshot', async () => {
@@ -176,5 +209,65 @@ describe('ProviderRegistry listAllModels resilience', () => {
       forced.models.map((m) => m.id),
       ['m2'],
     );
+  });
+
+  it('fills contextWindow from the models.dev table', async () => {
+    const registry = new ProviderRegistry(
+      configWith({ openrouter: { enabled: true, credentials: { apiKey: 'k' } } }),
+    );
+    installProvider(registry, 'openrouter', async () => [
+      {
+        id: 'cline-free/deepseek-v4.1-flash',
+        provider: 'openrouter',
+        displayName: 'DeepSeek Flash',
+        free: true,
+      },
+    ]);
+    __setModelsDevContextForTests(newContextStore({ 'deepseek-v4.1-flash': 1_000_000 }));
+
+    const result = await registry.listAllModels(true);
+
+    assert.equal(
+      result.models.find((model) => model.id === 'cline-free/deepseek-v4.1-flash')?.contextWindow,
+      1_000_000,
+      'a provider that publishes no context window borrows the models.dev value',
+    );
+  });
+
+  it('keeps a provider-supplied contextWindow untouched', async () => {
+    const registry = new ProviderRegistry(
+      configWith({ openrouter: { enabled: true, credentials: { apiKey: 'k' } } }),
+    );
+    installProvider(registry, 'openrouter', async () => [
+      { id: 'a-8k', provider: 'openrouter', displayName: 'A', free: true, contextWindow: 32_768 },
+    ]);
+    __setModelsDevContextForTests(newContextStore({ 'a-8k': 1_000_000 }));
+
+    const result = await registry.listAllModels(true);
+
+    assert.equal(
+      result.models.find((model) => model.id === 'a-8k')?.contextWindow,
+      32_768,
+      'the authoritative upstream value must never be overwritten by a guess',
+    );
+  });
+
+  it('still returns every model when the context fetch fails', async () => {
+    const registry = new ProviderRegistry(
+      configWith({ openrouter: { enabled: true, credentials: { apiKey: 'k' } } }),
+    );
+    installProvider(registry, 'openrouter', async () => [
+      { id: 'ghost', provider: 'openrouter', displayName: 'Ghost', free: true },
+    ]);
+    __setModelsDevContextForTests(newContextStore({}));
+
+    const result = await registry.listAllModels(true);
+
+    assert.deepEqual(
+      result.models.map((model) => model.id),
+      ['ghost'],
+    );
+    assert.equal(result.models[0]?.contextWindow, undefined);
+    assert.deepEqual(result.failedProviders, [], 'a dead models.dev must not fail the listing');
   });
 });

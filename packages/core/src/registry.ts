@@ -1,6 +1,7 @@
 import { loadConfig } from './config/store.js';
 import { loadSnapshot, type ModelSnapshot } from './config/snapshot.js';
 import { getCredentialRuntime, type CredentialRuntime } from './credentials/runtime.js';
+import { modelsDevContextStore } from './models-dev-context.js';
 import {
   BaseProvider,
   CohereProvider,
@@ -404,6 +405,12 @@ export class ProviderRegistry {
     await this.warmCredentials().catch(() => undefined);
     const enabled = this.listEnabledProviders();
     const timeoutMs = this.providerListTimeoutMs;
+    // Warm the models.dev context table alongside the provider fan-out: the
+    // disk read then costs the listing nothing, and the lookup below stays a
+    // synchronous memory hit. models.dev itself refreshes in the background —
+    // a model listing must never wait on it.
+    const contextStore = modelsDevContextStore();
+    const contextWarm = contextStore.ensureFresh();
     const results = await Promise.allSettled(
       enabled.map((id) =>
         withTimeout(
@@ -441,6 +448,15 @@ export class ProviderRegistry {
       for (const model of snapshot.models) {
         if (failed.has(model.provider)) models.push(model);
       }
+    }
+    await contextWarm;
+    // Backfill only what the provider left undefined: an upstream that published
+    // context_length is authoritative, models.dev is a fallback for the ones
+    // that publish nothing (Cline's list carries no context_length at all).
+    for (const model of models) {
+      if (model.contextWindow !== undefined) continue;
+      const ctx = contextStore.lookup(model);
+      if (ctx !== undefined) model.contextWindow = ctx;
     }
     const deduped = new Map<string, ModelInfo>();
     for (const model of models) {
