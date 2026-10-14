@@ -2039,10 +2039,11 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         status?: string;
         kind?: string;
         since?: string;
+        cursor?: string;
       };
     }>('/api/logs', async (req) => {
       const q = req.query ?? {};
-      const data = await callLogger.list({
+      return await callLogger.listPage({
         limit: q.limit ? Number(q.limit) : undefined,
         model: q.model,
         provider: q.provider,
@@ -2052,16 +2053,33 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
             : undefined,
         kind: q.kind === 'chat' || q.kind === 'image' || q.kind === 'video' ? q.kind : undefined,
         since: q.since ? Number(q.since) : undefined,
+        cursor: q.cursor,
       });
-      return { data };
     });
 
     app.get<{ Querystring: { range?: string } }>('/api/stats', async (req) => {
       const rangeRaw = req.query?.range;
       const range =
-        rangeRaw === '7d' || rangeRaw === '30d' || rangeRaw === 'all' ? rangeRaw : 'today';
+        rangeRaw === '7d' || rangeRaw === '30d' || rangeRaw === '90d' || rangeRaw === 'all'
+          ? rangeRaw
+          : 'today';
       return await callLogger.aggregate(range);
     });
+
+    app.get<{ Querystring: { range?: string; bucket?: string } }>(
+      '/api/stats/series',
+      async (req) => {
+        const rangeRaw = req.query?.range;
+        const range =
+          rangeRaw === '7d' || rangeRaw === '30d' || rangeRaw === '90d' || rangeRaw === 'all'
+            ? rangeRaw
+            : 'today';
+        const bucketRaw = req.query?.bucket;
+        const bucket =
+          bucketRaw === 'day' || bucketRaw === 'week' || bucketRaw === 'month' ? bucketRaw : 'day';
+        return await callLogger.series(range, bucket);
+      },
+    );
 
     app.get('/api/gateway', async () => {
       const cfg = getRegistry().getConfig();
