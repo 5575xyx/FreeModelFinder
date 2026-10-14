@@ -24,8 +24,23 @@ const MODELS = (process.env.PROBE_MODELS ?? '').split(',').filter(Boolean);
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
 function canonicalSessionId(seed) {
+  // Mirrors packages/zen/src/identity/session.ts: keep only sessions whose
+  // time part is the official client's Identifier.descending() encoding, and
+  // deterministically re-encode everything else. Since 2026-10-11 the free
+  // tier validates that encoding (not just the ses_ shape), so a digest-derived
+  // time part is answered 403 FreeTierError.
+  const canonical = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
+  const descending = /^[0-9a-f]{9}f[c-f][0-9a-f]$/;
+  if (canonical.test(seed) && descending.test(seed.slice(4, 16))) return seed;
   const digest = createHash('sha256').update(`ses\0${seed}`).digest();
-  const timePart = digest.subarray(0, 6).toString('hex');
+  const stamp =
+    (BigInt(digest[0]) << 28n) |
+    (BigInt(digest[1]) << 20n) |
+    (BigInt(digest[2]) << 12n) |
+    (BigInt(digest[3]) << 4n) |
+    (BigInt(digest[4]) >> 4n);
+  const current = (stamp << 12n) | 1n;
+  const timePart = (~current & 0xffffffffffffn).toString(16).padStart(12, '0');
   let value = BigInt(`0x${digest.subarray(6, 16).toString('hex')}`);
   let out = '';
   for (let i = 0; i < 14; i += 1) {
