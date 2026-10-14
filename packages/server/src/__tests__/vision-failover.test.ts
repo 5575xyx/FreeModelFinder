@@ -63,6 +63,7 @@ async function appWithVisionFailover(opts: VisionHarnessOpts = {}): Promise<{
   app: FastifyInstance;
   chatModels: () => string[];
   lastRequest: () => ChatRequest | undefined;
+  requests: () => ChatRequest[];
 }> {
   const config: AppConfig = {
     version: 2,
@@ -73,12 +74,14 @@ async function appWithVisionFailover(opts: VisionHarnessOpts = {}): Promise<{
   };
   const registry = new ProviderRegistry(config);
   const chatModels: string[] = [];
+  const requests: ChatRequest[] = [];
   let lastRequest: ChatRequest | undefined;
   const provider = {
     id: 'custom',
     async chat(request: ChatRequest): Promise<ChatResponse> {
       lastRequest = request;
       chatModels.push(request.model);
+      requests.push(request);
       if (request.model === 'vision-down') {
         throw new Error(
           'custom chat failed 503: {"error":{"message":"No available channel for model vision-down","type":"new_api_error","code":"model_not_found"}}',
@@ -95,6 +98,7 @@ async function appWithVisionFailover(opts: VisionHarnessOpts = {}): Promise<{
     async *stream(request: ChatRequest): AsyncGenerator<StreamChunk> {
       lastRequest = request;
       chatModels.push(request.model);
+      requests.push(request);
       if (request.model === 'vision-down') {
         throw new Error(
           'custom stream failed 503: {"error":{"message":"No available channel for model vision-down","type":"new_api_error","code":"model_not_found"}}',
@@ -124,6 +128,7 @@ async function appWithVisionFailover(opts: VisionHarnessOpts = {}): Promise<{
     app,
     chatModels: () => chatModels,
     lastRequest: () => lastRequest,
+    requests: () => requests,
   };
 }
 
@@ -191,8 +196,8 @@ describe('vision model failover', () => {
 });
 
 describe('vision routing for an explicitly named model', () => {
-  it('redirects a named text-only model into the vision pool', async () => {
-    const { app, chatModels, lastRequest } = await appWithVisionFailover();
+  it('describes the image with a vision model, then answers with the named model', async () => {
+    const { app, chatModels, requests } = await appWithVisionFailover();
     resetModalityCursors();
     resetAutoPoolCursor();
     const res = await app.inject({
@@ -201,19 +206,89 @@ describe('vision routing for an explicitly named model', () => {
       payload: { model: 'text-only', messages: [imageMessage], stream: false },
     });
     assert.equal(res.statusCode, 200);
+
+    const seen = chatModels();
+    // A vision model was used to look at the image...
+    const visionReq = requests().find((r) =>
+      r.messages.some((m) => m.contentParts?.some((p) => p.type === 'image_url')),
+    );
+    assert.ok(
+      visionReq && visionReq.model !== 'text-only',
+      `a vision model must have received the image, saw ${JSON.stringify(seen)}`,
+    );
+
+    // ...but the named text-only model is the one that actually answers, and it
+    // must NOT receive an image part — only the description text.
+    assert.equal(seen[seen.length - 1], 'text-only', 'the final answer comes from the named model');
+    const textOnlyReq = requests().find((r) => r.model === 'text-only');
+    assert.ok(textOnlyReq, 'the named model must have been called');
     assert.equal(
-      chatModels().includes('text-only'),
+      textOnlyReq!.messages.some((m) => m.contentParts?.some((p) => p.type === 'image_url')),
       false,
-      `a text-only model must not receive images, saw ${JSON.stringify(chatModels())}`,
+      'the text-only model must not receive an image part',
     );
+    // The description text from the vision step is folded into the text.
+    const joined = textOnlyReq!.messages
+      .map(
+        (m) =>
+          m.content ?? m.contentParts?.map((p) => ('text' in p ? p.text : '')).join('\n') ?? '',
+      )
+      .join('\n');
+    assert.match(joined, /vision reply/, 'the vision description must reach the named model');
+  });
+
+  it('falls back to sending the image to the named model when no vision model can describe it', async () => {
+    const { app, chatModels, requests } = await appWithVisionFailover({
+      pool: [
+        {
+          id: 'text-only',
+          provider: 'custom',
+          displayName: 'Text Only',
+          free: true,
+          inputModalities: ['text'],
+        },
+      ],
+    });
+    resetModalityCursors();
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'text-only', messages: [imageMessage], stream: false },
+    });
+    // No vision model in the catalog: the image is handed to the named model as
+    // before, which the (stubbed) upstream accepts here.
+    assert.equal(res.statusCode, 200);
+    assert.ok(chatModels().includes('text-only'));
+    const req = requests().find((r) => r.model === 'text-only');
     assert.ok(
-      chatModels().includes('vision-up'),
-      `expected the healthy vision model, saw ${JSON.stringify(chatModels())}`,
+      req!.messages.some((m) => m.contentParts?.some((p) => p.type === 'image_url')),
+      'with no vision model the image must reach the named model unchanged',
     );
-    const parts = lastRequest()?.messages[0]?.contentParts;
-    assert.ok(
-      parts?.some((p) => p.type === 'image_url'),
-      'the image must reach the model that actually answered',
+  });
+
+  it('describes the image then streams the named model answer', async () => {
+    const { app, chatModels, requests } = await appWithVisionFailover();
+    resetModalityCursors();
+    resetAutoPoolCursor();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      payload: { model: 'text-only', messages: [imageMessage], stream: true },
+    });
+    assert.equal(res.statusCode, 200);
+    const seen = chatModels();
+    assert.equal(
+      seen[seen.length - 1],
+      'text-only',
+      'the streamed answer comes from the named model',
+    );
+    const textOnlyReq = requests().find((r) => r.model === 'text-only');
+    assert.ok(textOnlyReq, 'the named model must have been called');
+    assert.equal(
+      textOnlyReq!.messages.some((m) => m.contentParts?.some((p) => p.type === 'image_url')),
+      false,
+      'the streamed text-only request must not carry an image part',
     );
   });
 

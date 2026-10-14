@@ -20,6 +20,7 @@ import {
   type CallLogEntry,
   type CallLogger,
   type CallStatus,
+  type ChatMessage,
   type ChatRequest,
   type ChatResponse,
   type GatewayKeyEntry,
@@ -473,6 +474,72 @@ async function dispatchWithAutoRoute(
 
 type RequestModality = 'text' | 'image' | 'video' | 'vision';
 
+/**
+ * Instruction handed to the vision model during the two-step route. It must
+ * describe the image(s) as plain text and must NOT answer the user's question —
+ * the caller's chosen model does that with the description in hand.
+ */
+const VISION_DESCRIPTION_SYSTEM_PROMPT =
+  '你是图像描述助手。请客观、详细地描述用户消息中的每一张图片（文字、物体、场景、图表、颜色、布局等），只输出用于描述这些图片的纯文本，不要回答用户的问题，也不要寒暄。你的输出会被交给一个看不到图片的语言模型使用。';
+
+/**
+ * Two-step route for a named model that cannot see images: ask a vision model
+ * to describe the image(s) as text, so the caller's chosen model can answer
+ * with that description instead of the whole request being handed to the
+ * vision model. Returns the description text, or null when every candidate
+ * failed (the caller then falls back to its previous behaviour).
+ */
+async function describeImagesWithVisionModel(
+  reg: ProviderRegistry,
+  req: ChatRequest,
+  candidates: string[],
+  allowed: Set<string> | null | undefined,
+): Promise<string | null> {
+  const descriptionReq: ChatRequest = {
+    ...req,
+    model: '',
+    stream: false,
+    messages: [{ role: 'system', content: VISION_DESCRIPTION_SYSTEM_PROMPT }, ...req.messages],
+  };
+  for (const candidate of candidates) {
+    try {
+      const result = await dispatchWithAutoRoute(
+        reg,
+        { ...descriptionReq, model: candidate },
+        { requestedModel: candidate, poolWalk: false },
+        allowed,
+      );
+      const text =
+        typeof result.response.content === 'string' ? result.response.content.trim() : '';
+      if (text) return text;
+    } catch {
+      // This candidate could not describe the image; try the next one.
+    }
+  }
+  return null;
+}
+
+/**
+ * Replaces every image content part with the vision model's textual
+ * description, leaving the surrounding text and the chosen model untouched.
+ * Both `contentParts` (used by multimodal providers) and `content` (used by
+ * text-only providers) are rewritten so the named model receives only text.
+ */
+function replaceImagesWithDescription(messages: ChatMessage[], description: string): ChatMessage[] {
+  const marker = `（用户上传的图片内容：${description}）`;
+  return messages.map((m) => {
+    if (!m.contentParts?.some((p) => p.type === 'image_url')) return m;
+    const newParts = m.contentParts.map((p) =>
+      p.type === 'image_url' ? { type: 'text' as const, text: marker } : p,
+    );
+    const newContent = newParts
+      .map((p) => (p.type === 'text' ? p.text : ''))
+      .filter((part) => part.length > 0)
+      .join('\n');
+    return { ...m, contentParts: newParts, content: newContent || marker };
+  });
+}
+
 export function detectRequestModality(
   messages: OpenAIChatCompletionRequest['messages'],
 ): RequestModality {
@@ -619,8 +686,7 @@ function streamErrorType(msg: string, err: unknown): string {
 export function streamRetryAfter(err: unknown): { retry_after: number } | Record<string, never> {
   // An exhausted pool is not itself a rate limit, but it remembers the hint the
   // last rate-limited candidate carried.
-  const seconds =
-    err instanceof CandidatesExhaustedError ? err.retryAfter : retryAfterSeconds(err);
+  const seconds = err instanceof CandidatesExhaustedError ? err.retryAfter : retryAfterSeconds(err);
   return seconds === null ? {} : { retry_after: seconds };
 }
 
@@ -823,8 +889,10 @@ export function registerOpenAIRoutes(
         }
       } else if (detectedModality === 'vision') {
         // A specific model was named but the request carries images that model
-        // cannot see. Mirror the auto route instead of letting a text-only model
-        // swallow the images: hand the request to the vision pool.
+        // cannot see. Instead of handing the whole request to a vision model
+        // (which would answer the user's question too), describe the image with
+        // a vision model and fold that text back into the caller's messages —
+        // the model the caller named stays the one that answers.
         //
         // Capability is judged on positive evidence only. `isVisionCapable`
         // falls back to an id heuristic when a provider ships no metadata, and
@@ -843,11 +911,23 @@ export function registerOpenAIRoutes(
           const pool = (forced.length ? forced : discovered.map((m) => m.id)).filter((id) =>
             withinAllowlist(id, allowedModels, models),
           );
-          visionCandidates = rotatePool('vision', pool);
-          if (visionCandidates.length) chatReq.model = visionCandidates[0]!;
-          // Nothing that can see: keep the model the caller named rather than
-          // failing. Auto-route 400s here because it owns the choice; a named
-          // model is the caller's.
+          const descriptionCandidates = rotatePool('vision', pool);
+          if (descriptionCandidates.length) {
+            const description = await describeImagesWithVisionModel(
+              reg,
+              chatReq,
+              descriptionCandidates,
+              allowedModels,
+            );
+            // Only rewrite when a description came back; otherwise fall through
+            // and let the named model receive the image as before — a vision
+            // model that cannot describe must not block the caller's request.
+            if (description) {
+              chatReq.messages = replaceImagesWithDescription(chatReq.messages, description);
+            }
+          }
+          // visionCandidates stays empty: the main dispatch keeps sending the
+          // (now text-only) messages to the model the caller named.
         }
       }
 
@@ -1114,7 +1194,9 @@ export function registerOpenAIRoutes(
                 ? upstream
                 : 502;
           if (retryAfter !== null) reply.header('retry-after', String(retryAfter));
-          return reply.code(code).send({ error: { message: msg, type: 'upstream_error', upstream } });
+          return reply
+            .code(code)
+            .send({ error: { message: msg, type: 'upstream_error', upstream } });
         }
       }
 
@@ -1312,7 +1394,14 @@ export function registerOpenAIRoutes(
               !wroteChunk &&
               failure.kind !== 'request'
             ) {
-              const next = await advanceFailover(router, seq, failedKey, failure.kind, mark, allowedModels);
+              const next = await advanceFailover(
+                router,
+                seq,
+                failedKey,
+                failure.kind,
+                mark,
+                allowedModels,
+              );
               if (next) {
                 router.rememberPreference(originalRequested);
                 const notice = buildFailoverNotice(router, failure.kind, failedKey, next);
