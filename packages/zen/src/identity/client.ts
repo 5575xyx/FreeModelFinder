@@ -1,29 +1,10 @@
-export const OPENCODE_VERSION = '1.18.31';
-
-function runtimeOs(): string {
-  switch (process.platform) {
-    case 'win32':
-      return 'windows';
-    case 'darwin':
-      return 'darwin';
-    default:
-      return process.platform;
-  }
-}
-
-function runtimeArch(): string {
-  switch (process.arch) {
-    case 'x64':
-      return 'amd64';
-    case 'ia32':
-      return '386';
-    default:
-      return process.arch;
-  }
-}
+export const OPENCODE_VERSION = '2.0.29';
 
 export function openCodeUserAgent(): string {
-  return `opencode/${OPENCODE_VERSION} (${runtimeOs()} ${runtimeArch()}; node${process.versions.node})`;
+  // Upstream rejects the old `opencode/<ver> (os arch; node)` shape with a 403
+  // FreeTierError even when every other header matches. The version itself is
+  // not validated — bump it only when upstream starts refusing this one.
+  return `opencode/latest/${OPENCODE_VERSION}/cli`;
 }
 
 export const OPENCODE_CLIENT_HEADERS: Record<string, string> = {

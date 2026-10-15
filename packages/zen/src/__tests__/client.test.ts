@@ -4,7 +4,8 @@ import { OPENCODE_CLIENT_HEADERS, openCodeUserAgent } from '../identity/client.j
 
 describe('opencode client identity', () => {
   it('builds an opencode user agent', () => {
-    assert.match(openCodeUserAgent(), /^opencode\/\d+\.\d+\.\d+ \(/);
+    assert.match(openCodeUserAgent(), /^opencode\/latest\/\d+\.\d+\.\d+\/cli$/);
+    assert.equal(openCodeUserAgent(), 'opencode/latest/2.0.29/cli');
   });
 
   it('identifies as the cli client', () => {
