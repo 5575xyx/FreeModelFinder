@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import {
   SUBSCRIPTION_ADAPTERS,
@@ -7,6 +8,16 @@ import {
 } from '../adapters/subscription/index.js';
 
 const claude = SUBSCRIPTION_ADAPTERS.claude;
+
+/** 服务端的 derived id 契约：完整 token 的 sha256 前 12 位 hex */
+function expectedDerivedId(refreshToken: string): string {
+  return `claude-${createHash('sha256').update(refreshToken.trim()).digest('hex').slice(0, 12)}`;
+}
+
+/** 真实 Claude OAuth refresh token 共享的常量前缀；不能据此截断做键 */
+const CLAUDE_RT_PREFIX = 'sk-ant-ort01-';
+const TOKEN_A = `${CLAUDE_RT_PREFIX}AAAAAAAAAAAAAAAAAAAAAAAAAAAA`;
+const TOKEN_B = `${CLAUDE_RT_PREFIX}BBBBBBBBBBBBBBBBBBBBBBBBBBBB`;
 
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
 const PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile';
@@ -84,7 +95,11 @@ describe('claude parseImport', () => {
     assert.equal(parsed.payload.accountUuid, '');
     assert.equal(parsed.payload.orgUuid, '');
     assert.equal(parsed.payload.orgName, '');
-    assert.equal(parsed.profile.id, 'claude-RT012345', '缺 accountUuid 时取 refreshToken 前 8 位');
+    assert.equal(
+      parsed.profile.id,
+      expectedDerivedId('RT0123456789'),
+      '缺 accountUuid 时取完整 refreshToken 的 sha256 派生 id',
+    );
     assert.equal(parsed.profile.plan, 'max');
   });
 
@@ -221,6 +236,45 @@ describe('claude refresh', () => {
       },
     );
     assert.equal(calls.length, 1, '冷却期内再次 refresh 不得发出网络请求');
+  });
+
+  it('isolates the cooldown per refresh token (shared sk-ant-ort01- prefix must not collide)', async () => {
+    const { impl, calls } = routeFetch({
+      [TOKEN_URL]: (init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, string>;
+        if (body.refresh_token === TOKEN_A) {
+          return new Response('slow down', { status: 429, headers: { 'retry-after': '30' } });
+        }
+        return jsonResponse({ access_token: 'AT-B', refresh_token: 'RT-B', expires_in: 3600 });
+      },
+      [PROFILE_URL]: profileOk(profileBody),
+    });
+
+    await assert.rejects(
+      () =>
+        claude.refresh({
+          fetchImpl: impl,
+          refreshToken: TOKEN_A,
+          payload: { refreshToken: TOKEN_A },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof SubscriptionRefreshError);
+        assert.equal(error.kind, 'rate_limit');
+        return true;
+      },
+    );
+    const tokenCalls = () => calls.filter((call) => call.url === TOKEN_URL);
+    assert.equal(tokenCalls().length, 1, 'token A 首次 429 只发一次请求');
+
+    // token B 与 A 共享同一 8 字符前缀，若 block key 只看前 8 位则会被错误地一起冷却
+    const result = await claude.refresh({
+      fetchImpl: impl,
+      refreshToken: TOKEN_B,
+      payload: { refreshToken: TOKEN_B },
+    });
+    assert.equal(tokenCalls().length, 2, 'token B 的冷却必须与 token A 独立，应真实发起请求');
+    assert.equal(result.payload.accessToken, 'AT-B');
+    assert.equal(result.payload.refreshToken, 'RT-B');
   });
 
   it('clamps the cooldown into the 5s-5min window (Retry-After-Ms)', async () => {
@@ -385,7 +439,7 @@ describe('claude refresh', () => {
       payload: { accessToken: 'AT', refreshToken: 'RT-profile-403' },
     });
     assert.equal(result.payload.accessToken, 'AT2');
-    assert.equal(result.profile?.id, 'claude-RT-profi', '退回 refreshToken 前 8 位派生 id');
+    assert.equal(result.profile?.id, expectedDerivedId('RT-profile-403'), '退回完整 token 派生 id');
   });
 });
 
@@ -397,11 +451,21 @@ describe('claude accountIdOf', () => {
     );
   });
 
-  it('falls back to profile.id and then to the refresh token prefix', () => {
+  it('falls back to profile.id and then to the full-token derived id', () => {
     assert.equal(claude.accountIdOf({ id: 'profile-id' }, {}), 'profile-id');
     assert.equal(
       claude.accountIdOf({ id: '' }, { refreshToken: 'ABCDEFGH1234' }),
-      'claude-ABCDEFGH',
+      expectedDerivedId('ABCDEFGH1234'),
     );
+    assert.equal(claude.accountIdOf({ id: '' }, {}), expectedDerivedId(''));
+  });
+
+  it('derives distinct ids for tokens sharing the sk-ant-ort01- prefix', () => {
+    const idA = claude.accountIdOf({ id: '' }, { refreshToken: TOKEN_A });
+    const idB = claude.accountIdOf({ id: '' }, { refreshToken: TOKEN_B });
+    assert.notEqual(idA, idB, '不同 refresh token 不得得到同一 account id');
+    assert.equal(idA, expectedDerivedId(TOKEN_A));
+    assert.equal(idB, expectedDerivedId(TOKEN_B));
+    assert.notEqual(idA, `claude-${TOKEN_A.slice(0, 8)}`);
   });
 });

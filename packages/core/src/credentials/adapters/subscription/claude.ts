@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   ParsedSubscription,
   RefreshResult,
@@ -19,18 +20,30 @@ const RETRY_AFTER_MS_HEADER = 'retry-after-ms';
 const RETRY_AFTER_HEADER = 'retry-after';
 const MIN_BACKOFF_MS = 5_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
-/** 派生 id 时截取的 refresh token 前缀长度（同时也是 block map 的键） */
-const RT_PREFIX = 8;
+/** 完整 refresh token 摘要截取长度（既是 block map 的键，也是派生 id 的可见后缀） */
+const RT_DIGEST_LEN = 16;
+/** 派生 id 使用的摘要长度，比 block key 短，保持 id 可读性 */
+const RT_ID_DIGEST_LEN = 12;
 const DETAIL_LIMIT = 300;
 
 /**
- * 按 refresh token 前缀记录的冷却表（spec §5.2）。
- * 只保留前 8 位，避免长期持有完整 token；进程重启后由 payload.blockedUntil 接续。
+ * 对完整 refresh token 取 sha256 摘要。
+ * 必须哈希全文：真实 Claude OAuth refresh token 共享常量前缀 `sk-ant-ort01-`，
+ * 若只看前 8 位，所有账号会塌缩成同一个键 —— 账号 A 的 429 冷却会误伤账号 B，
+ * 且多个账号会派生出相同的 account id 而互相覆盖。摘要函数非加密用途，仅求前缀分散。
+ */
+function refreshTokenDigest(refreshToken: string): string {
+  return createHash('sha256').update(refreshToken.trim()).digest('hex');
+}
+
+/**
+ * 按 refresh token 摘要记录的冷却表（spec §5.2）。
+ * 只保留定长摘要，避免长期持有完整 token；进程重启后由 payload.blockedUntil 接续。
  */
 const claudeRefreshBlock = new Map<string, number>();
 
 function blockKey(refreshToken: string): string {
-  return refreshToken.trim().slice(0, RT_PREFIX);
+  return refreshTokenDigest(refreshToken).slice(0, RT_DIGEST_LEN);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -50,7 +63,7 @@ function stringifyScalar(value: unknown): string | undefined {
 }
 
 function derivedId(refreshToken: string): string {
-  return `claude-${refreshToken.trim().slice(0, RT_PREFIX)}`;
+  return `claude-${refreshTokenDigest(refreshToken).slice(0, RT_ID_DIGEST_LEN)}`;
 }
 
 function clampBackoff(ms: number): number {
@@ -299,6 +312,10 @@ export const claudeAdapter: SubscriptionAdapter = {
     return error instanceof SubscriptionRefreshError && error.kind === 'fatal';
   },
 
+  /**
+   * 账号 id 优先级：payload.accountUuid → profile.id → 完整 refresh token 的 sha256 派生 id。
+   * 末级回退必须依赖完整 token（而非前 8 位），否则共享 `sk-ant-ort01-` 前缀的账号会撞成同一 id。
+   */
   accountIdOf(profile: SubscriptionAccountProfile, payload: Record<string, string>): string {
     const accountUuid = (payload.accountUuid ?? '').trim();
     if (accountUuid) return accountUuid;
