@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { createHash } from 'node:crypto';
 import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
 import type { ZenHttpRequest, ZenHttpResponse } from '../http.js';
 import { openCodeUserAgent } from '../identity/client.js';
@@ -265,6 +266,14 @@ function applyEffort(
   if (effort !== '') applyForcedEffort(body, protocol, effort);
 }
 
+// Mirrors clientProjectID in internal/gateway/upstream.go:915-918. Renders the
+// project header the way the client does: a bare 40-char lowercase hex id
+// rather than the gateway's prj_-prefixed stable id. The value is not checked
+// upstream, only its shape; hashing keeps one conversation pinned to a project.
+export function clientProjectID(project: string): string {
+  return createHash('sha256').update(`opencode-project\x00${project}`).digest('hex').slice(0, 40);
+}
+
 // Mirrors newUpstreamRequest in internal/gateway/upstream.go:785-814. Exported
 // for gateway/probe.ts, which builds its own availability requests.
 export function buildUpstreamRequest(
@@ -280,11 +289,17 @@ export function buildUpstreamRequest(
     accept: 'application/json, text/event-stream',
     'user-agent': openCodeUserAgent(),
     'x-opencode-client': 'cli',
+    // The free tier wants both session headers to carry the same id. The
+    // x-opencode-request correlation header is rejected with 403 since
+    // 2026-10-14, so it is no longer forwarded (tracing stays local).
     'x-opencode-session': ids.session,
+    'x-opencode-session-id': ids.session,
     'x-session-affinity': ids.session,
     'x-session-id': ids.session,
-    'x-opencode-request': ids.request,
-    'x-opencode-project': ids.project ?? '',
+    // A canonical prj_* project id is rejected with 403 since 2026-10-14; the
+    // client's bare 40-hex shape passes. Hash the local project signal into
+    // that shape so one conversation stays pinned to one upstream project.
+    'x-opencode-project': clientProjectID(ids.project ?? ''),
   };
   if (ids.parentSession) headers['x-parent-session-id'] = ids.parentSession;
   if (protocol === 'anthropic') {
