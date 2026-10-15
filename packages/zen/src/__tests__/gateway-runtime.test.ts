@@ -8,9 +8,12 @@ import { describe, it } from 'node:test';
 import { normalizeZenConfig, type ZenConfig } from '../config/index.js';
 import { ZenAttemptMonitor } from '../gateway/monitor.js';
 import {
+  CLIENT_CLOSED_REQUEST_STATUS,
+  classifyUpstreamFailure,
   createZenGateway,
   attemptDeadlineMs,
   isClientCanceled,
+  ZenUpstreamFailure,
   type ZenGateway,
 } from '../gateway/runtime.js';
 import type { ZenHttpClient, ZenHttpRequest, ZenHttpResponse } from '../http.js';
@@ -142,6 +145,30 @@ class HangingClient implements ZenHttpClient {
         const error = new Error('upstream request aborted');
         error.name = 'AbortError';
         reject(error);
+      };
+      if (signal.aborted) {
+        abort();
+        return;
+      }
+      signal.addEventListener('abort', abort, { once: true });
+    });
+  }
+}
+
+// Rejects with the abort signal's own reason, the way a real transport does:
+// a fired AbortSignal.timeout surfaces as a TimeoutError, while a caller
+// .abort() surfaces as an AbortError. HangingClient masks both behind its own
+// AbortError, so it cannot distinguish the two.
+class ReasonClient implements ZenHttpClient {
+  send(request: ZenHttpRequest): Promise<ZenHttpResponse> {
+    return new Promise<ZenHttpResponse>((_resolve, reject) => {
+      const signal = request.signal;
+      if (!signal) return;
+      const keepAlive = setTimeout(() => undefined, 5_000);
+      const abort = (): void => {
+        clearTimeout(keepAlive);
+        const reason = signal.reason;
+        reject(reason instanceof Error ? reason : new Error(String(reason)));
       };
       if (signal.aborted) {
         abort();
@@ -504,6 +531,131 @@ describe('zen gateway runtime', () => {
         messages: [{ role: 'user', content: 'hi' }],
       }),
       /abort/i,
+    );
+    gateway.stop();
+  });
+
+  describe('classifyUpstreamFailure', () => {
+    it('labels a caller abort as a 499 client cancel, not a bad gateway', () => {
+      const controller = new AbortController();
+      controller.abort();
+      const detail = classifyUpstreamFailure(new Error('socket hang up'), controller.signal);
+      assert.equal(detail.status, CLIENT_CLOSED_REQUEST_STATUS);
+      assert.equal(detail.code, 'client_canceled');
+    });
+
+    it('labels an expired request budget as a 504, not a 499', () => {
+      const deadline = Object.assign(new Error('deadline exceeded'), { name: 'TimeoutError' });
+      const controller = new AbortController();
+      controller.abort();
+      // Both the caller and our own deadline are satisfied: the deadline wins,
+      // because a budget we spent is ours to report, not the client's fault.
+      assert.deepEqual(classifyUpstreamFailure(deadline, controller.signal), {
+        status: 504,
+        code: 'upstream_timeout',
+      });
+    });
+
+    it('labels a plain transport failure as a 502', () => {
+      assert.deepEqual(classifyUpstreamFailure(new Error('socket hang up'), undefined), {
+        status: 502,
+        code: 'upstream_error',
+      });
+    });
+  });
+
+  it('answers 499 client_canceled when the caller aborted before the response', async () => {
+    const gateway = makeGateway(new ReasonClient());
+    await gateway.refresh();
+
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      gateway.chat({
+        model: 'free-model',
+        messages: [{ role: 'user', content: 'hi' }],
+        signal: controller.signal,
+      }),
+      (error: unknown) => {
+        assert.ok(
+          error instanceof ZenUpstreamFailure,
+          `expected ZenUpstreamFailure, got ${String(error)}`,
+        );
+        assert.equal(error.status, CLIENT_CLOSED_REQUEST_STATUS);
+        assert.equal(error.code, 'client_canceled');
+        return true;
+      },
+    );
+    gateway.stop();
+  });
+
+  it('answers 504 upstream_timeout when the request budget expires', async () => {
+    const base = normalizeZenConfig({ anonymous: true });
+    const config: ZenConfig = { ...base, retry: { ...base.retry, timeoutSeconds: 0.05 } };
+    const gateway = createZenGateway({
+      config,
+      proxies: PROXIES,
+      httpClient: new ReasonClient(),
+      fetchImpl: fixedFetch(),
+      logger: {},
+    });
+    await gateway.refresh();
+
+    await assert.rejects(
+      gateway.chat({ model: 'free-model', messages: [{ role: 'user', content: 'hi' }] }),
+      (error: unknown) => {
+        assert.ok(error instanceof ZenUpstreamFailure);
+        assert.equal(error.status, 504);
+        assert.equal(error.code, 'upstream_timeout');
+        return true;
+      },
+    );
+    gateway.stop();
+  });
+
+  it('answers 502 upstream_error for a plain transport failure', async () => {
+    const client = new FakeClient(() => {
+      const error = new Error('socket hang up');
+      (error as Error & { code?: string }).code = 'ECONNRESET';
+      throw error;
+    });
+    const gateway = makeGateway(client);
+    await gateway.refresh();
+
+    await assert.rejects(
+      gateway.chat({ model: 'free-model', messages: [{ role: 'user', content: 'hi' }] }),
+      (error: unknown) => {
+        assert.ok(error instanceof ZenUpstreamFailure);
+        assert.equal(error.status, 502);
+        assert.equal(error.code, 'upstream_error');
+        return true;
+      },
+    );
+    gateway.stop();
+  });
+
+  it('classifies a canceled stream the same way as a canceled chat', async () => {
+    const gateway = makeGateway(new ReasonClient());
+    await gateway.refresh();
+
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      (async () => {
+        for await (const chunk of gateway.stream({
+          model: 'free-model',
+          messages: [{ role: 'user', content: 'hi' }],
+          signal: controller.signal,
+        })) {
+          assert.fail(`expected no chunks, got ${JSON.stringify(chunk)}`);
+        }
+      })(),
+      (error: unknown) => {
+        assert.ok(error instanceof ZenUpstreamFailure);
+        assert.equal(error.status, CLIENT_CLOSED_REQUEST_STATUS);
+        assert.equal(error.code, 'client_canceled');
+        return true;
+      },
     );
     gateway.stop();
   });

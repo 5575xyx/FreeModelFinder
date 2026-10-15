@@ -27,6 +27,7 @@ import type {
   ZenRequest,
   ZenStreamChunk,
 } from '../protocol/types.js';
+import { ATTEMPT_TIMEOUT_CODE, FIRST_EVENT_TIMEOUT_CODE } from './first-event.js';
 import { reasoningEfforts } from './models.js';
 import { ZenAttemptMonitor } from './monitor.js';
 import { setProxyHealthy } from './health.js';
@@ -46,6 +47,7 @@ import {
   type ZenRequestIds,
   type ZenUpstreamLogger,
   type ZenUpstreamOptions,
+  type ZenUpstreamStreamResult,
 } from './upstream.js';
 
 // Mirrors the same-protocol shortcut in internal/gateway/gateway.go:206-210
@@ -201,6 +203,81 @@ export function isClientCanceled(requestSignal: AbortSignal | undefined, error: 
 function unwrapCause(error: unknown): unknown {
   const cause = (error as { cause?: unknown } | null | undefined)?.cause;
   return cause === error ? undefined : cause;
+}
+
+/** nginx's 499: the client went away before the gateway could answer. */
+export const CLIENT_CLOSED_REQUEST_STATUS = 499;
+
+export interface ZenFailureDetail {
+  status: number;
+  code: string;
+}
+
+/**
+ * A failed upstream call, carrying the status the gateway should answer with.
+ * The message keeps the underlying cause so callers that match prose still see
+ * it, and `cause` preserves the original error for anyone who unwraps.
+ */
+export class ZenUpstreamFailure extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly requestId: string;
+
+  constructor(detail: ZenFailureDetail, requestId: string, cause: unknown) {
+    super(`${detail.code}: ${messageOf(cause)}`, { cause });
+    this.name = 'ZenUpstreamFailure';
+    this.status = detail.status;
+    this.code = detail.code;
+    this.requestId = requestId;
+  }
+}
+
+function messageOf(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string' && error.length > 0) return error;
+  return String(error);
+}
+
+// Go keys off errors.Is(err, context.DeadlineExceeded). Node marks a fired
+// AbortSignal.timeout as a TimeoutError, and the per-attempt / first-event
+// deadlines carry their own codes, so all three mean "our budget expired".
+function isDeadlineExceeded(error: unknown): boolean {
+  for (
+    let cause: unknown = error;
+    cause !== undefined && cause !== null;
+    cause = unwrapCause(cause)
+  ) {
+    const name = (cause as { name?: unknown })?.name;
+    const code = (cause as { code?: unknown })?.code;
+    if (name === 'TimeoutError' || name === 'DeadlineExceeded') return true;
+    if (code === ATTEMPT_TIMEOUT_CODE || code === FIRST_EVENT_TIMEOUT_CODE) return true;
+  }
+  return false;
+}
+
+/**
+ * Mirrors the three WriteError branches in internal/gateway/gateway.go:222-236
+ * (streamed) and 391-403. The deadline check comes first, exactly as in Go, so
+ * a budget we spent is reported as a timeout even when the caller also went
+ * away: 502 makes clients retry, 504 tells them not to.
+ */
+export function classifyUpstreamFailure(
+  error: unknown,
+  requestSignal: AbortSignal | undefined,
+): ZenFailureDetail {
+  if (isDeadlineExceeded(error)) return { status: 504, code: 'upstream_timeout' };
+  if (isClientCanceled(requestSignal, error)) {
+    return { status: CLIENT_CLOSED_REQUEST_STATUS, code: 'client_canceled' };
+  }
+  return { status: 502, code: 'upstream_error' };
+}
+
+function upstreamFailure(
+  error: unknown,
+  ids: ZenRequestIds,
+  requestSignal: AbortSignal | undefined,
+): ZenUpstreamFailure {
+  return new ZenUpstreamFailure(classifyUpstreamFailure(error, requestSignal), ids.request, error);
 }
 
 // The request budget is the tighter of the caller cancellation, derived from
@@ -476,7 +553,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     const ids = makeRequestIds(requestDeadline(request, config.retry.timeoutSeconds));
     const result = await doUpstream(upstreamOptions, route, request, ids);
     if (result.error !== undefined || result.response === undefined) {
-      throw result.error ?? new Error('upstream request failed');
+      throw upstreamFailure(result.error, ids, request.signal);
     }
     const response = result.response;
     const text = await readBodyText(response.body);
@@ -514,7 +591,12 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     const route = routeFor(request);
     const ids = makeRequestIds(requestDeadline(request, config.retry.timeoutSeconds));
     const clientProtocol = request.rawProtocol ?? 'openai';
-    const streamed = await doUpstreamStream(upstreamOptions, route, request, ids);
+    let streamed: ZenUpstreamStreamResult;
+    try {
+      streamed = await doUpstreamStream(upstreamOptions, route, request, ids);
+    } catch (error) {
+      throw upstreamFailure(error, ids, request.signal);
+    }
     const upstreamProtocol = streamed.effectiveRoute.protocol;
     const sameProtocol = CLIENT_TO_PROTOCOL[clientProtocol] === upstreamProtocol;
     const parser = new SseParser();
