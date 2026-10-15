@@ -22,6 +22,7 @@ import {
   ClineProvider,
   CodexProvider,
   ClaudeProvider,
+  GoogleProvider,
   ZenProvider,
 } from './providers/index.js';
 import type { ProviderContext } from './providers/base.js';
@@ -48,11 +49,9 @@ import type {
   VideoGenerationResponse,
 } from './types.js';
 
-// TODO(subscription-tasks): 临时放宽为 Partial——codex/claude/google 的构造器由
-// Task 4/7/9 注册；三家齐全（Task 9 收尾）后恢复为
-// Record<Exclude<ProviderId, 'ollama'>, ...> 严格类型。
-const PROVIDER_CTORS: Partial<
-  Record<Exclude<ProviderId, 'ollama'>, new (ctx: ProviderContext) => BaseProvider>
+const PROVIDER_CTORS: Record<
+  Exclude<ProviderId, 'ollama'>,
+  new (ctx: ProviderContext) => BaseProvider
 > = {
   openrouter: OpenRouterProvider,
   gemini: GeminiProvider,
@@ -72,6 +71,7 @@ const PROVIDER_CTORS: Partial<
   cline: ClineProvider,
   codex: CodexProvider,
   claude: ClaudeProvider,
+  google: GoogleProvider,
   opencode: ZenProvider,
 };
 
