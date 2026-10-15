@@ -26,6 +26,9 @@ export const ZenConfigSchema = z.object({
     .object({
       zen: z.string().default('https://opencode.ai/zen'),
       go: z.string().default('https://opencode.ai/zen/go'),
+      // Keyless inference lives on its own host since upstream split it off the
+      // shared Zen base. An empty value falls back to the default in Normalize.
+      anonymous: z.string().default('https://opencode.ai/inference'),
     })
     .default({}),
   proxies: z.array(z.string()).default([]),
@@ -51,6 +54,9 @@ export const ZenConfigSchema = z.object({
     .object({
       refreshSeconds: z.number().int().min(1).default(300),
       protocols: z.record(NativeProtocolSchema).default({}),
+      // When set, only free models are discovered and routed even if Zen/Go
+      // keys are present; free models may still fall back to keys.
+      freeOnly: z.boolean().default(false),
     })
     .default({}),
   reasoning: z
@@ -76,5 +82,9 @@ export function normalizeZenConfig(input: unknown): ZenConfig {
     zenKeys: [...cfg.zenKeys],
     goKeys: [...cfg.goKeys],
     proxies: [...cfg.proxies],
+    upstream: {
+      ...cfg.upstream,
+      anonymous: cfg.upstream.anonymous.trim() || 'https://opencode.ai/inference',
+    },
   };
 }

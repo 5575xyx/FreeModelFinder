@@ -9,11 +9,18 @@ describe('zen config', () => {
     assert.equal(cfg.prefer, 'go');
     assert.equal(cfg.upstream.zen, 'https://opencode.ai/zen');
     assert.equal(cfg.upstream.go, 'https://opencode.ai/zen/go');
+    assert.equal(cfg.upstream.anonymous, 'https://opencode.ai/inference');
+    assert.equal(cfg.models.freeOnly, false);
     assert.equal(cfg.retry.maxAttempts, 3);
     assert.equal(cfg.retry.timeoutSeconds, 300);
     assert.equal(cfg.performance.failureCooldownSeconds, 15);
     assert.equal(cfg.performance.connectTimeoutSeconds, 15);
     assert.equal(cfg.models.refreshSeconds, 300);
+  });
+
+  it('fills the anonymous upstream default when explicitly empty', () => {
+    const cfg = normalizeZenConfig({ upstream: { anonymous: '' } });
+    assert.equal(cfg.upstream.anonymous, 'https://opencode.ai/inference');
   });
 
   it('rejects an unknown reasoning effort', () => {
