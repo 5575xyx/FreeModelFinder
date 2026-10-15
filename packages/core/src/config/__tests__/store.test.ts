@@ -11,6 +11,7 @@ process.env.FREEMODELFINDER_HOME = testHome;
 
 const { CONFIG_PATH, MASTER_KEY_PATH, loadConfig, saveConfig } = await import('../store.js');
 const { decryptString, encryptString, looksEncrypted } = await import('../crypto.js');
+const { normalizeKeepAliveMinutes, DEFAULT_KEEP_ALIVE_MINUTES } = await import('../../types.js');
 
 const baseConfig = (): AppConfig => ({
   version: 2,
@@ -236,5 +237,14 @@ describe('configuration encryption and migration', () => {
     assert.deepEqual(files.sort(), ['config.json', 'master.key']);
     assert.doesNotMatch(await readFile(CONFIG_PATH, 'utf8'), /provider-secret/);
     assert.equal((await loadConfig()).port, 12000);
+  });
+
+  it('normalizes keep-alive minutes to the default and clamps the range', () => {
+    assert.equal(DEFAULT_KEEP_ALIVE_MINUTES, 14);
+    assert.equal(normalizeKeepAliveMinutes(undefined), 14);
+    assert.equal(normalizeKeepAliveMinutes('abc'), 14);
+    assert.equal(normalizeKeepAliveMinutes(0), 1);
+    assert.equal(normalizeKeepAliveMinutes(999), 60);
+    assert.equal(normalizeKeepAliveMinutes(20), 20);
   });
 });

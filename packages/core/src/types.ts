@@ -35,6 +35,27 @@ export interface CustomSource {
   baseUrl: string;
   apiKey?: string | string[];
   models: CustomModelEntry[];
+  /**
+   * Whether the gateway periodically pings this source's /models endpoint to
+   * keep it warm. Defaults to true; set false to exclude a source that is not
+   * a Render free instance (or otherwise does not need keep-alive).
+   */
+  keepAlive?: boolean;
+  /** Keep-alive interval in minutes. Defaults to DEFAULT_KEEP_ALIVE_MINUTES. */
+  keepAliveMinutes?: number;
+}
+
+/** Default keep-alive interval. Below Render's 15-minute free-tier spin-down. */
+export const DEFAULT_KEEP_ALIVE_MINUTES = 14;
+
+/**
+ * Coerces an untrusted keep-alive interval to a safe integer in 1..60,
+ * falling back to the default for anything non-numeric or out of range.
+ */
+export function normalizeKeepAliveMinutes(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_KEEP_ALIVE_MINUTES;
+  return Math.min(60, Math.max(1, Math.round(n)));
 }
 
 export const RoleSchema = z.enum(['system', 'user', 'assistant', 'tool']);
