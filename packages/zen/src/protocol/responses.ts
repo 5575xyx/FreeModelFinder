@@ -1,5 +1,6 @@
 import type { ZenChatMessage, ZenRequest, ZenToolDefinition } from './types.js';
 import { floorResponsesMaxTokens } from './request.js';
+import { imageUrlOf, responsesToolContent } from './tool-images.js';
 
 function encodeTools(tools: ZenToolDefinition[]): Array<Record<string, unknown>> {
   return tools.map((tool) => ({
@@ -17,7 +18,7 @@ function encodeMessage(message: ZenChatMessage): Array<Record<string, unknown>> 
       {
         type: 'function_call_output',
         call_id: message.tool_call_id ?? '',
-        output: message.content,
+        output: responsesToolContent(message.contentParts ?? message.content),
       },
     ];
   }
@@ -36,7 +37,7 @@ function encodeMessage(message: ZenChatMessage): Array<Record<string, unknown>> 
       if (part.type === 'text') {
         content.push({ type: textKind, text: part.text ?? '' });
       } else {
-        content.push({ type: 'input_image', image_url: part.image_url?.url ?? '' });
+        content.push({ type: 'input_image', image_url: imageUrlOf(part) });
       }
     }
   } else if (message.content) {

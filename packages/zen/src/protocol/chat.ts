@@ -1,4 +1,12 @@
-import type { ZenChatMessage, ZenRequest } from './types.js';
+import type { ZenChatMessage, ZenContentPart, ZenRequest } from './types.js';
+import { chatToolImages } from './tool-images.js';
+
+function imageUrl(part: ZenContentPart): string {
+  const url = part.image_url?.url;
+  if (url && url.length > 0) return url;
+  if (part.data === undefined) return '';
+  return `data:${part.mediaType ?? ''};base64,${part.data}`;
+}
 
 function encodeContent(message: ZenChatMessage): unknown {
   const hasImage = message.contentParts?.some((part) => part.type === 'image_url') ?? false;
@@ -6,11 +14,35 @@ function encodeContent(message: ZenChatMessage): unknown {
   return message.contentParts.map((part) =>
     part.type === 'text'
       ? { type: 'text', text: part.text ?? '' }
-      : { type: 'image_url', image_url: { url: part.image_url?.url ?? '' } },
+      : { type: 'image_url', image_url: { url: imageUrl(part) } },
   );
 }
 
-function encodeMessage(message: ZenChatMessage): Record<string, unknown> {
+function encodeChatBlocks(parts: ZenContentPart[]): unknown {
+  const single = parts.length === 1 ? parts[0] : undefined;
+  if (single?.type === 'text') return single.text ?? '';
+  return parts.map((part) =>
+    part.type === 'text'
+      ? { type: 'text', text: part.text ?? '' }
+      : { type: 'image_url', image_url: { url: imageUrl(part) } },
+  );
+}
+
+function encodeMessage(message: ZenChatMessage): Array<Record<string, unknown>> {
+  if (message.role === 'tool') {
+    const { text, images } = chatToolImages(
+      message.contentParts ?? message.content,
+      message.tool_call_id ?? '',
+    );
+    const out: Record<string, unknown> = { role: 'tool', content: text };
+    if (message.name) out['name'] = message.name;
+    if (message.tool_call_id) out['tool_call_id'] = message.tool_call_id;
+    const result = [out];
+    if (images.length > 0) {
+      result.push({ role: 'user', content: encodeChatBlocks(images) });
+    }
+    return result;
+  }
   const out: Record<string, unknown> = { role: message.role, content: encodeContent(message) };
   if (message.name) out['name'] = message.name;
   if (message.tool_call_id) out['tool_call_id'] = message.tool_call_id;
@@ -18,13 +50,13 @@ function encodeMessage(message: ZenChatMessage): Record<string, unknown> {
   if (message.role === 'assistant' && message.reasoning) {
     out['reasoning_content'] = message.reasoning;
   }
-  return out;
+  return [out];
 }
 
 export function toChatBody(request: ZenRequest): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: request.model,
-    messages: request.messages.map(encodeMessage),
+    messages: request.messages.flatMap(encodeMessage),
   };
   if (request.temperature !== undefined) body['temperature'] = request.temperature;
   if (request.top_p !== undefined) body['top_p'] = request.top_p;

@@ -24,6 +24,9 @@ export interface ZenContentPart {
   type: 'text' | 'image_url';
   text?: string;
   image_url?: { url: string };
+  /** Base64 payload of an image that had no URL (mediaType is required). */
+  mediaType?: string;
+  data?: string;
 }
 
 export interface ZenChatMessage {

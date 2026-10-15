@@ -28,7 +28,15 @@ function contentPartsToBlocks(parts: ZenContentPart[]): AnthropicBlock[] {
     if (part.type === 'text') {
       blocks.push({ type: 'text', text: part.text ?? '' });
     } else if (part.type === 'image_url') {
-      blocks.push(imageBlock(part.image_url?.url ?? ''));
+      const url = part.image_url?.url;
+      if (url && url.length > 0) {
+        blocks.push(imageBlock(url));
+      } else if (part.data !== undefined) {
+        blocks.push({
+          type: 'image',
+          source: { type: 'base64', media_type: part.mediaType ?? '', data: part.data },
+        });
+      }
     }
   }
   return blocks;
@@ -46,11 +54,15 @@ function parseToolInput(argumentsJson: string | undefined): unknown {
 
 function messageToBlocks(message: ZenChatMessage): AnthropicBlock[] {
   if (message.role === 'tool') {
+    const content =
+      message.contentParts && message.contentParts.length > 0
+        ? contentPartsToBlocks(message.contentParts)
+        : message.content;
     return [
       {
         type: 'tool_result',
         tool_use_id: message.tool_call_id ?? '',
-        content: message.content,
+        content,
       },
     ];
   }

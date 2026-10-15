@@ -32,6 +32,22 @@ export function floorResponsesMaxTokens(value: unknown): unknown {
 }
 
 export function prepareRequest(request: ZenRequest, target: ZenProtocol): Record<string, unknown> {
+  // Tool results that carry images need a call ID so the encoder can address
+  // the parent assistant turn. Mirrors the call-ID guard at the tail of
+  // decodeBridgeRequest in internal/protocol/request.go, which skips chat: the
+  // chat encoder lifts the images into its own message, so the id is cosmetic
+  // there rather than load-bearing.
+  if (target !== 'chat') {
+    for (const message of request.messages) {
+      if (message.role !== 'tool') continue;
+      const parts = message.contentParts;
+      if (!Array.isArray(parts)) continue;
+      const hasImage = parts.some((p) => p.type === 'image_url');
+      if (hasImage && !message.tool_call_id) {
+        throw new Error('tool image result requires a call ID');
+      }
+    }
+  }
   if (request.rawProtocol && CLIENT_TO_PROTOCOL[request.rawProtocol] === target) {
     const cloned = cloneRaw(request.raw, request.model);
     if (cloned) {
