@@ -125,11 +125,74 @@ function resolveProxies(options: ZenGatewayOptions): ProxySpec[] {
 // gateway runtime owns no HTTP request, so it mints a fresh request/session
 // pair per call. The session is canonicalized so the upstream sees a
 // well-formed affinity value. P1-E may instead thread ids from the core layer.
+// The project is a local correlation hint only: upstream inspects its shape,
+// not its value, and a canonical prj_* id is rejected (request.go:58-61), so the
+// raw signal is kept verbatim here — never hashed and never prj_-prefixed.
+// Any header shaping is left to the request builder (upstream.ts).
+const DEFAULT_PROJECT_ID = 'opencode2api:default-project';
+
 function makeRequestIds(signal?: AbortSignal): ZenRequestIds {
   const request = `req_${randomUUID().replace(/-/g, '')}`;
-  const ids: ZenRequestIds = { request, session: canonicalSessionId(request) };
+  const ids: ZenRequestIds = {
+    request,
+    session: canonicalSessionId(request),
+    project: DEFAULT_PROJECT_ID,
+  };
   if (signal) ids.signal = signal;
   return ids;
+}
+
+// Mirrors attemptDeadline in internal/gateway/gateway.go:33-38: the per-attempt
+// context deadline. It is armed only when attempt_timeout_seconds is set,
+// otherwise the request-level budget (retry.timeoutSeconds) already bounds the
+// single attempt it would cover. The upstream cap is
+// PerformanceConfig.AttemptTimeout(requestTimeout) (config.go:118-127): the
+// attempt never exceeds the total request budget, so a hung exit cannot consume
+// the whole retry window on its own. Zero means "disabled" here, matching the
+// TS `withConfiguredTimeouts` guard that only injects a positive deadline.
+export function attemptDeadlineMs(config: ZenConfig): number {
+  const attemptSeconds = config.performance.attemptTimeoutSeconds;
+  if (attemptSeconds <= 0) return 0;
+  return Math.min(attemptSeconds, config.retry.timeoutSeconds) * 1000;
+}
+
+// statusClientClosedRequest is nginx's 499: the client went away before the
+// gateway could answer, so the failure is neither upstream nor ours
+// (internal/gateway/gateway.go:40-42). This predicate mirrors
+// wire.ClientCanceled(ctx, err) (gateway.go:222) so a caller can tell a
+// downstream disconnect from a genuine upstream/transport failure and answer
+// 499 instead of 502.
+//
+// wire.ClientCanceled reports true when the request context was canceled by
+// its parent (the client) rather than by a deadline. Node has no separate
+// "canceled" vs "deadline exceeded" abort, so this approximates it: a client
+// disconnect aborts the request signal with an AbortError (a transport /
+// 'socket hang up' / ECONNRESET surface), while an expired attempt deadline
+// surfaces as a TimeoutError (and Node's request-level AbortSignal.timeout
+// also aborts with a TimeoutError, not an AbortError). An aborted request
+// signal whose error is NOT a TimeoutError is therefore treated as a client
+// cancel; a TimeoutError keeps the timeout classification.
+//
+// `error` may be wrapped, so every cause in the chain is inspected.
+export function isClientCanceled(requestSignal: AbortSignal | undefined, error: unknown): boolean {
+  if (requestSignal?.aborted !== true) return false;
+  for (
+    let cause: unknown = error;
+    cause !== undefined && cause !== null;
+    cause = unwrapCause(cause)
+  ) {
+    const name = (cause as { name?: unknown })?.name;
+    // A deadline/timeout abort is ours, not the client's disconnect. Node marks
+    // AbortSignal.timeout-driven aborts as TimeoutError; the legacy AbortError
+    // (a plain .abort() with no deadline) is left as a client cancel here.
+    if (name === 'TimeoutError') return false;
+  }
+  return true;
+}
+
+function unwrapCause(error: unknown): unknown {
+  const cause = (error as { cause?: unknown } | null | undefined)?.cause;
+  return cause === error ? undefined : cause;
 }
 
 // The request budget is the tighter of the caller cancellation, derived from
@@ -142,16 +205,14 @@ function requestDeadline(request: ZenRequest, timeoutSeconds: number): AbortSign
   return request.signal ? AbortSignal.any([request.signal, deadline]) : deadline;
 }
 
-// Applies performance.connectTimeoutSeconds/attemptTimeoutSeconds to every
-// outbound request without binding to a concrete transport: the optional
-// per-request deadline fields are honored by the node http client and can be
-// overridden by an injected ZenHttpClient that sets its own values.
-function withConfiguredTimeouts(
-  client: ZenHttpClient,
-  performance: ZenConfig['performance'],
-): ZenHttpClient {
-  const connectTimeoutMs = performance.connectTimeoutSeconds * 1000;
-  const attemptTimeoutMs = performance.attemptTimeoutSeconds * 1000;
+// Applies performance.connectTimeoutSeconds and the request-capped attempt
+// deadline (attemptDeadlineMs) to every outbound request without binding to a
+// concrete transport: the optional per-request deadline fields are honored by
+// the node http client and can be overridden by an injected ZenHttpClient that
+// sets its own values.
+function withConfiguredTimeouts(client: ZenHttpClient, config: ZenConfig): ZenHttpClient {
+  const connectTimeoutMs = config.performance.connectTimeoutSeconds * 1000;
+  const attemptTimeoutMs = attemptDeadlineMs(config);
   return {
     send(request: ZenHttpRequest): Promise<ZenHttpResponse> {
       const enriched: ZenHttpRequest = { ...request };
@@ -232,7 +293,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
   const logger = options.logger ?? {};
   const proxies = resolveProxies(options);
   const rawHttpClient = options.httpClient ?? createNodeHttpClient();
-  const httpClient = withConfiguredTimeouts(rawHttpClient, config.performance);
+  const httpClient = withConfiguredTimeouts(rawHttpClient, config);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const monitor = new ZenAttemptMonitor();
 

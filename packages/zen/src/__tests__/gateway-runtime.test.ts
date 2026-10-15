@@ -7,7 +7,12 @@ import { Readable } from 'node:stream';
 import { describe, it } from 'node:test';
 import { normalizeZenConfig, type ZenConfig } from '../config/index.js';
 import { ZenAttemptMonitor } from '../gateway/monitor.js';
-import { createZenGateway, type ZenGateway } from '../gateway/runtime.js';
+import {
+  createZenGateway,
+  attemptDeadlineMs,
+  isClientCanceled,
+  type ZenGateway,
+} from '../gateway/runtime.js';
 import type { ZenHttpClient, ZenHttpRequest, ZenHttpResponse } from '../http.js';
 import type { ProxySpec } from '../proxy/spec.js';
 import type { ZenStreamChunk } from '../protocol/types.js';
@@ -269,6 +274,87 @@ describe('zen gateway runtime', () => {
 
     assert.equal(client.requests[0]!.attemptTimeoutMs, 2000);
     assert.equal(client.requests[0]!.connectTimeoutMs, 15000);
+    gateway.stop();
+  });
+
+  it('caps the per-attempt deadline at the request-level budget (attemptDeadlineMs)', () => {
+    const base = normalizeZenConfig({ anonymous: true });
+    // attempt > retry.timeoutSeconds → capped to the request budget.
+    assert.equal(
+      attemptDeadlineMs({
+        ...base,
+        performance: { ...base.performance, attemptTimeoutSeconds: 600 },
+      }),
+      300_000, // min(600, 300) * 1000
+    );
+    // attempt disabled → 0 (no per-attempt deadline injected).
+    assert.equal(
+      attemptDeadlineMs({
+        ...base,
+        performance: { ...base.performance, attemptTimeoutSeconds: 0 },
+      }),
+      0,
+    );
+    // attempt < retry.timeoutSeconds → the attempt value wins unchanged.
+    assert.equal(
+      attemptDeadlineMs({
+        ...base,
+        performance: { ...base.performance, attemptTimeoutSeconds: 60 },
+      }),
+      60_000,
+    );
+  });
+
+  it('treats an aborted caller signal as a client cancel (isClientCanceled)', () => {
+    const gone = new AbortController();
+    gone.abort();
+    // A downstream disconnect surfaces as a transport error, not a timeout.
+    assert.equal(isClientCanceled(gone.signal, new Error('socket hang up')), true);
+    assert.equal(
+      isClientCanceled(gone.signal, Object.assign(new Error('x'), { code: 'ECONNRESET' })),
+      true,
+    );
+    assert.equal(isClientCanceled(gone.signal, undefined), true);
+  });
+
+  it('keeps an expired deadline classified as a timeout, not a cancel', () => {
+    const gone = new AbortController();
+    gone.abort();
+    const deadline = Object.assign(new Error('deadline exceeded'), { name: 'TimeoutError' });
+    assert.equal(isClientCanceled(gone.signal, deadline), false);
+    // The deadline marker may be wrapped, so the whole cause chain counts.
+    assert.equal(
+      isClientCanceled(gone.signal, Object.assign(new Error('upstream'), { cause: deadline })),
+      false,
+    );
+  });
+
+  it('is not a client cancel without an aborted signal', () => {
+    assert.equal(isClientCanceled(undefined, new Error('x')), false);
+    assert.equal(isClientCanceled(new AbortController().signal, new Error('x')), false);
+  });
+
+  it('injects the capped attempt deadline into outbound requests', async () => {
+    const base = normalizeZenConfig({ anonymous: true });
+    const config: ZenConfig = {
+      ...base,
+      performance: { ...base.performance, attemptTimeoutSeconds: 600 },
+      retry: { ...base.retry, timeoutSeconds: 30 },
+    };
+    const client = new FakeClient(() => inboundJson(200, CHAT_BODY));
+    const gateway = createZenGateway({
+      config,
+      proxies: PROXIES,
+      httpClient: client,
+      fetchImpl: fixedFetch(),
+      logger: {},
+    });
+    await gateway.refresh();
+
+    await gateway.chat({ model: 'free-model', messages: [{ role: 'user', content: 'hi' }] });
+
+    // min(600, 30) * 1000, not 600_000.
+    assert.equal(client.requests[0]!.attemptTimeoutMs, 30_000);
     gateway.stop();
   });
 
