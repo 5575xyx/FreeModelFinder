@@ -45,3 +45,6 @@ coverage/
 *.tgz
 /.trae
 /videos
+
+# git worktrees
+.worktrees/
