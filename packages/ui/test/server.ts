@@ -44,6 +44,8 @@ export const configPayload = {
         baseUrl: 'https://fixture.invalid/v1',
         hasKey: true,
         keyMeta: [{ id: 'k0', hint: '…a1b2' }],
+        keepAlive: true,
+        keepAliveMinutes: 14,
         models: [{ id: 'custom-model', displayName: 'Custom Model' }],
       },
     ],

@@ -53,6 +53,8 @@ type CustomSourceDef = {
   hasKey?: boolean;
   models: CustomModelDef[];
   keyMeta?: Array<{ id: string; hint: string }>;
+  keepAlive?: boolean;
+  keepAliveMinutes?: number;
 };
 
 type SettingsTab = 'models' | 'gateway' | 'sources' | 'custom' | 'inspect';
@@ -874,10 +876,19 @@ export function SettingsView({
                       baseUrl: c.custom.baseUrl,
                       hasKey: c.custom.hasKey,
                       models: Array.isArray(c.custom.models) ? c.custom.models : [],
+                      keepAlive: true,
+                      keepAliveMinutes: 14,
                     },
                   ]
                 : [];
-          setCustomSources(list.map((s) => ({ ...s, models: s.models ?? [] })));
+          setCustomSources(
+            list.map((s) => ({
+              ...s,
+              models: s.models ?? [],
+              keepAlive: typeof s.keepAlive === 'boolean' ? s.keepAlive : true,
+              keepAliveMinutes: typeof s.keepAliveMinutes === 'number' ? s.keepAliveMinutes : 14,
+            })),
+          );
         }
       })
       .catch(() => setGatewayError(t('settings.gatewayError')));
@@ -1101,7 +1112,18 @@ export function SettingsView({
       while (customSources.some((s) => s.id === `${id}-${i}`)) i++;
       id = `${id}-${i}`;
     }
-    setCustomSources((list) => [...list, { id, label: name, baseUrl: '', apiKey: '', models: [] }]);
+    setCustomSources((list) => [
+      ...list,
+      {
+        id,
+        label: name,
+        baseUrl: '',
+        apiKey: '',
+        models: [],
+        keepAlive: true,
+        keepAliveMinutes: 14,
+      },
+    ]);
     setCustomNewSourceName('');
   }
 
@@ -1239,6 +1261,8 @@ export function SettingsView({
         label: s.label,
         baseUrl: s.baseUrl.trim(),
         models: s.models,
+        keepAlive: s.keepAlive ?? true,
+        keepAliveMinutes: s.keepAliveMinutes ?? 14,
       }));
       const body: Record<string, unknown> = {
         provider: 'custom',
@@ -3100,6 +3124,44 @@ export function SettingsView({
                             </button>
                           </div>
                         </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 rounded-md border border-border/60 bg-surface-muted/20 px-3 py-2">
+                        <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 rounded border-input accent-primary"
+                            checked={src.keepAlive ?? true}
+                            onChange={(e) =>
+                              patchCustomSource(src.id, { keepAlive: e.target.checked })
+                            }
+                            aria-label={t('settings.keepAlive.enabled')}
+                          />
+                          {t('settings.keepAlive.enabled')}
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {t('settings.keepAlive.interval')}
+                          <input
+                            type="number"
+                            min={1}
+                            max={60}
+                            className="w-16 rounded-md border border-input bg-surface px-2 py-1 font-mono text-xs text-foreground shadow-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
+                            value={src.keepAliveMinutes ?? 14}
+                            disabled={!(src.keepAlive ?? true)}
+                            onChange={(e) => {
+                              const n = Number(e.target.value);
+                              patchCustomSource(src.id, {
+                                keepAliveMinutes: Number.isFinite(n)
+                                  ? Math.min(60, Math.max(1, Math.round(n)))
+                                  : 14,
+                              });
+                            }}
+                            aria-label={t('settings.keepAlive.interval')}
+                          />
+                        </label>
+                        <span className="text-[11px] text-muted-foreground/80">
+                          {t('settings.keepAlive.hint')}
+                        </span>
                       </div>
 
                       <div className="space-y-2">
