@@ -2,23 +2,19 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-10-14（Asia/Shanghai）** · **94** 个免费模型入口 · **13/15** 个 Provider 正常。
+> 最近目录审计：**2026-10-15（Asia/Shanghai）** · **93** 个免费模型入口 · **13/15** 个 Provider 正常。
 
-[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-14.md)
+[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-15.md)
 
 这份列表每天由 GitHub Actions 通过各 Provider 的模型目录接口刷新，并应用 FreeModelFinder 核心层的免费规则。它不执行真实推理，不代表无限额度、永久免费或生产级可用。同一上游模型通过多个 Provider 提供时会分别计数，因为对应的账号资格、额度和 Gateway 模型 ID 不同。
 
 ## 今日变化
 
-与 2026-10-13 相比，在成功比较的 13 个 Provider 中：**新增 1 个，移除 1 个**。
-
-### 新增
-
-- `opencode:opencode:cat-jam-free`
+与 2026-10-14 相比，在成功比较的 13 个 Provider 中：**新增 0 个，移除 1 个**。
 
 ### 移除
 
-- `openrouter:apodex/apodex-1.1-mini:free`
+- `opencode:opencode:ling-3.1-flash-free`
 
 ## Provider 汇总
 
@@ -38,7 +34,7 @@
 | Kilo Code                | 🟢 正常   |         18 | 聚合免费模型             | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                                                                                  |
 | Agnes AI (China)         | 🟢 正常   |          5 | 官方免费模型             | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                                                |
 | Agnes AI (International) | 🟢 正常   |          6 | 官方免费模型             | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                                                |
-| OpenCode Zen             | 🟢 正常   |         10 | 实时零价模型（匿名通道） | 实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public） |
+| OpenCode Zen             | 🟢 正常   |          9 | 实时零价模型（匿名通道） | 实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public） |
 
 ## 完整列表
 
@@ -272,13 +268,12 @@
 
 | Gateway 模型 ID                                     | 显示名称                        | 上下文窗口 |
 | --------------------------------------------------- | ------------------------------- | ---------: |
-| `opencode:opencode:big-pickle`                      | big-pickle                      |          — |
-| `opencode:opencode:cat-jam-free`                    | cat-jam-free                    |          — |
-| `opencode:opencode:ling-3.1-flash-free`             | ling-3.1-flash-free             |          — |
-| `opencode:opencode:longcat-2.5-preview-free`        | longcat-2.5-preview-free        |          — |
-| `opencode:opencode:mimo-v2.6-flash-free`            | mimo-v2.6-flash-free            |          — |
-| `opencode:opencode:muse-spark-1.2-contributor-free` | muse-spark-1.2-contributor-free |          — |
-| `opencode:opencode:muse-spark-1.3-contributor-free` | muse-spark-1.3-contributor-free |          — |
-| `opencode:opencode:nemotron-3.5-lightning-free`     | nemotron-3.5-lightning-free     |          — |
-| `opencode:opencode:space-bunny-free`                | space-bunny-free                |          — |
-| `opencode:opencode:step-5-preview-free`             | step-5-preview-free             |          — |
+| `opencode:opencode:big-pickle`                      | big-pickle                      |       200K |
+| `opencode:opencode:cat-jam-free`                    | cat-jam-free                    |     262.1K |
+| `opencode:opencode:longcat-2.5-preview-free`        | longcat-2.5-preview-free        |         1M |
+| `opencode:opencode:mimo-v2.6-flash-free`            | mimo-v2.6-flash-free            |       200K |
+| `opencode:opencode:muse-spark-1.2-contributor-free` | muse-spark-1.2-contributor-free |         1M |
+| `opencode:opencode:muse-spark-1.3-contributor-free` | muse-spark-1.3-contributor-free |         1M |
+| `opencode:opencode:nemotron-3.5-lightning-free`     | nemotron-3.5-lightning-free     |     262.1K |
+| `opencode:opencode:space-bunny-free`                | space-bunny-free                |         1M |
+| `opencode:opencode:step-5-preview-free`             | step-5-preview-free             |         1M |

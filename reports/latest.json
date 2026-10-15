@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "date": "2026-10-14",
-  "generatedAt": "2026-10-14T01:16:37.394Z",
-  "reportPath": "reports/provider-free-model-audit-2026-10-14.md",
-  "totalModels": 94,
+  "date": "2026-10-15",
+  "generatedAt": "2026-10-15T00:34:26.491Z",
+  "reportPath": "reports/provider-free-model-audit-2026-10-15.md",
+  "totalModels": 93,
   "providers": [
     {
       "id": "openrouter",
@@ -580,7 +580,7 @@
       "id": "opencode",
       "display": "OpenCode Zen",
       "status": "ok",
-      "count": 10,
+      "count": 9,
       "freeType": "实时零价模型（匿名通道）",
       "freeBasis": "实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public）",
       "risk": "匿名通道与免费层有速率和并发限制；部分免费模型只在 Go tier 提供；上游目录与定价可能随时变化",
@@ -588,72 +588,60 @@
         {
           "id": "opencode:big-pickle",
           "displayName": "big-pickle",
-          "contextWindow": null
+          "contextWindow": 200000
         },
         {
           "id": "opencode:cat-jam-free",
           "displayName": "cat-jam-free",
-          "contextWindow": null
-        },
-        {
-          "id": "opencode:ling-3.1-flash-free",
-          "displayName": "ling-3.1-flash-free",
-          "contextWindow": null
+          "contextWindow": 262144
         },
         {
           "id": "opencode:longcat-2.5-preview-free",
           "displayName": "longcat-2.5-preview-free",
-          "contextWindow": null
+          "contextWindow": 1000000
         },
         {
           "id": "opencode:mimo-v2.6-flash-free",
           "displayName": "mimo-v2.6-flash-free",
-          "contextWindow": null
+          "contextWindow": 200000
         },
         {
           "id": "opencode:muse-spark-1.2-contributor-free",
           "displayName": "muse-spark-1.2-contributor-free",
-          "contextWindow": null
+          "contextWindow": 1048576
         },
         {
           "id": "opencode:muse-spark-1.3-contributor-free",
           "displayName": "muse-spark-1.3-contributor-free",
-          "contextWindow": null
+          "contextWindow": 1048576
         },
         {
           "id": "opencode:nemotron-3.5-lightning-free",
           "displayName": "nemotron-3.5-lightning-free",
-          "contextWindow": null
+          "contextWindow": 262144
         },
         {
           "id": "opencode:space-bunny-free",
           "displayName": "space-bunny-free",
-          "contextWindow": null
+          "contextWindow": 1048576
         },
         {
           "id": "opencode:step-5-preview-free",
           "displayName": "step-5-preview-free",
-          "contextWindow": null
+          "contextWindow": 1000000
         }
       ]
     }
   ],
   "changes": {
-    "comparedWith": "2026-10-13",
-    "added": [
-      {
-        "provider": "opencode",
-        "id": "opencode:cat-jam-free",
-        "displayName": "cat-jam-free",
-        "contextWindow": null
-      }
-    ],
+    "comparedWith": "2026-10-14",
+    "added": [],
     "removed": [
       {
-        "provider": "openrouter",
-        "id": "apodex/apodex-1.1-mini:free",
-        "displayName": "Apodex: Apodex 1.1 Mini (free)",
-        "contextWindow": 262144
+        "provider": "opencode",
+        "id": "opencode:ling-3.1-flash-free",
+        "displayName": "ling-3.1-flash-free",
+        "contextWindow": null
       }
     ],
     "comparedProviders": [
