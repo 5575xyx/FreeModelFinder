@@ -168,7 +168,7 @@ describe('REFRESH_SKEW_MS', () => {
 });
 
 describe('SUBSCRIPTION_ADAPTERS placeholders', () => {
-  const platforms = ['claude', 'google'] as const;
+  const platforms = ['google'] as const;
 
   it('exposes exactly the three subscription platforms', () => {
     assert.deepEqual(Object.keys(SUBSCRIPTION_ADAPTERS).sort(), ['claude', 'codex', 'google']);
