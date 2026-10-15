@@ -218,3 +218,47 @@ describe('models.dev limits', () => {
     assert.equal(store.limits('absent'), undefined);
   });
 });
+
+// models.dev publishes per-model cache_read / cache_write alongside input and
+// output. Those prices are billing info only: the free-or-paid decision must
+// stay driven by input/output alone.
+describe('models.dev cache pricing', () => {
+  const CACHE_FIXTURE = {
+    opencode: {
+      id: 'opencode',
+      models: {
+        m: { id: 'm', cost: { input: 0, output: 0, cache_read: 0.5, cache_write: 1.5 } },
+      },
+    },
+  };
+
+  it('surfaces cache_read and cache_write in the decision', () => {
+    const store = new ZenPricingStore();
+    store.replace(decodeModelsDev(CACHE_FIXTURE), Date.now());
+    const decision = store.decide('m');
+    assert.equal(decision.cacheReadCost, 0.5);
+    assert.equal(decision.cacheWriteCost, 1.5);
+    assert.equal(decision.allowed, true, 'cache prices must not affect free judgment');
+    assert.equal(decision.source, 'metadata_free');
+  });
+
+  it('exposes the full cost through the pricing store', () => {
+    const store = new ZenPricingStore();
+    store.replace(
+      decodeModelsDev({
+        opencode: {
+          id: 'opencode',
+          models: {
+            m: { id: 'm', cost: { input: 3, output: 4, cache_read: 0.5, cache_write: 1.5 } },
+            cacheOnly: { id: 'cacheOnly', cost: { cache_read: 0.5 } },
+          },
+        },
+      }),
+      Date.now(),
+    );
+    assert.deepEqual(store.cost('m'), { input: 3, output: 4, cacheRead: 0.5, cacheWrite: 1.5 });
+    // Cache prices alone do not qualify as a published cost.
+    assert.equal(store.cost('cacheOnly'), undefined);
+    assert.equal(store.cost('absent'), undefined);
+  });
+});

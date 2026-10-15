@@ -15,6 +15,13 @@ export const ReasoningEffortSchema = z.enum([
   'auto',
 ]);
 
+/**
+ * Effort levels the gateway accepts and forwards, from lowest to highest.
+ * `none` and `auto` are gateway controls, not levels, so they are excluded.
+ * Mirrors `reasoningLevels` in upstream `internal/gateway/health.go`.
+ */
+export const REASONING_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+
 export const NativeProtocolSchema = z.enum(['chat', 'responses', 'anthropic']);
 
 export const ZenConfigSchema = z.object({

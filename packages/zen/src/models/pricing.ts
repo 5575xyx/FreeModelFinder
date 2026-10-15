@@ -1,9 +1,11 @@
-import type { AnonymousDecision, ModelLimits, PricingDecider } from './types.js';
+import type { AnonymousDecision, ModelCost, ModelLimits, PricingDecider } from './types.js';
 
 export interface ZenPrice {
   id: string;
   input?: number;
   output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
   /** models.dev limit.context */
   contextWindow?: number;
   /** models.dev limit.input */
@@ -11,6 +13,17 @@ export interface ZenPrice {
   /** models.dev limit.output */
   maxOutput?: number;
   deprecated: boolean;
+}
+
+/**
+ * Decision returned by `ZenPricingStore.decide`. Mirrors the shared
+ * `AnonymousDecision` contract but adds the cache-read / cache-write prices
+ * that models.dev publishes — those only inform billing and never affect the
+ * free-or-paid decision.
+ */
+export interface ZenDecision extends AnonymousDecision {
+  cacheReadCost?: number;
+  cacheWriteCost?: number;
 }
 
 export interface PricingSnapshot {
@@ -90,6 +103,8 @@ export function decodeModelsDev(data: unknown): Record<string, ZenPrice> {
       const limit = asRecord(model['limit']);
       const input = numberAt(cost, 'input');
       const output = numberAt(cost, 'output');
+      const cacheRead = numberAt(cost, 'cache_read');
+      const cacheWrite = numberAt(cost, 'cache_write');
       const contextWindow = numberAt(limit, 'context');
       const maxInput = numberAt(limit, 'input');
       const maxOutput = numberAt(limit, 'output');
@@ -97,6 +112,8 @@ export function decodeModelsDev(data: unknown): Record<string, ZenPrice> {
         id: modelId,
         ...(input !== undefined ? { input } : {}),
         ...(output !== undefined ? { output } : {}),
+        ...(cacheRead !== undefined ? { cacheRead } : {}),
+        ...(cacheWrite !== undefined ? { cacheWrite } : {}),
         ...(contextWindow !== undefined ? { contextWindow } : {}),
         ...(maxInput !== undefined ? { maxInput } : {}),
         ...(maxOutput !== undefined ? { maxOutput } : {}),
@@ -139,10 +156,27 @@ export class ZenPricingStore implements PricingDecider {
     return Object.keys(limits).length > 0 ? limits : undefined;
   }
 
-  decide(model: string): AnonymousDecision {
+  /**
+   * Per-million-token cost for a model, or undefined when models.dev did not
+   * publish at least one primary price. Cache prices are carried alongside
+   * input/output but do not trigger this on their own, matching upstream.
+   */
+  cost(model: string): ModelCost | undefined {
+    const price = this.models[model];
+    if (!price) return undefined;
+    if (price.input === undefined && price.output === undefined) return undefined;
+    return {
+      ...(price.input !== undefined ? { input: price.input } : {}),
+      ...(price.output !== undefined ? { output: price.output } : {}),
+      ...(price.cacheRead !== undefined ? { cacheRead: price.cacheRead } : {}),
+      ...(price.cacheWrite !== undefined ? { cacheWrite: price.cacheWrite } : {}),
+    };
+  }
+
+  decide(model: string): ZenDecision {
     const ready = this.updatedAt > 0 && Object.keys(this.models).length > 0;
     const nameFree = /free/i.test(model);
-    const fallback = (source: string): AnonymousDecision => ({
+    const fallback = (source: string): ZenDecision => ({
       allowed: nameFree,
       source,
       known: false,
@@ -151,13 +185,15 @@ export class ZenPricingStore implements PricingDecider {
     if (!ready) return fallback('metadata_pending');
     const price = this.models[model];
     if (!price) return fallback('metadata_model_missing');
-    const decision: AnonymousDecision = {
+    const decision: ZenDecision = {
       allowed: false,
       source: 'metadata_paid',
       known: true,
       deprecated: price.deprecated,
       ...(price.input !== undefined ? { inputCost: price.input } : {}),
       ...(price.output !== undefined ? { outputCost: price.output } : {}),
+      ...(price.cacheRead !== undefined ? { cacheReadCost: price.cacheRead } : {}),
+      ...(price.cacheWrite !== undefined ? { cacheWriteCost: price.cacheWrite } : {}),
     };
     const metadataFree = !price.deprecated && price.input === 0 && price.output === 0;
     if (nameFree || metadataFree) {

@@ -29,4 +29,5 @@ export * from './gateway/pool.js';
 export * from './gateway/refresh.js';
 export * from './gateway/upstream.js';
 export * from './gateway/probe.js';
+export * from './gateway/models.js';
 export * from './gateway/runtime.js';

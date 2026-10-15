@@ -371,6 +371,9 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
   }
 
   const catalog = new ZenCatalog(config.prefer, config.models.protocols);
+  // models.free_only hides paid models from discovery and routing so /v1/models,
+  // inference and rotation aliases all agree on what the gateway exposes.
+  catalog.setFreeOnly(config.models.freeOnly);
   const pricing = new ZenPricingStore();
   catalog.setPricing(pricing);
   // Availability state is shared by the routing guard and the probe scheduler:

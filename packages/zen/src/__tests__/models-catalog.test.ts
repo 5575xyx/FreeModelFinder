@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ZenAvailabilityStore } from '../models/availability.js';
 import { ZenCatalog } from '../models/catalog.js';
+import { ZenPricingStore, decodeModelsDev } from '../models/pricing.js';
 import type { ModelLimits, PricingDecider } from '../models/types.js';
 
 function catalog(): ZenCatalog {
@@ -328,5 +329,89 @@ describe('zen catalog availability guard', () => {
     assert.equal(c.advertisedOn('go-only', 'zen'), false);
     assert.equal(c.advertisedOn('go-only', 'go'), true);
     assert.equal(c.advertisedOn('ghost-free', 'zen'), false);
+  });
+});
+
+// models.free_only hides paid models from routing and discovery. Both routing
+// entry points reject them, list() filters them, and toggling the flag back
+// off restores them.
+describe('zen catalog freeOnly', () => {
+  it('rejects paid models when freeOnly is enabled', () => {
+    const c = catalog();
+    c.setPricing(freeStore(['m-free']));
+    c.setFreeOnly(true);
+    assert.throws(
+      () => c.route('shared', true, true, true),
+      /is not free and models\.free_only is enabled/,
+    );
+    assert.throws(
+      () => c.routeForTier('go-only', 'go', true, true),
+      /is not free and models\.free_only is enabled/,
+    );
+  });
+
+  it('lets free models through when freeOnly is enabled', () => {
+    const c = catalog();
+    c.setPricing(freeStore(['m-free']));
+    c.setFreeOnly(true);
+    assert.equal(c.route('m-free', true, true, true).anonymous, true);
+    assert.equal(c.routeForTier('m-free', 'zen', true, true).anonymous, false);
+  });
+
+  it('restores paid models when freeOnly is turned off', () => {
+    const c = catalog();
+    c.setPricing(freeStore(['m-free']));
+    c.setFreeOnly(true);
+    c.setFreeOnly(false);
+    assert.equal(c.route('shared', true, true, true).anonymous, false);
+  });
+
+  it('hides paid models from list() when freeOnly is on', () => {
+    const c = catalog();
+    c.setPricing(freeStore(['m-free']));
+    c.setFreeOnly(true);
+    assert.deepEqual(c.list(), ['m-free']);
+  });
+});
+
+// metadataForTier fills the per-million-token cost published by models.dev.
+// Only input/output trigger a cost block, mirroring upstream catalog.go.
+describe('zen catalog metadata cost', () => {
+  it('fills cost into metadataForTier from the pricing store', () => {
+    const c = new ZenCatalog('zen', {});
+    c.replace({ zen: ['m'], go: [], metadata: { zen: {} } });
+    const pricing = new ZenPricingStore();
+    pricing.replace(
+      decodeModelsDev({
+        opencode: {
+          id: 'opencode',
+          models: {
+            m: { id: 'm', cost: { input: 3, output: 4, cache_read: 0.5, cache_write: 1.5 } },
+          },
+        },
+      }),
+      Date.now(),
+    );
+    c.setPricing(pricing);
+    const md = c.metadataForTier('m', 'zen');
+    assert.equal(md?.cost?.input, 3);
+    assert.equal(md?.cost?.output, 4);
+    assert.equal(md?.cost?.cacheRead, 0.5);
+    assert.equal(md?.cost?.cacheWrite, 1.5);
+  });
+
+  it('omits cost when models.dev only publishes cache prices', () => {
+    const c = new ZenCatalog('zen', {});
+    c.replace({ zen: ['m'], go: [], metadata: { zen: {} } });
+    const pricing = new ZenPricingStore();
+    pricing.replace(
+      decodeModelsDev({
+        opencode: { id: 'opencode', models: { m: { id: 'm', cost: { cache_read: 0.5 } } } },
+      }),
+      Date.now(),
+    );
+    c.setPricing(pricing);
+    const md = c.metadataForTier('m', 'zen');
+    assert.equal(md, undefined, 'no catalog metadata and no cost => undefined');
   });
 });

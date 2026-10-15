@@ -12,12 +12,25 @@ export interface ModelLimits {
   maxOutput?: number;
 }
 
+/**
+ * Published per-million-token price of a model, in USD. Mirrors the `Cost`
+ * struct in upstream discovery.go: an absent field means the source did not
+ * state it.
+ */
+export interface ModelCost {
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
 export interface ZenModelMetadata extends ModelLimits {
   reasoning?: boolean;
   toolCall?: boolean;
   structuredOutput?: boolean;
   inputModalities?: string[];
   outputModalities?: string[];
+  cost?: ModelCost;
 }
 
 export interface ZenRoute {

@@ -5,11 +5,19 @@ import {
   type AnonymousDecision,
   type CatalogCapabilities,
   type CatalogSnapshot,
+  type ModelCost,
   type PricingDecider,
   type ZenModelMetadata,
   type ZenRoute,
   type ZenTier,
 } from './types.js';
+
+/**
+ * Local extension of `PricingDecider` used inside the catalog: the pricing
+ * store also publishes a per-model cost that `metadataForTier` surfaces
+ * through the returned metadata. Callers that only need routing may omit it.
+ */
+type CatalogPricing = PricingDecider & { cost?(model: string): ModelCost | undefined };
 
 const CHAT: ZenNativeProtocol = 'chat';
 
@@ -68,13 +76,14 @@ export class ZenCatalog {
   private unsupported = cloneTierBooleans(undefined);
   private metadata = cloneTierMetadata(undefined);
   private readonly overrides: Map<string, ZenNativeProtocol>;
-  private pricing: PricingDecider | undefined;
+  private pricing: CatalogPricing | undefined;
   private availability: ZenAvailabilityStore | undefined;
   private cachePath = '';
   private cacheSource = 'none';
   private updatedAt = 0;
   private stale = false;
   private refreshAfterMs = 0;
+  private freeOnly = false;
 
   constructor(
     private readonly prefer: ZenTier,
@@ -103,6 +112,13 @@ export class ZenCatalog {
 
   setRefreshIntervalMs(intervalMs: number): void {
     this.refreshAfterMs = intervalMs;
+  }
+
+  // Mirrors Catalog.SetFreeOnly: hides every paid model from discovery and
+  // routing so /v1/models, inference, rotation aliases and diagnostics all
+  // agree on what the gateway exposes.
+  setFreeOnly(enabled: boolean): void {
+    this.freeOnly = enabled;
   }
 
   markLoadedFromCache(updatedAt: number): void {
@@ -139,7 +155,12 @@ export class ZenCatalog {
 
   list(): string[] {
     const union = new Set<string>([...this.zen, ...this.go]);
-    return [...union].filter((model) => this.supported(model)).sort();
+    return [...union]
+      .filter((model) => {
+        if (!this.supported(model)) return false;
+        return !this.freeOnly || this.anonymousDecision(model).allowed;
+      })
+      .sort();
   }
 
   supported(model: string): boolean {
@@ -167,14 +188,20 @@ export class ZenCatalog {
   metadataForTier(model: string, tier: ZenTier): ZenModelMetadata | undefined {
     const md = this.metadata[tier].get(model);
     const base = md ? copyMetadata(md) : undefined;
-    const limits = this.pricing?.limits?.(model);
-    if (!limits) return base;
+    const pricing = this.pricing;
+    if (!pricing) return base;
+    const limits = pricing.limits?.(model);
+    const cost = pricing.cost?.(model);
+    if (!limits && !cost) return base;
     const filled: ZenModelMetadata = base ?? {};
-    if (filled.contextWindow == null && limits.contextWindow != null) {
-      filled.contextWindow = limits.contextWindow;
+    if (limits) {
+      if (filled.contextWindow == null && limits.contextWindow != null) {
+        filled.contextWindow = limits.contextWindow;
+      }
+      if (filled.maxInput == null && limits.maxInput != null) filled.maxInput = limits.maxInput;
+      if (filled.maxOutput == null && limits.maxOutput != null) filled.maxOutput = limits.maxOutput;
     }
-    if (filled.maxInput == null && limits.maxInput != null) filled.maxInput = limits.maxInput;
-    if (filled.maxOutput == null && limits.maxOutput != null) filled.maxOutput = limits.maxOutput;
+    if (cost) filled.cost = cost;
     return filled;
   }
 
@@ -229,6 +256,7 @@ export class ZenCatalog {
 
   route(model: string, hasZenKeys: boolean, hasGoKeys: boolean, hasAnonymous: boolean): ZenRoute {
     this.assertNotDisabled(model);
+    this.assertFreeOnly(model);
     const keyTiers = this.keyTierOrder(model, hasZenKeys, hasGoKeys);
     const decision = this.anonymousDecision(model);
     const advertised =
@@ -266,6 +294,7 @@ export class ZenCatalog {
 
   routeForTier(model: string, tier: ZenTier, hasZenKeys: boolean, hasGoKeys: boolean): ZenRoute {
     this.assertNotDisabled(model);
+    this.assertFreeOnly(model);
     const hasKeys = tier === 'go' ? hasGoKeys : hasZenKeys;
     if (!hasKeys) throw new Error(`no ${tier} key is configured`);
     const advertised =
@@ -298,6 +327,15 @@ export class ZenCatalog {
       throw new Error(
         `model "${model}" is disabled after a failed availability check; wait for the next probe or restore it manually`,
       );
+    }
+  }
+
+  // Mirrors Catalog.freeOnlyErrorLocked: while models.free_only is enabled
+  // both routing entry points reject paid models so discovery and inference
+  // agree on what is exposed.
+  private assertFreeOnly(model: string): void {
+    if (this.freeOnly && !this.anonymousDecision(model).allowed) {
+      throw new Error(`model "${model}" is not free and models.free_only is enabled`);
     }
   }
 
