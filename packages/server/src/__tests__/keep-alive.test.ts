@@ -12,6 +12,11 @@ const assert: typeof AssertStrict = (await import('node:assert/strict'))
 const { describe, it } = await import('node:test');
 const { KeepAliveService } = await import('../keep-alive.js');
 type KeepAliveSource = import('../keep-alive.js').KeepAliveSource;
+const { updateConfig, loadConfig } = await import('@freemodelfinder/core');
+const { createServer } = await import('../server.js');
+const { ProviderRegistry } = await import('@freemodelfinder/core');
+
+const localUiHeaders = { origin: 'http://127.0.0.1:11435', 'x-fmf-client': 'ui' };
 
 function stubFetch(log: Array<{ url: string; auth: string | null }>) {
   const orig = globalThis.fetch;
@@ -135,5 +140,83 @@ describe('KeepAliveService', () => {
       ['https://s.example.com/v1/models'],
       'only the 1-minute source is due after 2 minutes',
     );
+  });
+});
+
+describe('keep-alive config API', () => {
+  it('persists and reads back per-source keep-alive fields', async () => {
+    await updateConfig(() => ({
+      version: 2,
+      port: 11435,
+      providers: {
+        custom: {
+          enabled: true,
+          credentials: {
+            apiKey: '',
+            extra: {
+              sources: [
+                {
+                  id: 'ka-fixture',
+                  label: 'KA',
+                  baseUrl: 'https://ka.example.com/v1',
+                  apiKey: 'k',
+                  models: [{ id: 'ka-model' }],
+                  keepAlive: true,
+                  keepAliveMinutes: 14,
+                },
+              ],
+            },
+          },
+        },
+      },
+      gateway: { requireAuth: false },
+      autoRoute: { enabled: false, strategy: 'capability' },
+    }));
+
+    const registry = new ProviderRegistry(await loadConfig());
+    registry.listAllModels = async () => ({
+      models: [],
+      succeededProviders: [],
+      failedProviders: [],
+    });
+    const { app } = await createServer({ registry, watchIntervalMs: 60 * 60 * 1000 });
+
+    // Update the source's keep-alive fields via the management API.
+    const saved = await app.inject({
+      method: 'POST',
+      url: '/api/providers',
+      headers: localUiHeaders,
+      payload: {
+        provider: 'custom',
+        sources: [
+          {
+            id: 'ka-fixture',
+            label: 'KA',
+            baseUrl: 'https://ka.example.com/v1',
+            apiKey: 'k',
+            models: [{ id: 'ka-model' }],
+            keepAlive: false,
+            keepAliveMinutes: 5,
+          },
+        ],
+      },
+    });
+    assert.equal(saved.statusCode, 200);
+
+    const read = await app.inject({
+      method: 'GET',
+      url: '/api/config',
+      headers: localUiHeaders,
+    });
+    assert.equal(read.statusCode, 200);
+    const cfg = read.json() as {
+      custom?: { sources?: Array<{ id: string; keepAlive?: boolean; keepAliveMinutes?: number }> };
+    };
+    const src = cfg.custom?.sources?.find((s) => s.id === 'ka-fixture');
+    assert.ok(src, 'the fixture source must be present');
+    assert.equal(src!.keepAlive, false, 'keepAlive must round-trip');
+    assert.equal(src!.keepAliveMinutes, 5, 'keepAliveMinutes must round-trip');
+
+    await app.close();
   });
 });

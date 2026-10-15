@@ -27,6 +27,7 @@ import {
   isVisionCapable,
   loadConfig,
   loadSnapshot,
+  normalizeKeepAliveMinutes,
   redact,
   updateConfig,
   validateModelAliases,
@@ -1090,6 +1091,8 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           baseUrl: string;
           hasKey?: boolean;
           apiKey?: string | string[];
+          keepAlive?: boolean;
+          keepAliveMinutes?: number;
           models?: Array<{ id: string; displayName?: string; contextWindow?: number }>;
         }>;
         models?: Array<{ id: string; displayName?: string; contextWindow?: number }>;
@@ -1107,6 +1110,8 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
               ? s.apiKey.some((x) => typeof x === 'string' && x)
               : s.apiKey),
             keyMeta: buildKeyMeta(sourceKeyPool(s.apiKey)),
+            keepAlive: typeof s.keepAlive === 'boolean' ? s.keepAlive : true,
+            keepAliveMinutes: normalizeKeepAliveMinutes(s.keepAliveMinutes),
             models: Array.isArray(s.models) ? s.models : [],
           }))
         : legacyBaseUrl
@@ -1308,6 +1313,8 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
           label?: string;
           baseUrl: string;
           apiKey?: string;
+          keepAlive?: boolean;
+          keepAliveMinutes?: number;
           models?: Array<{ id: string; displayName?: string; contextWindow?: number }>;
         }>;
         appendSourceKeys?: { sourceId: string; keys: string[] };
@@ -1371,7 +1378,10 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       const prevSourceList = Array.isArray(prevSourcesExtra.sources)
         ? prevSourcesExtra.sources
         : [];
-      const prevSourceById = new Map<string, { apiKey?: string | string[] }>();
+      const prevSourceById = new Map<
+        string,
+        { apiKey?: string | string[]; keepAlive?: boolean; keepAliveMinutes?: number }
+      >();
       for (const ps of prevSourceList) {
         if (typeof ps?.id === 'string' && ps.id) prevSourceById.set(ps.id, ps);
       }
@@ -1401,6 +1411,12 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
               }
               const label =
                 typeof s?.label === 'string' && s.label.trim() ? s.label.trim() : undefined;
+              const prev = prevSourceById.get(id);
+              const keepAlive = typeof s?.keepAlive === 'boolean' ? s.keepAlive : prev?.keepAlive;
+              const keepAliveMinutes =
+                typeof s?.keepAliveMinutes === 'number'
+                  ? normalizeKeepAliveMinutes(s.keepAliveMinutes)
+                  : prev?.keepAliveMinutes;
               const modelsList = Array.isArray(s?.models)
                 ? s!
                     .models!.map((m) => ({
@@ -1422,6 +1438,8 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
                 baseUrl: bu.replace(/\/$/, ''),
                 ...(key !== undefined ? { apiKey: key } : {}),
                 models: modelsList,
+                ...(keepAlive !== undefined ? { keepAlive } : {}),
+                ...(keepAliveMinutes !== undefined ? { keepAliveMinutes } : {}),
               };
             })
             .filter((s): s is NonNullable<typeof s> => !!s)
