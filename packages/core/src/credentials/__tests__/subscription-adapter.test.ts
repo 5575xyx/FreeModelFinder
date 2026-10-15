@@ -167,24 +167,11 @@ describe('REFRESH_SKEW_MS', () => {
   });
 });
 
-describe('SUBSCRIPTION_ADAPTERS placeholders', () => {
-  const platforms = ['google'] as const;
-
-  it('exposes exactly the three subscription platforms', () => {
+describe('SUBSCRIPTION_ADAPTERS', () => {
+  it('exposes exactly the three subscription platforms, all backed by real adapters', () => {
     assert.deepEqual(Object.keys(SUBSCRIPTION_ADAPTERS).sort(), ['claude', 'codex', 'google']);
-  });
-
-  it('placeholder adapters throw "not implemented" and return safe defaults', async () => {
-    for (const platform of platforms) {
-      const adapter = SUBSCRIPTION_ADAPTERS[platform];
-      assert.equal(adapter.platform, platform);
-      assert.throws(() => adapter.parseImport('raw-import-string'), SubscriptionImportError);
-      await assert.rejects(
-        () => adapter.refresh({ refreshToken: 'rt', payload: {} }),
-        SubscriptionImportError,
-      );
-      assert.equal(adapter.isFatalRefreshError(new Error('anything')), false);
-      assert.equal(typeof adapter.accountIdOf({ id: 'acct-1' }, {}), 'string');
+    for (const platform of ['codex', 'claude', 'google'] as const) {
+      assert.equal(SUBSCRIPTION_ADAPTERS[platform].platform, platform);
     }
   });
 });

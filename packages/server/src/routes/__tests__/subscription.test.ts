@@ -196,16 +196,19 @@ describe('subscription account API', () => {
     assert.equal((await listAccounts(app)).length, 0);
   });
 
-  it('reports 501 for adapters that are not implemented yet', async () => {
-    for (const provider of ['claude', 'google'] as const) {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/subscription/import',
-        headers: localUiHeaders,
-        payload: { provider, raw: '{}' },
-      });
-      assert.equal(response.statusCode, 501, `${provider} -> ${response.body}`);
-    }
+  it('rejects a google import whose oauth_creds.json lacks client_secret', async () => {
+    // Task 8 已接入真实 google 适配器：不再有 501 分支，导入错误统一走 provider 作用域 400
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/import',
+      headers: localUiHeaders,
+      payload: {
+        provider: 'google',
+        raw: JSON.stringify({ refresh_token: 'RT', client_id: 'CID' }),
+      },
+    });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.ok(response.body.includes('client_secret'), response.body);
   });
 
   it('serves import hints for the three subscription providers', async () => {
