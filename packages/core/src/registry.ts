@@ -20,6 +20,7 @@ import {
   AgnesProvider,
   AgnesIntlProvider,
   ClineProvider,
+  CodexProvider,
   ZenProvider,
 } from './providers/index.js';
 import type { ProviderContext } from './providers/base.js';
@@ -68,6 +69,7 @@ const PROVIDER_CTORS: Partial<
   'agnes-intl': AgnesIntlProvider,
   custom: CustomProvider,
   cline: ClineProvider,
+  codex: CodexProvider,
   opencode: ZenProvider,
 };
 
