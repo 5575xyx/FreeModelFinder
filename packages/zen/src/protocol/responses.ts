@@ -1,4 +1,5 @@
 import type { ZenChatMessage, ZenRequest, ZenToolDefinition } from './types.js';
+import { floorResponsesMaxTokens } from './request.js';
 
 function encodeTools(tools: ZenToolDefinition[]): Array<Record<string, unknown>> {
   return tools.map((tool) => ({
@@ -62,7 +63,8 @@ export function toResponsesBody(request: ZenRequest): Record<string, unknown> {
   const body: Record<string, unknown> = { model: request.model };
   if (request.temperature !== undefined) body['temperature'] = request.temperature;
   if (request.top_p !== undefined) body['top_p'] = request.top_p;
-  if (request.max_tokens !== undefined) body['max_output_tokens'] = request.max_tokens;
+  if (request.max_tokens !== undefined)
+    body['max_output_tokens'] = floorResponsesMaxTokens(request.max_tokens);
   if (request.stop !== undefined) body['stop'] = request.stop;
   if (request.stream !== undefined) body['stream'] = request.stream;
 

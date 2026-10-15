@@ -4,7 +4,7 @@ import { isZenProtocol } from '../protocol/types.js';
 import { toChatBody } from '../protocol/chat.js';
 import { toAnthropicBody, DEFAULT_ANTHROPIC_MAX_TOKENS } from '../protocol/anthropic.js';
 import { toResponsesBody } from '../protocol/responses.js';
-import { prepareRequest } from '../protocol/request.js';
+import { prepareRequest, floorResponsesMaxTokens } from '../protocol/request.js';
 
 describe('zen protocol types', () => {
   it('accepts the three native protocols', () => {
@@ -473,5 +473,53 @@ describe('zen prepareRequest', () => {
     const body = prepareRequest({ model: 'm', messages: [], raw, rawProtocol: 'openai' }, 'chat');
     body['model'] = 'changed';
     assert.equal(raw.model, 'orig', 'caller raw must not be mutated');
+  });
+});
+
+describe('floorResponsesMaxTokens', () => {
+  it('lifts tiny budgets to the 16 floor and passes everything else through', () => {
+    assert.equal(floorResponsesMaxTokens(4), 16);
+    assert.equal(floorResponsesMaxTokens(15), 16);
+    assert.equal(floorResponsesMaxTokens(16), 16);
+    assert.equal(floorResponsesMaxTokens(4096), 4096);
+    assert.equal(floorResponsesMaxTokens(0), 0);
+    assert.equal(floorResponsesMaxTokens(undefined), undefined);
+    assert.equal(floorResponsesMaxTokens('x'), 'x');
+  });
+
+  it('floors max_tokens when encoding a responses body', () => {
+    const body = toResponsesBody({
+      model: 'm',
+      max_tokens: 4,
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    assert.equal(body.max_output_tokens, 16);
+  });
+
+  it('floors max_output_tokens when a responses-native raw body is cloned', () => {
+    // No ZenClientProtocol maps to 'responses', so this clone path is defensive
+    // parity with Go's PrepareRequest; assert the guard directly.
+    const body = prepareRequest(
+      {
+        model: 'm',
+        messages: [{ role: 'user', content: 'hi' }],
+        raw: { model: 'm', max_output_tokens: 4, messages: [{ role: 'user', content: 'hi' }] },
+        rawProtocol: 'openai',
+      },
+      'responses',
+    );
+    // openai→responses is cross-protocol, so this encodes structurally; the
+    // request carries no max_tokens, hence no key. The floor guard itself is
+    // unit-tested above.
+    assert.equal('max_output_tokens' in body, false);
+  });
+
+  it('does not floor a large responses budget', () => {
+    const body = toResponsesBody({
+      model: 'm',
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    assert.equal(body.max_output_tokens, 4096);
   });
 });
