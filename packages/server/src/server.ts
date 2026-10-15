@@ -49,6 +49,7 @@ import { modelAllowlistViolation, registerOpenAIRoutes } from './routes/openai.j
 import { registerAnthropicRoutes } from './routes/anthropic.js';
 import { registerGeminiRoutes } from './routes/gemini.js';
 import { ModelWatcher } from './watcher.js';
+import { KeepAliveService, customSourcesFromConfig } from './keep-alive.js';
 import { catalogSignature } from './catalog-signature.js';
 import { recordRemovalCleanup, loadRemovalCleanupLog } from './removal-cleanup-log.js';
 import { registerOnboardingRoutes } from './onboarding.js';
@@ -713,6 +714,15 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
     opts.state.watcher = watcher;
     app.addHook('onClose', async () => {
       watcher.stop();
+    });
+
+    // Keep custom CPA sources warm so Render free instances are not spun down.
+    const keepAlive = new KeepAliveService(() =>
+      customSourcesFromConfig(getRegistry().getConfig()),
+    );
+    keepAlive.start();
+    app.addHook('onClose', () => {
+      keepAlive.stop();
     });
   }
 
