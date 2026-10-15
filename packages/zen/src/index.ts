@@ -21,6 +21,7 @@ export * from './protocol/response.js';
 export * from './protocol/stream.js';
 export * from './protocol/agent.js';
 export * from './protocol/effort.js';
+export * from './protocol/opencode-tools.js';
 export * from './protocol/stale.js';
 export * from './gateway/health.js';
 export * from './gateway/first-event.js';
