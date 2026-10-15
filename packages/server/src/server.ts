@@ -54,6 +54,7 @@ import { KeepAliveService, customSourcesFromConfig } from './keep-alive.js';
 import { catalogSignature } from './catalog-signature.js';
 import { recordRemovalCleanup, loadRemovalCleanupLog } from './removal-cleanup-log.js';
 import { registerOnboardingRoutes } from './onboarding.js';
+import { registerSubscriptionRoutes } from './routes/subscription.js';
 import {
   createRuntimeIdentity,
   DESKTOP_CONTROL_PROTOCOL,
@@ -1282,6 +1283,8 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         return reply.code(500).send({ error: redactMessage(error) });
       }
     });
+
+    registerSubscriptionRoutes(app);
 
     app.get('/api/model-cleanup-log', async () => {
       const log = await loadRemovalCleanupLog();

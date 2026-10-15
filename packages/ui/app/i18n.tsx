@@ -628,6 +628,26 @@ export const zh: Dict = {
   'settings.cline.logout.confirm': '确认登出',
   'settings.cline.actionFailed': '操作失败：{err}',
 
+  'settings.section.subscription': '订阅账号',
+  'settings.aria.subscription': '订阅账号',
+  'settings.subscription.hint':
+    '把订阅账号的凭据文件路径填入下方，或直接粘贴凭据内容导入。仅支持 ~/.codex、~/.claude、~/.gemini 目录下的文件。',
+  'settings.subscription.provider.codex': 'Codex',
+  'settings.subscription.provider.claude': 'Claude',
+  'settings.subscription.provider.google': 'Gemini',
+  'settings.subscription.pathLabel': '{provider} 凭据文件路径',
+  'settings.subscription.rawLabel': '或粘贴凭据内容',
+  'settings.subscription.rawPlaceholder': '粘贴 auth.json / 凭据文件的原始内容',
+  'settings.subscription.import': '导入',
+  'settings.subscription.imported': '已导入 {label}，该账号已由 FMF 接管',
+  'settings.subscription.importFailed': '导入失败：{err}',
+  'settings.subscription.tos':
+    '风险提示：导入订阅账号可能违反上游服务商条款，共享额度存在被封禁的风险，请谨慎使用。',
+  'settings.subscription.accounts.empty': '暂无订阅账号，导入后即可开始使用',
+  'settings.subscription.accounts.loadFailed': '账号列表加载失败，请确认本地网关正在运行',
+  'settings.subscription.status.active': '可用',
+  'settings.subscription.status.invalid': '需重新登录',
+
   'imagegen.model': '选择图片模型',
   'imagegen.noModels': '暂无图片生成模型',
   'imagegen.size': '尺寸',
@@ -1313,6 +1333,29 @@ export const en: Dict = {
   'settings.cline.logout': 'Sign out',
   'settings.cline.logout.confirm': 'Confirm sign out',
   'settings.cline.actionFailed': 'Action failed: {err}',
+
+  'settings.section.subscription': 'Subscription accounts',
+  'settings.aria.subscription': 'Subscription accounts',
+  'settings.subscription.hint':
+    'Point at a subscription credential file below, or paste the credential content to import. Only files under ~/.codex, ~/.claude and ~/.gemini are accepted.',
+  'settings.subscription.provider.codex': 'Codex',
+  'settings.subscription.provider.claude': 'Claude',
+  'settings.subscription.provider.google': 'Gemini',
+  'settings.subscription.pathLabel': '{provider} credential file path',
+  'settings.subscription.rawLabel': 'Or paste credential content',
+  'settings.subscription.rawPlaceholder':
+    'Paste the raw contents of auth.json / the credential file',
+  'settings.subscription.import': 'Import',
+  'settings.subscription.imported': 'Imported {label}. This account is now managed by FMF.',
+  'settings.subscription.importFailed': 'Import failed: {err}',
+  'settings.subscription.tos':
+    'Risk notice: importing a subscription account may violate the upstream provider terms of service; shared quotas carry a ban risk. Use with care.',
+  'settings.subscription.accounts.empty':
+    'No subscription accounts yet. Import one to get started.',
+  'settings.subscription.accounts.loadFailed':
+    'Failed to load the account list. Make sure the local gateway is running.',
+  'settings.subscription.status.active': 'Ready',
+  'settings.subscription.status.invalid': 'Needs sign-in',
 
   'imagegen.model': 'Select image model',
   'imagegen.noModels': 'No image models available',

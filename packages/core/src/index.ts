@@ -44,6 +44,15 @@ export {
   type ClineLoginResult,
 } from './credentials/adapters/cline.js';
 export {
+  SUBSCRIPTION_ADAPTERS,
+  SubscriptionImportError,
+  SubscriptionRefreshError,
+  type ParsedSubscription,
+  type RefreshResult,
+  type SubscriptionAccountProfile,
+  type SubscriptionAdapter,
+} from './credentials/adapters/subscription/index.js';
+export {
   AutoRouter,
   parseRateLimitError,
   parseModelUnavailableError,

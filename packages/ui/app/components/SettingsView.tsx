@@ -29,6 +29,7 @@ import { StatCard } from './StatCard';
 import { ModelChangesBanner } from './ModelChangesBanner';
 import { ModelCleanupLogPanel } from './ModelCleanupLogPanel';
 import { ClineAccountsPanel } from './ClineAccountsPanel';
+import { SubscriptionAccountsPanel } from './SubscriptionAccountsPanel';
 import { ModelMultiSelect, type ModelOption } from './ModelMultiSelect';
 import { SegmentedTabs, type SegmentedItem } from './SegmentedTabs';
 import { classNames, copyToClipboard, GATEWAY, withUiHeaders } from '../lib/utils';
@@ -2829,6 +2830,19 @@ export function SettingsView({
               </div>
             );
           })()}
+      </section>
+
+      <section
+        aria-label={t('settings.aria.subscription')}
+        className={classNames(
+          'space-y-3 rounded-lg border border-border/60 bg-section-c p-3',
+          tab !== 'sources' && 'hidden',
+        )}
+      >
+        <h2 className="text-sm font-semibold tracking-tight text-foreground">
+          {t('settings.section.subscription')}
+        </h2>
+        <SubscriptionAccountsPanel onChanged={refreshConfig} />
       </section>
 
       <section
