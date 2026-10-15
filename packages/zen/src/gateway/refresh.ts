@@ -3,6 +3,7 @@ import { openCodeUserAgent } from '../identity/client.js';
 import { readJsonCache, writeJsonCache } from '../models/cache.js';
 import type { ZenCatalog } from '../models/catalog.js';
 import {
+  FetchModelsError,
   fetchCapabilities,
   fetchModels,
   type CapabilityEndpoints,
@@ -21,6 +22,11 @@ export const ZEN_DOCS_URL =
 export const GO_DOCS_URL =
   'https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/web/src/content/docs/go.mdx';
 export const MODELS_DEV_URL = 'https://models.dev/api.json';
+
+// Mirrors modelcatalog.LegacyZenBase in internal/models/discovery.go:24. The
+// new inference backend does not expose a /v1/models listing, so when it
+// answers 404 we probe the legacy Zen console origin once before giving up.
+export const LEGACY_ZEN_BASE = 'https://opencode.ai/zen';
 
 /**
  * Budget for one docs source.
@@ -100,6 +106,13 @@ interface ParsedCatalogCache {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+// Mirrors `status == 404` in internal/gateway/refresh.go:226. FetchModelsError
+// carries the HTTP status; any other error (transport, empty list, decode) is
+// not a "no listing" answer and must not trigger the legacy retry.
+function isStatus404(error: unknown): boolean {
+  return error instanceof FetchModelsError && error.status === 404;
 }
 
 function emptyCapabilities(): ZenCapabilities {
@@ -321,7 +334,7 @@ export class ZenRefresher {
       const now = this.now();
       const [capabilities, zen, go] = await Promise.all([
         this.tryFetchCapabilities(errors),
-        this.tryFetchModels(this.config.upstream.zen, this.zenKey(), errors),
+        this.tryFetchZen(errors),
         this.tryFetchModels(this.config.upstream.go, this.goKey(), errors),
       ]);
       const caps = capabilities ?? emptyCapabilities();
@@ -428,9 +441,38 @@ export class ZenRefresher {
     try {
       return await fetchModels(base, key, this.fetchImpl);
     } catch (error) {
-      errors.push(`models ${base}: ${errorMessage(error)}`);
-      return undefined;
+      if (!isStatus404(error)) {
+        errors.push(`models ${base}: ${errorMessage(error)}`);
+        return undefined;
+      }
+      // The new inference backend does not expose a models listing; probe the
+      // legacy Zen console origin once before giving up. Mirrors
+      // `refreshAnonymousTier`'s `status == 404` retry in
+      // internal/gateway/refresh.go:226-230.
+      try {
+        const models = await fetchModels(LEGACY_ZEN_BASE, key, this.fetchImpl);
+        this.logger.debug?.('zen models served from legacy base', {
+          base,
+          legacyBase: LEGACY_ZEN_BASE,
+        });
+        return models;
+      } catch (legacyError) {
+        errors.push(
+          `models ${base}: ${errorMessage(error)} (legacy fallback: ${errorMessage(legacyError)})`,
+        );
+        return undefined;
+      }
     }
+  }
+
+  // Mirrors `refreshZen` in internal/gateway/refresh.go:206-214: try the
+  // configured zen base with the zen key first, and if that fails fall back
+  // to the keyless inference base when anonymous discovery is enabled.
+  private async tryFetchZen(errors: string[]): Promise<string[] | undefined> {
+    const models = await this.tryFetchModels(this.config.upstream.zen, this.zenKey(), errors);
+    if (models !== undefined) return models;
+    if (!this.config.anonymous) return undefined;
+    return this.tryFetchModels(this.config.upstream.anonymous, PUBLIC_KEY, errors);
   }
 
   private async applyDocsFallback(caps: ZenCapabilities): Promise<void> {

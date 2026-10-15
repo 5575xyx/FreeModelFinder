@@ -44,6 +44,21 @@ export function capabilityTier(providerId: string, api: string): ZenTier | undef
   return undefined;
 }
 
+/**
+ * Error thrown by `fetchModels` when the HTTP response is not 2xx. Carries the
+ * status so callers (refresh.ts) can distinguish a 404 "no listing" answer from
+ * an actual transport failure and retry against the legacy base once.
+ */
+export class FetchModelsError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'FetchModelsError';
+    this.status = status;
+  }
+}
+
 export async function fetchModels(
   baseUrl: string,
   key: string,
@@ -56,7 +71,8 @@ export async function fetchModels(
       'user-agent': openCodeUserAgent(),
     },
   });
-  if (!res.ok) throw new Error(`models endpoint returned HTTP ${res.status}`);
+  if (!res.ok)
+    throw new FetchModelsError(`models endpoint returned HTTP ${res.status}`, res.status);
   const payload = asRecord(await res.json());
   const data = Array.isArray(payload?.['data']) ? (payload?.['data'] as unknown[]) : [];
   const ids: string[] = [];

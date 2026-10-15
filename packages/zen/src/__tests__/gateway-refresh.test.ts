@@ -24,6 +24,11 @@ const CAPABILITIES = {
     models: {
       'zen-free': { id: 'zen-free' },
       shared: { id: 'shared' },
+      // Mirrors a model that only surfaces through the legacy Zen console
+      // origin (LEGACY_ZEN_BASE). It lives in the tier's model list but is
+      // not named by models.opencode.ai/api.json; tierSupported needs a
+      // capability entry to include it in list().
+      'legacy-free': { id: 'legacy-free' },
     },
   },
   'opencode-go': {
@@ -327,5 +332,121 @@ describe('zen refresher', () => {
     await refresher.refreshOnce();
     assert.equal(state.modelsDevCalls, 1);
     assert.ok(pricing.snapshot().lastError);
+  });
+});
+
+// Task 13: 404 legacy base fallback + anonymous tier discovery. Mirrors
+// `internal/gateway/refresh.go` `refreshZen`/`refreshAnonymousTier` and the
+// `modelcatalog.LegacyZenBase` retry when the new inference backend refuses
+// to enumerate models.
+
+type RouteSpec = { status: number; body: unknown };
+
+function jsonResponseFor(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function makeRouteFetch(routes: Record<string, RouteSpec>): typeof fetch {
+  const fetchImpl = async (input: RequestInfo | URL): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes('models.opencode.ai')) return jsonResponse(CAPABILITIES);
+    if (url.includes('models.dev')) return jsonResponse(MODELS_DEV);
+    if (url.endsWith('.mdx')) return new Response('nope', { status: 404 });
+    if (url.includes('/go/v1/models')) {
+      return jsonResponse({ data: GO_MODELS.map((id) => ({ id })) });
+    }
+    const spec = routes[url];
+    if (spec) return jsonResponseFor(spec.status, spec.body);
+    return new Response('nope', { status: 404 });
+  };
+  return fetchImpl as unknown as typeof fetch;
+}
+
+describe('zen refresher 404 legacy fallback', () => {
+  it('falls back to LEGACY_ZEN_BASE when upstream.zen returns 404', async () => {
+    const catalog = new ZenCatalog('go', {});
+    const refresher = new ZenRefresher({
+      config,
+      catalog,
+      pricing: new ZenPricingStore(),
+      fetchImpl: makeRouteFetch({
+        'https://zen.test/api/v1/models': { status: 404, body: 'not found' },
+        'https://opencode.ai/zen/v1/models': {
+          status: 200,
+          body: { data: [{ id: 'legacy-free' }] },
+        },
+      }),
+    });
+
+    const result = await refresher.refreshOnce();
+
+    assert.equal(result.zen, 1);
+    assert.ok(catalog.list().includes('legacy-free'));
+    assert.equal(result.errors.length, 0);
+  });
+
+  it('falls back to LEGACY_ZEN_BASE when upstream.anonymous returns 404', async () => {
+    const cfg = normalizeZenConfig({
+      anonymous: true,
+      upstream: {
+        zen: 'https://zen.test/api',
+        go: 'https://zen.test/api/go',
+        anonymous: 'https://inference.test/api',
+      },
+    });
+    const catalog = new ZenCatalog('go', {});
+    const refresher = new ZenRefresher({
+      config: cfg,
+      catalog,
+      pricing: new ZenPricingStore(),
+      fetchImpl: makeRouteFetch({
+        'https://zen.test/api/v1/models': { status: 500, body: 'key rejected' },
+        'https://inference.test/api/v1/models': { status: 404, body: 'not found' },
+        'https://opencode.ai/zen/v1/models': {
+          status: 200,
+          body: { data: [{ id: 'legacy-free' }] },
+        },
+      }),
+    });
+
+    const result = await refresher.refreshOnce();
+
+    assert.equal(result.zen, 1);
+    assert.ok(catalog.list().includes('legacy-free'));
+    // The primary zen attempt failed and is recorded; the anonymous fallback
+    // succeeded through the legacy base, so no additional error is expected.
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0]!, /models https:\/\/zen\.test\/api/);
+  });
+
+  it('records errors and preserves the zen count when both bases fail', async () => {
+    const cfg = normalizeZenConfig({
+      anonymous: true,
+      upstream: {
+        zen: 'https://zen.test/api',
+        go: 'https://zen.test/api/go',
+        anonymous: 'https://inference.test/api',
+      },
+    });
+    const catalog = new ZenCatalog('go', {});
+    catalog.replace({ zen: ['existing-zen'], go: ['existing-go'] });
+    const refresher = new ZenRefresher({
+      config: cfg,
+      catalog,
+      pricing: new ZenPricingStore(),
+      fetchImpl: makeRouteFetch({
+        'https://zen.test/api/v1/models': { status: 500, body: 'key rejected' },
+        'https://inference.test/api/v1/models': { status: 500, body: 'nope' },
+      }),
+    });
+
+    const result = await refresher.refreshOnce();
+
+    assert.ok(result.errors.length >= 2, `expected >=2 errors, got ${result.errors.length}`);
+    assert.equal(catalog.snapshot().zen, 1, 'zen count must be preserved');
+    assert.ok(!catalog.list().includes('legacy-free'));
   });
 });
