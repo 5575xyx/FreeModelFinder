@@ -755,6 +755,35 @@ export function registerOpenAIRoutes(
           free: m.free,
           description: m.description,
           capabilities: m.capabilities,
+          // Discovery clients read the reasoning ladder at the top level, while
+          // OpenClaw and similar harnesses read it from compat; cost keeps both
+          // the snake_case and camelCase aliases each side expects.
+          ...(m.reasoningEfforts
+            ? {
+                reasoning_efforts: m.reasoningEfforts,
+                compat: {
+                  supportsReasoningEffort: true,
+                  supportedReasoningEfforts: m.reasoningEfforts,
+                },
+              }
+            : {}),
+          ...(m.defaultReasoningEffort
+            ? { default_reasoning_effort: m.defaultReasoningEffort }
+            : {}),
+          ...(m.cost
+            ? {
+                cost: {
+                  ...(m.cost.input !== undefined ? { input: m.cost.input } : {}),
+                  ...(m.cost.output !== undefined ? { output: m.cost.output } : {}),
+                  ...(m.cost.cacheRead !== undefined
+                    ? { cache_read: m.cost.cacheRead, cacheRead: m.cost.cacheRead }
+                    : {}),
+                  ...(m.cost.cacheWrite !== undefined
+                    ? { cache_write: m.cost.cacheWrite, cacheWrite: m.cost.cacheWrite }
+                    : {}),
+                },
+              }
+            : {}),
           capability_score: scoreModel(m, 'capability', router.getProfile(m.id)),
           quota: reg.getModelQuota(m.provider, m.id),
         };

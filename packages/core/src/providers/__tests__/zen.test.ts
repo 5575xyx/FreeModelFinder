@@ -10,6 +10,7 @@ import type {
   ZenHttpClient,
   ZenHttpRequest,
   ZenHttpResponse,
+  ZenModelMetadata,
 } from '@freemodelfinder/zen';
 import type { ProviderContext } from '../base.js';
 import { ZenProvider } from '../zen.js';
@@ -231,6 +232,50 @@ describe('zen (opencode) provider', () => {
     } finally {
       await cache.cleanup();
     }
+  });
+
+  it('carries reasoning efforts, the default effort and cost into ModelInfo', async () => {
+    const calls: string[] = [];
+    const gateway: ZenGateway = {
+      ...recordingGateway(calls),
+      metadataForTier: () =>
+        ({
+          contextWindow: 128000,
+          maxOutput: 4096,
+          reasoning: true,
+          cost: { input: 0, output: 0, cacheRead: 0.5, cacheWrite: 1.5 },
+        }) as ZenModelMetadata,
+      reasoningEfforts: () => ['minimal', 'low', 'medium', 'high'],
+      resolvedEffort: () => 'high',
+    };
+    const provider = new RecordingZenProvider(
+      { credentials: { apiKey: '', extra: { anonymous: true } } },
+      gateway,
+    );
+
+    const model = (await provider.listModels()).find((item) => item.id === 'opencode:free-model');
+    assert.deepEqual(model?.reasoningEfforts, ['minimal', 'low', 'medium', 'high']);
+    assert.equal(model?.defaultReasoningEffort, 'high');
+    assert.deepEqual(model?.cost, { input: 0, output: 0, cacheRead: 0.5, cacheWrite: 1.5 });
+  });
+
+  it('omits the default reasoning effort when the probe only proved none', async () => {
+    const calls: string[] = [];
+    const gateway: ZenGateway = {
+      ...recordingGateway(calls),
+      metadataForTier: () => ({ reasoning: true }) as ZenModelMetadata,
+      reasoningEfforts: () => ['minimal', 'low'],
+      resolvedEffort: () => 'none',
+    };
+    const provider = new RecordingZenProvider(
+      { credentials: { apiKey: '', extra: { anonymous: true } } },
+      gateway,
+    );
+
+    const model = (await provider.listModels()).find((item) => item.id === 'opencode:free-model');
+    assert.deepEqual(model?.reasoningEfforts, ['minimal', 'low']);
+    assert.equal(model?.defaultReasoningEffort, undefined);
+    assert.equal(model?.cost, undefined);
   });
 
   it('throws when the catalog is unavailable so the registry can fall back', async () => {

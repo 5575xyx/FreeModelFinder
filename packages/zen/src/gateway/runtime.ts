@@ -27,6 +27,7 @@ import type {
   ZenRequest,
   ZenStreamChunk,
 } from '../protocol/types.js';
+import { reasoningEfforts } from './models.js';
 import { ZenAttemptMonitor } from './monitor.js';
 import { setProxyHealthy } from './health.js';
 import { ZenAnonymousPool, ZenKeyPool, type ZenProxyTransport } from './pool.js';
@@ -96,6 +97,13 @@ export interface ZenGateway {
   isFreeModel(model: string): boolean;
   /** Capability metadata for a model on a tier, with models.dev limits backfilled. */
   metadataForTier(model: string, tier: ZenTier): ZenModelMetadata | undefined;
+  /**
+   * Reasoning effort levels the model can be asked for, capped at the level an
+   * `auto` probe already confirmed so clients do not offer rejected levels.
+   */
+  reasoningEfforts(model: string, tier: ZenTier, protocol: ZenProtocol): string[];
+  /** Effort an `auto` probe confirmed for the model, or '' / 'none'. */
+  resolvedEffort(model: string, tier: ZenTier, protocol: ZenProtocol): string;
   snapshot(): ZenGatewaySnapshot;
   chat(request: ZenRequest): Promise<ZenChatResponse>;
   stream(request: ZenRequest): AsyncIterable<ZenStreamChunk>;
@@ -396,6 +404,11 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
   const forcedEffort = (model: string): string =>
     resolveEffort(model, config.reasoning?.effort, config.reasoning?.effortByModel ?? {}) ?? '';
 
+  // Mirrors cfg.ResolveEffort: the availability-aware value for `auto`, needed
+  // both for the outgoing request and for deciding which levels to advertise.
+  const autoEffort = (model: string, tier: ZenTier, protocol: ZenProtocol): string =>
+    resolvedEffort({ forcedEffort, availability, catalog, now }, model, tier, protocol);
+
   const checker = new ZenAvailabilityChecker({
     store: availability,
     catalog,
@@ -430,8 +443,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
       anonymous: config.upstream.anonymous,
     },
     reasoning: config.reasoning,
-    resolveAutoEffort: (model, tier, protocol) =>
-      resolvedEffort({ forcedEffort, availability, catalog, now }, model, tier, protocol),
+    resolveAutoEffort: autoEffort,
     isFreeModel: (model) => catalog.isFreeModel(model),
     logger,
     now,
@@ -584,6 +596,9 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     listRoutes,
     isFreeModel: (model: string) => catalog.isFreeModel(model),
     metadataForTier: (model: string, tier: ZenTier) => catalog.metadataForTier(model, tier),
+    reasoningEfforts: (model, tier, protocol) =>
+      reasoningEfforts(model, tier, protocol, { forcedEffort, resolvedEffort: autoEffort }),
+    resolvedEffort: autoEffort,
     snapshot,
     chat,
     stream,

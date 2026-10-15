@@ -149,9 +149,18 @@ export class ZenProvider extends BaseProvider {
     }
     // The catalog reports a model's context ceiling, and models.dev fills the
     // ceiling opencode omits, so a listing client can size requests without
-    // guessing.
+    // guessing. Mirrors handleModels in internal/gateway/health.go: the effort
+    // ladder is capped at the level an auto probe already confirmed, and the
+    // cost only rides along when the provider published at least one price.
     return routes.map((route: ZenRoute): ModelInfo => {
-      const contextWindow = gateway.metadataForTier(route.id, route.tier)?.contextWindow;
+      const metadata = gateway.metadataForTier(route.id, route.tier);
+      const contextWindow = metadata?.contextWindow;
+      const reasoningEfforts = metadata?.reasoning
+        ? gateway.reasoningEfforts(route.id, route.tier, route.protocol)
+        : undefined;
+      const resolved = reasoningEfforts
+        ? gateway.resolvedEffort(route.id, route.tier, route.protocol)
+        : '';
       return {
         id: `opencode:${route.id}`,
         provider: 'opencode',
@@ -159,6 +168,9 @@ export class ZenProvider extends BaseProvider {
         ...(contextWindow ? { contextWindow } : {}),
         free: gateway.isFreeModel(route.id),
         capabilities: ['text'],
+        ...(reasoningEfforts ? { reasoningEfforts } : {}),
+        ...(resolved && resolved !== 'none' ? { defaultReasoningEffort: resolved } : {}),
+        ...(metadata?.cost ? { cost: metadata.cost } : {}),
       };
     });
   }

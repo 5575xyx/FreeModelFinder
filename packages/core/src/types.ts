@@ -183,6 +183,13 @@ export interface StreamChunk {
   };
 }
 
+export interface ModelCost {
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
 export interface ModelInfo {
   id: string;
   provider: ProviderId;
@@ -193,6 +200,12 @@ export interface ModelInfo {
   capabilities?: ('text' | 'image' | 'video')[];
   /** Chat *input* modalities. Missing = text-only. Not the same as capabilities (output). */
   inputModalities?: ('text' | 'image')[];
+  /** Reasoning effort levels the provider discloses, lowest to highest. */
+  reasoningEfforts?: string[];
+  /** Effort a probe confirmed for the model; omitted when nothing was resolved. */
+  defaultReasoningEffort?: string;
+  /** Per-million-token price, when the provider publishes one. */
+  cost?: ModelCost;
 }
 
 export type QuotaResource = 'requests' | 'tokens' | 'neurons';

@@ -85,6 +85,9 @@ function fakeRegistry(): ProviderRegistry {
         provider: 'custom',
         displayName: 'Fixture Model',
         free: true,
+        reasoningEfforts: ['low', 'high'],
+        defaultReasoningEffort: 'low',
+        cost: { input: 0.01, output: 0.03, cacheRead: 0.001, cacheWrite: 0.005 },
       },
     ],
     succeededProviders: ['custom'],
@@ -165,7 +168,13 @@ describe('gateway surface', () => {
   it('lists models and exposes watcher status', async () => {
     const models = await app.inject({ method: 'GET', url: '/v1/models' });
     assert.equal(models.statusCode, 200);
-    assert.equal(models.json().data[0].id, 'fixture-model');
+    const model = models.json().data[0];
+    assert.equal(model.id, 'fixture-model');
+    assert.deepEqual(model.reasoning_efforts, ['low', 'high']);
+    assert.equal(model.compat.supportedReasoningEfforts[1], 'high');
+    assert.equal(model.default_reasoning_effort, 'low');
+    assert.equal(model.cost.cache_read, 0.001);
+    assert.equal(model.cost.cacheRead, 0.001);
 
     const changes = await app.inject({ method: 'GET', url: '/v1/models/changes?limit=5' });
     assert.equal(changes.statusCode, 200);

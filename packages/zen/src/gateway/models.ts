@@ -1,6 +1,5 @@
 import type { ZenTier } from '../models/types.js';
 import type { ZenProtocol } from '../protocol/types.js';
-import type { ZenEffort } from '../protocol/effort.js';
 import { REASONING_LEVELS } from '../config/index.js';
 
 /**
@@ -14,7 +13,8 @@ export function reasoningEfforts(
   tier: ZenTier,
   protocol: ZenProtocol,
   deps: {
-    forcedEffort: (m: string) => ZenEffort | undefined;
+    /** Mirrors cfg.ForcedEffort: returns '' when nothing is configured. */
+    forcedEffort: (m: string) => string;
     resolvedEffort: (m: string, t: ZenTier, p: ZenProtocol) => string;
   },
 ): string[] {
