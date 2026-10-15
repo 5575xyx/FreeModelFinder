@@ -4,6 +4,7 @@ import { after, before, describe, it } from 'node:test';
 import { HttpProxyAgent } from 'http-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
+import { ATTEMPT_TIMEOUT_CODE, classifyAttemptError, PhasedError } from '../gateway/first-event.js';
 import { createNodeHttpClient, resolveAgent } from '../http.js';
 import { parseProxy } from '../proxy/spec.js';
 
@@ -27,6 +28,22 @@ before(async () => {
         res.writeHead(200, { 'content-type': 'text/event-stream' });
         res.write('data: one\n\n');
         res.end('data: two\n\n');
+        return;
+      }
+      // Headers land immediately, then one SSE event every 25ms. Total well over
+      // a tight attemptTimeoutMs, so an attempt deadline that is not disarmed at
+      // the headers will cut this stream off mid-flight.
+      if (req.url === '/stream-slow') {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        const tick = (n: number): void => {
+          if (n >= 10) {
+            res.end('data: end\n\n');
+            return;
+          }
+          res.write(`data: ${n}\n\n`);
+          setTimeout(() => tick(n + 1), 25);
+        };
+        tick(1);
         return;
       }
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -102,6 +119,57 @@ describe('zen http client', () => {
         attemptTimeoutMs: 30,
       }),
     );
+  });
+
+  it('rejects with a phased error when the attempt deadline fires before headers', async () => {
+    const client = createNodeHttpClient();
+    await assert.rejects(
+      client.send({
+        url: `http://127.0.0.1:${port}/hang`,
+        method: 'GET',
+        proxy: direct,
+        attemptTimeoutMs: 30,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof PhasedError, `expected PhasedError, got ${String(error)}`);
+        assert.notEqual(error.phase, 'first_event');
+        const cause = error as { cause?: { code?: unknown } };
+        assert.equal(cause.cause?.code, ATTEMPT_TIMEOUT_CODE);
+        assert.equal(classifyAttemptError(error), `attempt_timeout_${error.phase}`);
+        return true;
+      },
+    );
+  });
+
+  it('does not kill an established stream once the attempt deadline has passed', async () => {
+    const client = createNodeHttpClient();
+    const res = await client.send({
+      url: `http://127.0.0.1:${port}/stream-slow`,
+      method: 'GET',
+      proxy: direct,
+      attemptTimeoutMs: 40,
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.committed, true);
+    let text = '';
+    for await (const chunk of res.body) text += String(chunk);
+    // The stream runs ~250ms, far past the 40ms attempt deadline, so a timer
+    // that was not disarmed at the headers would have truncated it.
+    assert.equal(
+      text,
+      'data: 1\n\ndata: 2\n\ndata: 3\n\ndata: 4\n\ndata: 5\n\ndata: 6\n\ndata: 7\n\ndata: 8\n\ndata: 9\n\ndata: end\n\n',
+    );
+  });
+
+  it('marks a response committed once its headers arrive', async () => {
+    const client = createNodeHttpClient();
+    const res = await client.send({
+      url: `http://127.0.0.1:${port}/echo`,
+      method: 'GET',
+      proxy: direct,
+    });
+    assert.equal(res.committed, true);
+    res.body.resume();
   });
 
   it('rejects when the connect timeout elapses', async () => {
