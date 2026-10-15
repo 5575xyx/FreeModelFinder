@@ -517,6 +517,50 @@ describe('ClaudeProvider token lifecycle', () => {
     assert.equal(chatCalls(calls).length, 2);
   });
 
+  it('sends the rotated refresh token on the forced refresh after a 401 (never replays the consumed token)', async () => {
+    const runtime = newRuntime();
+    await seed(runtime, [
+      {
+        id: 'acc1',
+        accessToken: 'at-old',
+        expiresAt: new Date(Date.now() - 1_000).toISOString(),
+        refreshToken: 'rt-old',
+        accountUuid: 'acc_1',
+      },
+    ]);
+    const sentRefreshTokens: string[] = [];
+    let refreshes = 0;
+    let chatHits = 0;
+    const { calls, fetchImpl } = harness((call) => {
+      if (call.url === TOKEN_URL) {
+        sentRefreshTokens.push(String(bodyOf(call.init).refresh_token ?? ''));
+        refreshes += 1;
+        return json({
+          access_token: `at-${refreshes}`,
+          refresh_token: `rt-${refreshes}`,
+          expires_in: 3600,
+        });
+      }
+      if (call.url === PROFILE_URL) return profileOk();
+      chatHits += 1;
+      if (chatHits === 1) {
+        return json({ type: 'error', error: { type: 'authentication_error' } }, 401);
+      }
+      return messagesSse(textStream(['after refresh']));
+    });
+    const provider = makeProvider(fetchImpl, runtime);
+
+    const response = await provider.chat(req(MODEL));
+    assert.equal(response.content, 'after refresh');
+    // 首次自动刷新用 rt-old；401 后的强制刷新必须用轮换后的 rt-1，绝不复用已消费的 rt-old。
+    assert.deepEqual(sentRefreshTokens, ['rt-old', 'rt-1']);
+    assert.equal(refreshCalls(calls).length, 2);
+    assert.equal(chatCalls(calls).length, 2);
+    // 单次 401 重试：不得因刷新而循环。
+    const pool = await runtime.getPool('claude');
+    assert.equal(pool.accounts[0]?.status, 'active');
+  });
+
   it('persists rotated tokens after a successful refresh', async () => {
     const runtime = newRuntime();
     await seed(runtime, [{ id: 'acc1', refreshToken: 'rt-old', accountUuid: 'acc_1' }]);

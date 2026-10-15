@@ -32,6 +32,16 @@ const DETAIL_LIMIT = 300;
 
 type FinishReason = ChatResponse['finish_reason'];
 
+/**
+ * 刷新结果：新 access token + 携带轮换后 payload 的账号条目。
+ * 必须把账号一并回传，否则 401 重试拿到的是持有**已消费** refresh token 的旧对象，
+ * 会再次发送旧 token（Codex 会回 refresh_token_reused → 永久废号）。
+ */
+interface RefreshedAccount {
+  token: string;
+  account: CredentialAccountEntry;
+}
+
 export type CodexErrorKind = 'rate_limit' | 'invalid' | 'fatal' | 'network' | 'empty';
 
 export class CodexError extends Error {
@@ -271,7 +281,7 @@ export class CodexProvider extends BaseProvider {
   readonly id: ProviderId = 'codex';
   readonly displayName = 'Codex';
 
-  private readonly refreshFlights = createFlightCache<string>();
+  private readonly refreshFlights = createFlightCache<RefreshedAccount>();
 
   override hasCredentials(): boolean {
     return this.runtime().hasActiveAccounts('codex');
@@ -441,16 +451,19 @@ export class CodexProvider extends BaseProvider {
     account: CredentialAccountEntry,
     forceRefresh: boolean,
     model?: string,
-  ): Promise<string> {
+  ): Promise<RefreshedAccount> {
     const cached = account.payload.accessToken;
     if (!forceRefresh && cached) {
       const expiry = parseExpiryMs(account.payload.expiresAt);
-      if (Date.now() < expiry - REFRESH_SKEW_MS) return cached;
+      if (Date.now() < expiry - REFRESH_SKEW_MS) return { token: cached, account };
     }
     return this.refreshFlights.run(account.id, () => this.refreshChain(account, model));
   }
 
-  private async refreshChain(account: CredentialAccountEntry, model?: string): Promise<string> {
+  private async refreshChain(
+    account: CredentialAccountEntry,
+    model?: string,
+  ): Promise<RefreshedAccount> {
     const runtime = this.runtime();
     let payload: Record<string, string>;
     try {
@@ -499,8 +512,9 @@ export class CodexProvider extends BaseProvider {
         phase: 'refresh',
       });
     }
-    await runtime.upsertAccount('codex', { ...account, payload });
-    return accessToken;
+    const refreshed: CredentialAccountEntry = { ...account, payload };
+    await runtime.upsertAccount('codex', refreshed);
+    return { token: accessToken, account: refreshed };
   }
 
   private buildHeaders(token: string, accountId: string): Record<string, string> {
@@ -531,7 +545,8 @@ export class CodexProvider extends BaseProvider {
     forceRefresh: boolean,
   ): Promise<ChatResponse> {
     const runtime = this.runtime();
-    const token = await this.getAccessToken(account, forceRefresh, req.model);
+    const refreshed = await this.getAccessToken(account, forceRefresh, req.model);
+    const token = refreshed.token;
     let response: Response;
     try {
       response = await this.fetch(CHAT_URL, {
@@ -555,7 +570,7 @@ export class CodexProvider extends BaseProvider {
           requests: 1,
           error: redact(errorText(error)),
         });
-        return this.chatAttempt(account, req, true);
+        return this.chatAttempt(refreshed.account, req, true);
       }
       throw error;
     }
@@ -582,7 +597,8 @@ export class CodexProvider extends BaseProvider {
     req: ChatRequest,
     forceRefresh: boolean,
   ): Promise<Response> {
-    const token = await this.getAccessToken(account, forceRefresh, req.model);
+    const refreshed = await this.getAccessToken(account, forceRefresh, req.model);
+    const token = refreshed.token;
     let response: Response;
     try {
       response = await this.fetch(CHAT_URL, {
@@ -606,7 +622,7 @@ export class CodexProvider extends BaseProvider {
           requests: 1,
           error: redact(errorText(error)),
         });
-        return this.openStream(account, req, true);
+        return this.openStream(refreshed.account, req, true);
       }
       throw error;
     }
