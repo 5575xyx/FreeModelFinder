@@ -38,6 +38,7 @@ import {
   doUpstream,
   doUpstreamStream,
   isProxyFailure,
+  DEFAULT_PROJECT_ID,
   PROXY_HEALTH_CHECK_INTERVAL_MS,
   PROXY_HEALTH_CHECK_TIMEOUT_MS,
   PROXY_HEALTH_CHECK_URL,
@@ -129,7 +130,6 @@ function resolveProxies(options: ZenGatewayOptions): ProxySpec[] {
 // not its value, and a canonical prj_* id is rejected (request.go:58-61), so the
 // raw signal is kept verbatim here — never hashed and never prj_-prefixed.
 // Any header shaping is left to the request builder (upstream.ts).
-const DEFAULT_PROJECT_ID = 'opencode2api:default-project';
 
 function makeRequestIds(signal?: AbortSignal): ZenRequestIds {
   const request = `req_${randomUUID().replace(/-/g, '')}`;
@@ -337,6 +337,7 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
         );
         if (result.error === undefined) {
           setProxyHealthy(proxy.health, true);
+          restoreProxy(proxy);
         } else if (isProxyFailure(result.error)) {
           setProxyHealthy(proxy.health, false);
         }
@@ -346,12 +347,27 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     })();
   };
 
+  // Mirrors restoreProxy in internal/gateway/refresh.go:79-90: once a proxy
+  // recovers, the outage-era cooldowns its nodes collected no longer describe
+  // reality. Key nodes keep a fixed proxy binding here, so only the anonymous
+  // pool has work to undo.
+  const restoreProxy = (proxy: ZenProxyTransport): void => {
+    anonymousPool.restoreProxy(proxy);
+  };
+
   // Mirrors the periodic branch of StartProxyHealthChecks in
   // internal/gateway/refresh.go:91-110. checkHealth already re-applies the
   // result to each transport, so an unreachable proxy stays unhealthy and a
-  // reachable one is restored.
+  // reachable one is restored — and its nodes are released from cooldown.
   async function runProxyHealthChecks(): Promise<void> {
-    await checkHealth(proxyTransports(), PROXY_HEALTH_CHECK_URL, PROXY_HEALTH_CHECK_TIMEOUT_MS);
+    const results = await checkHealth(
+      proxyTransports(),
+      PROXY_HEALTH_CHECK_URL,
+      PROXY_HEALTH_CHECK_TIMEOUT_MS,
+    );
+    for (const result of results) {
+      if (result.error === undefined && !result.wasHealthy) restoreProxy(result.proxy);
+    }
   }
 
   const catalog = new ZenCatalog(config.prefer, config.models.protocols);
@@ -387,7 +403,11 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
           pools,
           anonymousPool,
           anonymous: config.anonymous,
-          upstream: { zen: config.upstream.zen, go: config.upstream.go },
+          upstream: {
+            zen: config.upstream.zen,
+            go: config.upstream.go,
+            anonymous: config.upstream.anonymous,
+          },
           forcedEffort,
           now,
         },
@@ -401,7 +421,11 @@ export function createZenGateway(options: ZenGatewayOptions): ZenGateway {
     anonymousPool,
     monitor,
     retry: { maxAttempts: config.retry.maxAttempts },
-    upstream: { zen: config.upstream.zen, go: config.upstream.go },
+    upstream: {
+      zen: config.upstream.zen,
+      go: config.upstream.go,
+      anonymous: config.upstream.anonymous,
+    },
     reasoning: config.reasoning,
     resolveAutoEffort: (model, tier, protocol) =>
       resolvedEffort({ forcedEffort, availability, catalog, now }, model, tier, protocol),

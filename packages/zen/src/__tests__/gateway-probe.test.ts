@@ -39,6 +39,7 @@ function inbound(
     status,
     headers,
     body: Readable.from([Buffer.from(body)]) as unknown as IncomingMessage,
+    committed: true,
   };
 }
 
@@ -138,6 +139,24 @@ describe('probeFreeModel', () => {
     );
     assert.equal(result.success, true);
     assert.equal(result.channel, 'zen');
+  });
+
+  it('probes the anonymous lane on the keyless base host', async () => {
+    // A public bearer against the keyed base is refused, so the availability
+    // observation must be made on the same host the lane serves from.
+    const client = new ScriptedClient(() => sseSuccess());
+    const options = {
+      ...probeOptions(client, () => '', true, []),
+      upstream: {
+        zen: 'https://up.test/zen',
+        go: 'https://up.test/go',
+        anonymous: 'https://inference.test',
+      },
+    };
+    const result = await probeFreeModel(options, 'm-free');
+    assert.equal(result.success, true);
+    assert.equal(result.channel, 'anonymous');
+    assert.equal(client.requests[0]?.url, 'https://inference.test/v1/chat/completions');
   });
 
   it('reports no_probe_channel without any usable lane', async () => {

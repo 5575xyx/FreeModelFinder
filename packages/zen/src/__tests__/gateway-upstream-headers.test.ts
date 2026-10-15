@@ -18,9 +18,9 @@ describe('buildUpstreamRequest fingerprint', () => {
       'public',
       {} as ProxySpec,
     );
-    assert.equal(req.headers['x-opencode-session'], 'ses_abc123');
-    assert.equal(req.headers['x-opencode-session-id'], 'ses_abc123');
-    assert.equal(req.headers['x-opencode-request'], undefined, 'x-opencode-request must be gone');
+    assert.equal(req.headers!['x-opencode-session'], 'ses_abc123');
+    assert.equal(req.headers!['x-opencode-session-id'], 'ses_abc123');
+    assert.equal(req.headers!['x-opencode-request'], undefined, 'x-opencode-request must be gone');
   });
 
   it('hashes the project id to 40 lowercase hex chars', () => {
@@ -32,7 +32,7 @@ describe('buildUpstreamRequest fingerprint', () => {
       'public',
       {} as ProxySpec,
     );
-    assert.match(req.headers['x-opencode-project'] as string, /^[0-9a-f]{40}$/);
+    assert.match(req.headers!['x-opencode-project'] as string, /^[0-9a-f]{40}$/);
   });
 
   it('uses the new user agent', () => {
@@ -44,7 +44,7 @@ describe('buildUpstreamRequest fingerprint', () => {
       'public',
       {} as ProxySpec,
     );
-    assert.equal(req.headers['user-agent'], 'opencode/latest/2.0.29/cli');
+    assert.equal(req.headers!['user-agent'], 'opencode/latest/2.0.29/cli');
   });
 });
 

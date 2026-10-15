@@ -120,6 +120,7 @@ function inboundJson(status: number, body: unknown): ZenHttpResponse {
     status,
     headers: { 'content-type': 'application/json' },
     body: Readable.from([Buffer.from(JSON.stringify(body))]) as unknown as IncomingMessage,
+    committed: true,
   };
 }
 

@@ -24,13 +24,11 @@ export const FIRST_EVENT_TIMEOUT_CODE = 'ERR_FIRST_EVENT_TIMEOUT';
  */
 export class PhasedError extends Error {
   readonly phase: AttemptPhase;
-  readonly cause: unknown;
 
   constructor(phase: AttemptPhase, cause: unknown) {
-    super(`${phase}: ${messageOf(cause)}`);
+    super(`${phase}: ${messageOf(cause)}`, { cause });
     this.name = 'PhasedError';
     this.phase = phase;
-    this.cause = cause;
   }
 }
 

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createNodeHttpClient } from '../http.js';
 import { parseProxyList } from '../proxy/spec.js';
-import { ZenKeyPool, ZenAnonymousPool } from '../gateway/pool.js';
+import { ZenKeyPool, ZenAnonymousPool, type ZenProxyTransport } from '../gateway/pool.js';
+import { FIRST_EVENT_TIMEOUT_CODE, PhasedError } from '../gateway/first-event.js';
+import { isProxyFailure } from '../gateway/upstream.js';
 import {
   cooldownDelayMs,
   maxCooldownMs,
@@ -104,6 +106,51 @@ describe('zen anonymous pool', () => {
     assert.equal(pool.inCooldown(node, Date.now()), true);
   });
 
+  it('caps an anonymous retry-after at eight times the cooldown base', () => {
+    // The lane is rate limited per exit IP with no earliest-expiry fallback, so
+    // a quota response asking for hours would keep it skipped long after a
+    // network change gave it a fresh allowance.
+    const base = 10_000;
+    const pool = new ZenAnonymousPool(proxies, client, { cooldownBaseMs: base });
+    const node = pool.nodes()[0]!;
+    const before = Date.now();
+    pool.markFailure(node, 429, undefined, 7_200_000);
+    assert.ok(node.cooldownUntil >= before + maxCooldownMs(base));
+    assert.ok(node.cooldownUntil <= Date.now() + maxCooldownMs(base));
+  });
+
+  it('does not cap a key retry-after', () => {
+    // Key lanes honor Retry-After in full: their cursor already falls back to
+    // the node that recovers first, so a long pause is not lane-wide.
+    const pool = new ZenKeyPool(['k1'], proxies, client, {
+      cooldownBaseMs: 10_000,
+      maxAttempts: 3,
+    });
+    const node = pool.all()[0]!;
+    const before = Date.now();
+    pool.markFailure(node, 429, undefined, 7_200_000);
+    assert.ok(node.cooldownUntil >= before + 7_200_000);
+  });
+
+  it('clears the cooldowns of nodes bound to a recovered proxy (restoreProxy)', () => {
+    // Without this, an outage-era cooldown survives the proxy's recovery and the
+    // anonymous lane stays skipped although the route is healthy again.
+    const pool = new ZenAnonymousPool(proxies, client, { cooldownBaseMs: 10_000 });
+    const [first, second] = pool.nodes();
+    assert.ok(first && second);
+    assert.notEqual(first.proxy, second.proxy);
+    pool.markFailure(first, 429, undefined, 60_000);
+    pool.markFailure(second, 429, undefined, 60_000);
+    assert.equal(pool.inCooldown(first, Date.now()), true);
+    assert.equal(pool.inCooldown(second, Date.now()), true);
+
+    assert.equal(pool.restoreProxy(first.proxy), 1);
+    assert.equal(pool.inCooldown(first, Date.now()), false);
+    assert.equal(pool.inCooldown(second, Date.now()), true);
+    // Nothing left to clear on a second pass.
+    assert.equal(pool.restoreProxy(first.proxy), 0);
+  });
+
   it('bestEffortNode prefers a healthy node and otherwise the earliest cooldown', () => {
     const pool = new ZenAnonymousPool(proxies, client, { cooldownBaseMs: 60_000 });
     const first = pool.nodes()[0]!;
@@ -195,5 +242,37 @@ describe('zen gateway health', () => {
     for (const node of pool.all()) pool.markFailure(node, 429, undefined, undefined);
     const earliest = pool.earliestCooldown(Date.now());
     assert.ok(earliest !== undefined && earliest > Date.now());
+  });
+});
+
+describe('zen proxy failure classification', () => {
+  it('does not evict a proxy when the upstream had already accepted the request', () => {
+    // Slow generation after acceptance is a healthy-but-slow upstream, not a
+    // broken route. Evicting here is what locks the anonymous lane. The cause
+    // deliberately looks like a timeout so the exemption has to win over the
+    // timeout heuristic.
+    assert.equal(
+      isProxyFailure(
+        new PhasedError(
+          'first_event',
+          Object.assign(new Error('upstream first event timeout after 30000ms'), {
+            code: FIRST_EVENT_TIMEOUT_CODE,
+          }),
+        ),
+      ),
+      false,
+    );
+  });
+
+  it('still treats a pre-header deadline as a proxy failure', () => {
+    assert.equal(
+      isProxyFailure(
+        new PhasedError(
+          'headers',
+          Object.assign(new Error('upstream attempt timeout'), { name: 'TimeoutError' }),
+        ),
+      ),
+      true,
+    );
   });
 });

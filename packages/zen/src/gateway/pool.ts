@@ -4,6 +4,7 @@ import {
   applyCooldown,
   cooldownActive,
   healthyProxy,
+  maxCooldownMs,
   proxyHealthy,
   resetCooldown,
   shouldCooldown,
@@ -263,7 +264,30 @@ export class ZenAnonymousPool {
     const isPermanentRefusal = (status === 403 || status === 401) && (retryAfterMs ?? 0) <= 0;
     if (isPermanentRefusal) return;
     if (!shouldCooldown(status, error)) return;
-    applyCooldown(node, this.cooldownBaseMs, retryAfterMs);
+    // The lane is rate limited per exit IP and, unlike a key lane, has no
+    // earliest-expiry fallback: a quota response asking for hours would keep the
+    // exit skipped long after a network change gave it a fresh allowance. Cap it
+    // at the same 8x ceiling as the exponential backoff. Key pools keep honoring
+    // Retry-After in full, since their cursor already falls back to the node
+    // that recovers first.
+    applyCooldown(
+      node,
+      this.cooldownBaseMs,
+      Math.min(retryAfterMs ?? 0, maxCooldownMs(this.cooldownBaseMs)),
+    );
+  }
+
+  // Clears the outage-era cooldowns of the nodes bound to a recovered proxy.
+  // Without this the lane stays skipped even though the route is healthy again.
+  restoreProxy(proxy: ZenProxyTransport): number {
+    let cleared = 0;
+    for (const node of this.list) {
+      if (node.proxy !== proxy) continue;
+      if (node.cooldownUntil === 0 && node.failures === 0) continue;
+      resetCooldown(node);
+      cleared += 1;
+    }
+    return cleared;
   }
 
   lastAnonymousFailure(): { status: number; error?: unknown } | undefined {

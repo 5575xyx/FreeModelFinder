@@ -108,6 +108,7 @@ function inbound(status: number, body: string, headers: IncomingHttpHeaders): Ze
     status,
     headers,
     body: Readable.from([Buffer.from(body)]) as unknown as IncomingMessage,
+    committed: true,
   };
 }
 

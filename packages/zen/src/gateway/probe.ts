@@ -22,7 +22,7 @@ import {
 } from '../protocol/stream.js';
 import type { ZenProtocol, ZenRequest, ZenStreamChunk } from '../protocol/types.js';
 import type { ZenAnonymousPool, ZenKeyPool, ZenProxyTransport } from './pool.js';
-import { buildUpstreamRequest, type ZenRequestIds } from './upstream.js';
+import { buildUpstreamRequest, DEFAULT_PROJECT_ID, type ZenRequestIds } from './upstream.js';
 
 /** Budget for one probe attempt. Mirrors the 60s timeout in upstream probe.go. */
 export const PROBE_TIMEOUT_MS = 60_000;
@@ -48,7 +48,7 @@ export interface ZenProbeOptions {
   pools: Partial<Record<ZenTier, ZenKeyPool>>;
   anonymousPool?: ZenAnonymousPool;
   anonymous: boolean;
-  upstream: { zen: string; go: string };
+  upstream: { zen: string; go: string; anonymous?: string };
   forcedEffort: (model: string) => string;
   now?: () => number;
 }
@@ -74,6 +74,8 @@ interface ProbeLane {
   name: string;
   client: ZenHttpClient;
   proxy: ZenProxyTransport;
+  /** Base the lane is probed against; the anonymous lane uses the keyless host. */
+  baseUrl: string;
 }
 
 function emptyResult(reason: string): ZenProbeResult {
@@ -226,17 +228,16 @@ async function probeAttempt(
   protocol: ZenProtocol,
   session: string,
   effort: string,
-  options: ZenProbeOptions,
 ): Promise<ZenProbeResult> {
   const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
   const ids: ZenRequestIds = {
     request: `req_${randomUUID().replace(/-/g, '')}`,
     session,
-    project: 'prj_opencode2api_default',
+    project: DEFAULT_PROJECT_ID,
     signal,
   };
   const request: ZenHttpRequest = buildUpstreamRequest(
-    options.upstream.zen,
+    lane.baseUrl,
     protocol,
     probeBody(model, protocol, effort),
     ids,
@@ -289,6 +290,9 @@ function lanesFor(options: ZenProbeOptions, session: string, now: number): Probe
         name: 'anonymous',
         client: node.proxy.client,
         proxy: node.proxy,
+        // A public bearer against the keyed base is refused, so the keyless
+        // lane must be probed on its own host.
+        baseUrl: options.upstream.anonymous ?? options.upstream.zen,
       });
     }
   }
@@ -296,7 +300,15 @@ function lanesFor(options: ZenProbeOptions, session: string, now: number): Probe
   if (pool && pool.len() > 0) {
     const node = pool.cursorFor(session).next(now);
     const proxy = node ? pool.proxy(node) : undefined;
-    if (node && proxy) lanes.push({ key: node.key, name: 'zen', client: proxy.client, proxy });
+    if (node && proxy) {
+      lanes.push({
+        key: node.key,
+        name: 'zen',
+        client: proxy.client,
+        proxy,
+        baseUrl: options.upstream.zen,
+      });
+    }
   }
   return lanes;
 }
@@ -346,7 +358,7 @@ export async function probeFreeModel(
   let inconclusive = '';
   for (const lane of lanesFor(options, session, now)) {
     const run = (effort: string): Promise<ZenProbeResult> =>
-      probeAttempt(lane, model, protocol, session, effort, options);
+      probeAttempt(lane, model, protocol, session, effort);
     result = await run('');
     result.channel = lane.name;
     if (result.success && options.forcedEffort(model) === 'auto') {

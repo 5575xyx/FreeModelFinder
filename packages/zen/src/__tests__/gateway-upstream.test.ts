@@ -26,7 +26,7 @@ function response(
   headers: IncomingHttpHeaders = {},
 ): ZenHttpResponse {
   const stream = Readable.from([Buffer.from(body)]);
-  return { status, headers, body: stream as unknown as IncomingMessage };
+  return { status, headers, body: stream as unknown as IncomingMessage, committed: true };
 }
 
 async function readAll(stream: IncomingMessage): Promise<string> {
@@ -122,6 +122,27 @@ describe('zen upstream execution', () => {
     assert.equal(records[0]!.outcome, 'success');
     assert.equal(client.requests.length, 1);
     assert.equal(client.requests[0]!.headers!['authorization'], 'Bearer public');
+  });
+
+  it('sends anonymous requests to the keyless base, not the keyed zen base', async () => {
+    const client = new FakeClient(() => response(200, '{}'));
+    const options = makeOptions(client, {
+      upstream: {
+        zen: 'https://zen.test',
+        go: 'https://go.test',
+        anonymous: 'https://inference.test',
+      },
+    });
+    const result = await doUpstream(options, anonymousRoute(), request, ids);
+    assert.equal(result.response?.status, 200);
+    assert.equal(client.requests[0]!.url, 'https://inference.test/v1/chat/completions');
+  });
+
+  it('falls back to the zen base when no anonymous base is configured', async () => {
+    const client = new FakeClient(() => response(200, '{}'));
+    const options = makeOptions(client);
+    await doUpstream(options, anonymousRoute(), request, ids);
+    assert.equal(client.requests[0]!.url, 'https://zen.test/v1/chat/completions');
   });
 
   it('applies the forced reasoning effort to the anonymous body', async () => {

@@ -11,6 +11,7 @@ import { prepareRequest } from '../protocol/request.js';
 import { isStaleReasoningReference, stripStaleReasoningInputs } from '../protocol/stale.js';
 import type { ZenProtocol, ZenRequest } from '../protocol/types.js';
 import { parseRetryAfter, proxyHealthy, setProxyHealthy } from './health.js';
+import { upstreamAccepted } from './first-event.js';
 import type { ZenAttemptMonitor, ZenAttemptOutcome } from './monitor.js';
 import type {
   ZenAnonymousNode,
@@ -46,7 +47,7 @@ export interface ZenUpstreamOptions {
   anonymousPool?: ZenAnonymousPool;
   monitor?: ZenAttemptMonitor;
   retry: { maxAttempts: number };
-  upstream: { zen: string; go: string };
+  upstream: { zen: string; go: string; anonymous?: string };
   reasoning?: { effort?: ZenEffort; effortByModel?: Record<string, ZenEffort> };
   /**
    * Resolves the `auto` reasoning sentinel to the effort an availability probe
@@ -93,6 +94,13 @@ function nowOf(options: ZenUpstreamOptions): number {
 
 function baseUrlFor(options: ZenUpstreamOptions, tier: ZenTier): string {
   return tier === 'go' ? options.upstream.go : options.upstream.zen;
+}
+
+// The keyless lane lives on its own host: since the upstream split keyless
+// inference off the shared Zen base, a public bearer against the keyed base is
+// refused. Fall back to the zen base when no separate host is configured.
+function anonymousBaseUrl(options: ZenUpstreamOptions): string {
+  return options.upstream.anonymous ?? options.upstream.zen;
 }
 
 function poolFor(options: ZenUpstreamOptions, tier: ZenTier): ZenKeyPool | undefined {
@@ -172,21 +180,35 @@ function retryAfterMs(response: ZenHttpResponse | undefined, options: ZenUpstrea
   return parseRetryAfter(headerString(response.headers, 'retry-after'), nowOf(options));
 }
 
-// Mirrors isProxyFailure in internal/gateway/pool.go:244-256: only failures that
-// say the proxy route itself is unavailable may evict a proxy. HTTP responses
-// and request cancellations must not.
+// Mirrors isProxyFailure in internal/gateway/pool.go:279-291: only failures that
+// say the proxy route itself is unavailable may evict a proxy. HTTP responses,
+// request cancellations, and slow generation after upstream acceptance must not.
 export function isProxyFailure(error: unknown): boolean {
   if (error === undefined || error === null) return false;
-  const code = (error as { code?: unknown }).code;
-  if (code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'UND_ERR_CONNECT_TIMEOUT') {
-    return true;
-  }
-  if (error instanceof Error) {
-    if (error.name === 'AbortError') return false;
-    if (error.name === 'TimeoutError') return true;
-    if (/timeout/i.test(error.message)) return true;
+  if (upstreamAccepted(error)) return false;
+  for (const cause of errorChain(error)) {
+    const code = (cause as { code?: unknown })?.code;
+    if (code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'UND_ERR_CONNECT_TIMEOUT') {
+      return true;
+    }
+    if (!(cause instanceof Error)) continue;
+    if (cause.name === 'AbortError') continue;
+    if (cause.name === 'TimeoutError') return true;
+    if (/timeout/i.test(cause.message)) return true;
   }
   return false;
+}
+
+function* errorChain(error: unknown): Generator<unknown> {
+  let current: unknown = error;
+  let steps = 0;
+  while (current !== undefined && current !== null && steps < 16) {
+    yield current;
+    const next = (current as { cause?: unknown }).cause;
+    if (next === current) break;
+    current = next;
+    steps += 1;
+  }
 }
 
 // Mirrors syncProxyResult in internal/gateway/refresh.go:23-47. Only a proxy
@@ -265,6 +287,11 @@ function applyEffort(
     configured === 'auto' ? (options.resolveAutoEffort?.(model, tier, protocol) ?? '') : configured;
   if (effort !== '') applyForcedEffort(body, protocol, effort);
 }
+
+// The project signal the gateway invents for a call. Upstream inspects only its
+// shape, not its value, and a canonical prj_* id is rejected (request.go:58-61),
+// so it is kept verbatim here — never hashed and never prj_-prefixed.
+export const DEFAULT_PROJECT_ID = 'opencode2api:default-project';
 
 // Mirrors clientProjectID in internal/gateway/upstream.go:915-918. Renders the
 // project header the way the client does: a bare 40-char lowercase hex id
@@ -478,7 +505,7 @@ export async function doAnonymousUpstream(
   const base = bodyOverride ?? prepareUpstreamBody(request, protocol);
   applyEffort(options, base, protocol, 'zen', route.id);
   const body = prepareAnonymousBody(base, protocol);
-  const baseUrl = baseUrlFor(options, 'zen');
+  const baseUrl = anonymousBaseUrl(options);
 
   while (attempts < limit) {
     if (isAborted(ids.signal)) {
