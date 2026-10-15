@@ -81,6 +81,9 @@ const DEFAULT_CONFIG: AppConfig = {
     agnes: { enabled: false },
     custom: { enabled: false },
     cline: { enabled: false },
+    codex: { enabled: false },
+    claude: { enabled: false },
+    google: { enabled: false },
   },
   gateway: {
     requireAuth: false,

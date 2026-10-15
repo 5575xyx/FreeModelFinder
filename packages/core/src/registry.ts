@@ -46,9 +46,11 @@ import type {
   VideoGenerationResponse,
 } from './types.js';
 
-const PROVIDER_CTORS: Record<
-  Exclude<ProviderId, 'ollama'>,
-  new (ctx: ProviderContext) => BaseProvider
+// TODO(subscription-tasks): 临时放宽为 Partial——codex/claude/google 的构造器由
+// Task 4/7/9 注册；三家齐全（Task 9 收尾）后恢复为
+// Record<Exclude<ProviderId, 'ollama'>, ...> 严格类型。
+const PROVIDER_CTORS: Partial<
+  Record<Exclude<ProviderId, 'ollama'>, new (ctx: ProviderContext) => BaseProvider>
 > = {
   openrouter: OpenRouterProvider,
   gemini: GeminiProvider,
@@ -320,6 +322,9 @@ export class ProviderRegistry {
     if (cached) return cached;
     const settings = this.config.providers[id];
     const Ctor = PROVIDER_CTORS[id as Exclude<ProviderId, 'ollama'>];
+    if (!Ctor) {
+      throw new Error(`provider ${id} is not yet implemented`);
+    }
     const instance = new Ctor({
       credentials: settings?.credentials ?? { apiKey: '' },
       credentialRuntime: this.credentialRuntimeFor(id),
@@ -356,6 +361,7 @@ export class ProviderRegistry {
         return hasSources || hasLegacy;
       }
       const ctor = PROVIDER_CTORS[id];
+      if (!ctor) return false;
       if (typeof ctor.prototype.hasCredentials === 'function') {
         try {
           return this.instantiate(id).hasCredentials?.() ?? false;

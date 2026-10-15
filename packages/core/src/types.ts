@@ -20,6 +20,9 @@ export const ProviderIdSchema = z.enum([
   'custom',
   'cline',
   'opencode',
+  'codex',
+  'claude',
+  'google',
 ]);
 export type ProviderId = z.infer<typeof ProviderIdSchema>;
 
@@ -206,6 +209,8 @@ export interface ModelInfo {
   defaultReasoningEffort?: string;
   /** Per-million-token price, when the provider publishes one. */
   cost?: ModelCost;
+  /** 订阅额度模型，auto 路由中恒排免费之后 */
+  subscription?: boolean;
 }
 
 export type QuotaResource = 'requests' | 'tokens' | 'neurons';
@@ -398,7 +403,7 @@ export interface CallLogEntry {
   error?: string;
 }
 
-export type CredentialPlatform = 'cline';
+export type CredentialPlatform = 'cline' | 'codex' | 'claude' | 'google';
 
 export interface CredentialAccountEntry {
   id: string;
