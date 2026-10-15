@@ -1,8 +1,16 @@
-export type ZenAttemptOutcome = 'success' | 'retryable_failure' | 'transport_error' | 'rejected';
+// Outcome label for one attempt. Matches Go's UpstreamAttempt.Outcome, which
+// is a free-form string. Values written by recordUpstreamAttempt:
+//   - 'success'         2xx response
+//   - 'rejected'        non-retryable 4xx (bad request, invalid auth, ...)
+//   - 'retryable_failure' 5xx / other retryable server responses
+//   - classifyAttemptError(error) for transport/timeout failures, e.g.
+//     'transport_dial', 'timeout_headers', 'attempt_timeout_write', 'first_event'.
+export type ZenAttemptOutcome = string;
 
 export interface ZenAttemptRecord {
   time: number;
   requestId: string;
+  session?: string;
   model: string;
   tier: string;
   attempt: number;

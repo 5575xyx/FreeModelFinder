@@ -11,7 +11,7 @@ import { prepareRequest } from '../protocol/request.js';
 import { isStaleReasoningReference, stripStaleReasoningInputs } from '../protocol/stale.js';
 import type { ZenProtocol, ZenRequest } from '../protocol/types.js';
 import { parseRetryAfter, proxyHealthy, setProxyHealthy } from './health.js';
-import { upstreamAccepted } from './first-event.js';
+import { classifyAttemptError, upstreamAccepted } from './first-event.js';
 import type { ZenAttemptMonitor, ZenAttemptOutcome } from './monitor.js';
 import type {
   ZenAnonymousNode,
@@ -368,11 +368,12 @@ function recordUpstreamAttempt(
   const success = error === undefined && status >= 200 && status < 300;
   let outcome: ZenAttemptOutcome = 'retryable_failure';
   if (success) outcome = 'success';
-  else if (error !== undefined) outcome = 'transport_error';
+  else if (error !== undefined) outcome = classifyAttemptError(error);
   else if (isNonRetryableClientResponse(status, undefined)) outcome = 'rejected';
   monitor.record({
     time: nowOf(options),
     requestId: ids.request,
+    session: ids.session,
     model: route.id,
     tier: route.tier,
     attempt,
