@@ -110,6 +110,33 @@ describe('gateway authentication boundary', () => {
     assert.equal(remote.statusCode, 401);
   });
 
+  it('advertises the write methods the dashboard actually uses in the CORS preflight', async () => {
+    // @fastify/cors 的默认 methods 只有 GET,HEAD,POST。本仓库的 dashboard 还会发
+    // DELETE（取消 OAuth 会话 / 移除订阅账号）与 PUT/PATCH（switch-project 开关）。
+    // 少了任何一个，浏览器都会在预检阶段就把请求拦掉 —— 真实浏览器里表现为"点了没反应"，
+    // 而 app.inject 测试不过预检，所以只有这条用例能守住它。
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/subscription/oauth/session?state=x',
+      headers: {
+        origin: 'http://localhost:3000',
+        'access-control-request-method': 'DELETE',
+        'access-control-request-headers': 'x-fmf-client',
+      },
+    });
+
+    assert.equal(response.statusCode, 204);
+    const allowed = String(response.headers['access-control-allow-methods'] ?? '')
+      .split(',')
+      .map((method) => method.trim().toUpperCase());
+    for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+      assert.ok(
+        allowed.includes(method),
+        `preflight must allow ${method}, got: ${allowed.join(',')}`,
+      );
+    }
+  });
+
   it('does not grant CORS access to public web origins', async () => {
     const response = await app.inject({
       method: 'GET',

@@ -633,6 +633,10 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
   const app = Fastify<Server>(appOptions);
   if (opts.surface !== 'gateway') {
     await app.register(cors, {
+      // @fastify/cors 默认只广播 GET,HEAD,POST。dashboard 还会发 DELETE（取消 OAuth 会话、
+      // 移除订阅账号）和 PUT/PATCH（switch-project 开关）；漏掉任何一个，浏览器都会在预检
+      // 阶段直接拦掉请求，表现为按钮点了没反应，而 app.inject 测试根本不过预检、照绿。
+      methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
       origin(origin, callback) {
         if (!origin) {
           callback(null, true);
