@@ -47,7 +47,7 @@ describe('subscription OAuth config', () => {
     assert.deepEqual(SUBSCRIPTION_OAUTH, {
       codex: { callbackPort: 1455, callbackPath: '/auth/callback', usesPkce: true },
       claude: { callbackPort: 54545, callbackPath: '/callback', usesPkce: true },
-      google: { callbackPort: 0, callbackPath: '/oauth-callback', usesPkce: false },
+      google: { callbackPort: 51121, callbackPath: '/oauth-callback', usesPkce: false },
     });
   });
 

@@ -1,7 +1,13 @@
 import type { SubscriptionProviderId } from '../../oauth/types.js';
 
 export interface SubscriptionOAuthConfig {
-  /** 0 = 由 OS 分配端口（参考项目里 Google 那家就是 0）。 */
+  /**
+   * 回调端口。0 = 由 OS 分配。
+   *
+   * 三家都用参考项目写死的端口：Google 用的 51121 是 Antigravity 客户端注册的回环端口，
+   * 写死它在 "Desktop app" / "Web application" 两种 client 类型下都成立，
+   * 而动态端口只在 Desktop 类型下被 Google 放行 —— 所以不冒这个险。
+   */
   callbackPort: number;
   callbackPath: string;
   /** Google 的 authorize / token 不需要 PKCE（参考项目同样如此）。 */
@@ -11,13 +17,12 @@ export interface SubscriptionOAuthConfig {
 /**
  * 三家的回调端点常量。
  *
- * Codex / Claude 的端口被各自官方 OAuth 应用写死，不能改；Google 走 OS 动态分配。
- * 这些值必须与各家控制台注册的 redirect_uri 完全一致，否则授权页直接报错。
+ * 这些值必须与各家注册的 redirect_uri 完全一致，否则授权页直接报错。
  */
 export const SUBSCRIPTION_OAUTH: Record<SubscriptionProviderId, SubscriptionOAuthConfig> = {
   codex: { callbackPort: 1455, callbackPath: '/auth/callback', usesPkce: true },
   claude: { callbackPort: 54545, callbackPath: '/callback', usesPkce: true },
-  google: { callbackPort: 0, callbackPath: '/oauth-callback', usesPkce: false },
+  google: { callbackPort: 51121, callbackPath: '/oauth-callback', usesPkce: false },
 };
 
 /** 对外接受的 provider 别名 → 本仓内部 ProviderId。 */

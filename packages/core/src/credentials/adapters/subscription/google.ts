@@ -9,7 +9,22 @@ import type {
 import { SubscriptionImportError, SubscriptionRefreshError } from './types.js';
 
 const PLATFORM = 'google' as const;
+const AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo?alt=json';
+/**
+ * 交互登录用参考项目（Antigravity）注册的固定 OAuth 应用；client_secret 只在 token 端点使用。
+ * 与 parseImport 那条"文件内自带 client_secret"的路径互不影响（spec §5.3）。
+ */
+const OAUTH_CLIENT_ID = '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
+const OAUTH_CLIENT_SECRET = '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';
+const OAUTH_SCOPES = [
+  'https://www.googleapis.com/auth/cloud-platform',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/cclog',
+  'https://www.googleapis.com/auth/experimentsandconfigs',
+].join(' ');
 /** 派生 id 使用的摘要长度（hex 字符数） */
 const RT_ID_DIGEST_LEN = 12;
 const DETAIL_LIMIT = 300;
@@ -70,6 +85,28 @@ function emailFromIdToken(idToken: string): string | undefined {
   const claims = idToken ? decodeJwtPayload(idToken) : null;
   if (!claims) return undefined;
   return asNonEmptyString(claims.email);
+}
+
+/**
+ * 取 userinfo 的 email（参考项目 `FetchUserInfo`）。
+ *
+ * 只用于展示，不参与任何鉴权判定，所以失败一律降级为 undefined，绝不因此让登录失败。
+ */
+async function fetchUserInfoEmail(
+  fetchImpl: typeof fetch,
+  accessToken: string,
+): Promise<string | undefined> {
+  try {
+    const response = await fetchImpl(USERINFO_URL, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) return undefined;
+    const data = asRecord(await response.json());
+    return data ? asNonEmptyString(data.email) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export const googleAdapter: SubscriptionAdapter = {
@@ -204,5 +241,93 @@ export const googleAdapter: SubscriptionAdapter = {
 
   accountIdOf(_profile: SubscriptionAccountProfile, payload: Record<string, string>): string {
     return derivedId(payload.refreshToken ?? '');
+  },
+
+  buildAuthUrl(opts: { state: string; redirectUri: string; verifier?: string }): string {
+    const params = new URLSearchParams({
+      // offline + consent 保证每次都下发 refresh_token（否则二次登录拿不到）
+      access_type: 'offline',
+      client_id: OAUTH_CLIENT_ID,
+      prompt: 'consent',
+      redirect_uri: opts.redirectUri,
+      response_type: 'code',
+      scope: OAUTH_SCOPES,
+      state: opts.state,
+    });
+    // 刻意不带 PKCE —— Google 这家不用（参考项目 antigravity/auth.go:146-154）
+    return `${AUTHORIZE_URL}?${params.toString()}`;
+  },
+
+  async exchangeCode(opts: {
+    code: string;
+    redirectUri: string;
+    verifier?: string;
+    state?: string;
+    fetchImpl?: typeof fetch;
+  }): Promise<ParsedSubscription> {
+    const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    let response: Response;
+    try {
+      response = await fetchImpl(TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code: opts.code,
+          client_id: OAUTH_CLIENT_ID,
+          client_secret: OAUTH_CLIENT_SECRET,
+          redirect_uri: opts.redirectUri,
+          grant_type: 'authorization_code',
+        }).toString(),
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new SubscriptionImportError(`google: token exchange network error: ${detail}`);
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new SubscriptionImportError(
+        `google: token exchange failed ${response.status}: ${text.slice(0, DETAIL_LIMIT)}`,
+      );
+    }
+
+    let data: Record<string, unknown> | null;
+    try {
+      data = asRecord(await response.json());
+    } catch {
+      data = null;
+    }
+    const accessToken = data ? asNonEmptyString(data.access_token) : undefined;
+    if (!data || !accessToken) {
+      throw new SubscriptionImportError('google: token exchange returned an unexpected body');
+    }
+    const refreshToken = asNonEmptyString(data.refresh_token);
+    if (!refreshToken) {
+      // 没有 refresh token 的账号一小时后就不可用；唯一的身份来源也是它，不能当成功
+      throw new SubscriptionImportError('google: token exchange returned no refresh_token');
+    }
+
+    const expiresIn =
+      typeof data.expires_in === 'number' && Number.isFinite(data.expires_in)
+        ? data.expires_in
+        : undefined;
+    const expiresAt = expiresIn !== undefined ? String(Date.now() + expiresIn * 1000) : '';
+    const email = await fetchUserInfoEmail(fetchImpl, accessToken);
+
+    return {
+      payload: {
+        accessToken,
+        refreshToken,
+        clientId: OAUTH_CLIENT_ID,
+        clientSecret: OAUTH_CLIENT_SECRET,
+        expiresAt,
+        scope: asNonEmptyString(data.scope) ?? OAUTH_SCOPES,
+        idToken: asNonEmptyString(data.id_token) ?? '',
+      },
+      profile: {
+        ...profileFromRefreshToken(refreshToken),
+        ...(email ? { email } : {}),
+      },
+    };
   },
 };
