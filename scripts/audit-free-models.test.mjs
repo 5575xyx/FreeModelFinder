@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { SUBSCRIPTION_PROVIDERS, isFreeAuditModel, isFreeAuditProvider } from './lib/audit-filter.mjs';
+import {
+  SUBSCRIPTION_PROVIDERS,
+  isFreeAuditModel,
+  isFreeAuditProvider,
+} from './lib/audit-filter.mjs';
 
 // 免费审计报告（FREE_MODELS.md + reports/）是给"还没付费"的读者看的。
 // 订阅账号走的是用户已付费的额度，混进去会让报告凭空多出一批"免费"模型。
@@ -27,8 +31,14 @@ describe('free-model audit excludes subscription quota', () => {
       isFreeAuditModel({ id: 'claude:claude-opus-4.8', free: true, subscription: true }),
       false,
     );
-    assert.equal(isFreeAuditModel({ id: 'codex:gpt-5.1-codex-max', free: true, subscription: true }), false);
-    assert.equal(isFreeAuditModel({ id: 'google:gemini-3-pro', free: true, subscription: true }), false);
+    assert.equal(
+      isFreeAuditModel({ id: 'codex:gpt-5.1-codex-max', free: true, subscription: true }),
+      false,
+    );
+    assert.equal(
+      isFreeAuditModel({ id: 'google:gemini-3-pro', free: true, subscription: true }),
+      false,
+    );
   });
 
   it('keeps an ordinary free model', () => {

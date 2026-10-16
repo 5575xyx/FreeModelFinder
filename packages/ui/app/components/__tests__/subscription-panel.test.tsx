@@ -9,6 +9,14 @@ import { en, zh } from '../../i18n';
 const accountsUrl = `${gateway}/api/subscription/accounts`;
 const importUrl = `${gateway}/api/subscription/import`;
 
+function accountUrl(provider: string, id: string): string {
+  return `${accountsUrl}/${provider}/${id}`;
+}
+
+function refreshUrl(provider: string, id: string): string {
+  return `${accountUrl(provider, id)}/refresh`;
+}
+
 const codexAccount = {
   provider: 'codex',
   id: 'acc-codex',
@@ -132,6 +140,113 @@ describe('SubscriptionAccountsPanel', () => {
     expect(await screen.findByText(/账号列表加载失败/)).toBeTruthy();
     expect(screen.getByTestId('subscription-tile-codex')).toBeTruthy();
   });
+
+  it('renders the plan, expiry and usage numbers on an account card', async () => {
+    server.use(
+      http.get(accountsUrl, () =>
+        HttpResponse.json({
+          accounts: [
+            {
+              ...codexAccount,
+              expiresAt: '2027-01-02T03:04:05.000Z',
+              usage: { requests: 1234, promptTokens: 56_789, completionTokens: 1_011 },
+            },
+          ],
+        }),
+      ),
+    );
+    render(<SubscriptionAccountsPanel />);
+
+    const row = (await screen.findByText('ada@example.com')).closest('li');
+    expect(row).not.toBeNull();
+    expect(row!.textContent).toContain('pro');
+    expect(row!.textContent).toContain('1,234');
+    expect(row!.textContent).toContain('56,789');
+    expect(row!.textContent).toContain('1,011');
+    // 过期时间必须以本地可读格式出现，而不是裸 ISO 串
+    expect(row!.textContent).toContain(new Date('2027-01-02T03:04:05.000Z').toLocaleString());
+  });
+
+  it('tells the user to re-import an invalid account', async () => {
+    server.use(http.get(accountsUrl, () => HttpResponse.json({ accounts: [invalidAccount] })));
+    render(<SubscriptionAccountsPanel />);
+
+    const row = (await screen.findByText('stale@example.com')).closest('li');
+    expect(row).not.toBeNull();
+    expect(row!.textContent).toContain('需重新登录');
+    expect(row!.textContent).toContain('请重新导入凭据');
+  });
+
+  it('removes an account only after confirmation, then reloads the list', async () => {
+    const deletions: string[] = [];
+    let removed = false;
+    server.use(
+      http.get(accountsUrl, () => HttpResponse.json({ accounts: removed ? [] : [codexAccount] })),
+      http.delete(accountUrl('codex', 'acc-codex'), () => {
+        deletions.push('codex:acc-codex');
+        removed = true;
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    const onChanged = vi.fn();
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel onChanged={onChanged} />);
+
+    const row = (await screen.findByText('ada@example.com')).closest('li')!;
+    const removeButton = () =>
+      row.querySelector('button[data-testid="subscription-remove-acc-codex"]') as HTMLButtonElement;
+
+    // 第一次点击只进入确认态，不发请求
+    await user.click(removeButton());
+    expect(deletions).toEqual([]);
+    expect(removeButton().textContent).toContain('确认移除');
+
+    // 第二次点击才真的 DELETE
+    await user.click(removeButton());
+    await waitFor(() => expect(deletions).toEqual(['codex:acc-codex']));
+    await waitFor(() => expect(screen.queryByText('ada@example.com')).toBeNull());
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('refreshes an account on demand and reports success', async () => {
+    let refreshed = 0;
+    server.use(
+      http.get(accountsUrl, () => HttpResponse.json({ accounts: [invalidAccount] })),
+      http.post(refreshUrl('codex', 'acc-stale'), () => {
+        refreshed += 1;
+        return HttpResponse.json({ ok: true, account: { email: 'stale@example.com' } });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    const row = (await screen.findByText('stale@example.com')).closest('li')!;
+    await user.click(row.querySelector('button[data-testid="subscription-refresh"]')!);
+
+    await waitFor(() => expect(refreshed).toBe(1));
+    expect(await screen.findByText(/已刷新 stale@example.com/)).toBeTruthy();
+  });
+
+  // 上游报错可能回带令牌片段；面板只显示消息，且必须把明文挡掉。
+  it('shows a refresh failure without leaking the token', async () => {
+    server.use(
+      http.get(accountsUrl, () => HttpResponse.json({ accounts: [invalidAccount] })),
+      http.post(refreshUrl('codex', 'acc-stale'), () =>
+        HttpResponse.json(
+          { error: 'refresh_token_reused for rt-secret-abcdef123456' },
+          { status: 400 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    const row = (await screen.findByText('stale@example.com')).closest('li')!;
+    await user.click(row.querySelector('button[data-testid="subscription-refresh"]')!);
+
+    const message = await screen.findByText(/刷新失败/);
+    expect(message.textContent).not.toContain('rt-secret-abcdef123456');
+  });
 });
 
 describe('subscription i18n keys', () => {
@@ -153,6 +268,19 @@ describe('subscription i18n keys', () => {
     'settings.subscription.accounts.loadFailed',
     'settings.subscription.status.active',
     'settings.subscription.status.invalid',
+    'settings.subscription.reimport',
+    'settings.subscription.expires',
+    'settings.subscription.addedAt',
+    'settings.subscription.plan',
+    'settings.subscription.usage',
+    'settings.subscription.lastError',
+    'settings.subscription.remove',
+    'settings.subscription.remove.confirm',
+    'settings.subscription.removed',
+    'settings.subscription.refresh',
+    'settings.subscription.refreshed',
+    'settings.subscription.refreshFailed',
+    'settings.subscription.actionFailed',
   ];
 
   it('ships every subscription string in zh and en', () => {
