@@ -88,11 +88,13 @@ async function listAccounts(
 
 describe('subscription account API', () => {
   let app: FastifyInstance;
+  let registry: ProviderRegistry;
 
   before(async () => {
     await resetSubscriptionAccounts();
+    registry = new ProviderRegistry(testConfig());
     ({ app } = await createServer({
-      registry: new ProviderRegistry(testConfig()),
+      registry,
       watchIntervalMs: 60 * 60 * 1000,
     }));
   });
@@ -152,6 +154,20 @@ describe('subscription account API', () => {
       providers: Record<string, { enabled?: boolean } | undefined>;
     };
     assert.equal(config.providers.codex?.enabled, true);
+  });
+
+  // 上一条只锁住了磁盘真相，缺陷因此漏网：/v1/models、auto 与显式 codex:… 全部经由
+  // registry.getProvider，而它读的是内存 this.config（registry.ts 里 getProvider 的第一道
+  // 闸门）。只写磁盘的话，导入后要等 1 小时的配置 watcher 或重启才真正可用 —— 等于没接上。
+  it('reflects the enabled provider in the live registry, not only on disk', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/import',
+      headers: localUiHeaders,
+      payload: { provider: 'codex', raw: codexAuthJson() },
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(registry.getConfig().providers.codex?.enabled, true);
   });
 
   it('rejects malformed JSON with a provider-scoped 400', async () => {

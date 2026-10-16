@@ -1284,7 +1284,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
       }
     });
 
-    registerSubscriptionRoutes(app);
+    registerSubscriptionRoutes(app, getRegistry);
 
     app.get('/api/model-cleanup-log', async () => {
       const log = await loadRemovalCleanupLog();

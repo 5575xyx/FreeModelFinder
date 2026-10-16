@@ -11,6 +11,7 @@ import {
   subscriptionFlightKey,
   updateConfig,
   type ParsedSubscription,
+  type ProviderRegistry,
   type SubscriptionAccountProfile,
 } from '@freemodelfinder/core';
 
@@ -62,7 +63,10 @@ function profileFields(
   };
 }
 
-export function registerSubscriptionRoutes(app: FastifyInstance): void {
+export function registerSubscriptionRoutes(
+  app: FastifyInstance,
+  getRegistry: () => ProviderRegistry,
+): void {
   app.get('/api/subscription/import-hints', async () => IMPORT_HINTS);
 
   app.get('/api/subscription/accounts', async () => {
@@ -149,11 +153,16 @@ export function registerSubscriptionRoutes(app: FastifyInstance): void {
       // enabled" —— 整个功能等于没接上。
       // 先启用再落账号：listEnabledProviders 会用 hasCredentials() 过滤，尚无账号的 provider
       // 不会往 /v1/models 里塞用不了的模型，所以这个顺序没有副作用窗口。
-      await updateConfig((cfg) => {
+      const next = await updateConfig((cfg) => {
         const current = cfg.providers[provider] ?? { enabled: false };
         cfg.providers[provider] = { ...current, enabled: true };
         return cfg;
       });
+      // 磁盘写入只是必要条件：/v1/models、auto 与显式 codex:… 全部经由 registry.getProvider，
+      // 而它读的是内存 this.config。不同步的话，导入后仍要等 1 小时的配置 watcher 或重启才
+      // 真正可用 —— 正是上面启用 provider 想消除的症状。这里不 preserveModels：改动的正是
+      // provider 拓扑，需要让新 provider 的模型目录在下一次刷新时被纳入。
+      getRegistry().updateConfig(next);
       await getCredentialRuntime().upsertAccount(provider, {
         id,
         status: 'active',
