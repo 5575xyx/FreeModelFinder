@@ -54,6 +54,20 @@ export {
   type SubscriptionAccountProfile,
   type SubscriptionAdapter,
 } from './credentials/adapters/subscription/index.js';
+export { generatePkce } from './credentials/oauth/pkce.js';
+export {
+  createOAuthSessionStore,
+  OAUTH_SESSION_TTL_MS,
+  OAuthSessionBusyError,
+  type OAuthSessionStore,
+} from './credentials/oauth/session.js';
+export { generateState, isValidState } from './credentials/oauth/state.js';
+export type {
+  OAuthSessionRecord,
+  OAuthSessionSnapshot,
+  OAuthSessionStatus,
+  SubscriptionProviderId,
+} from './credentials/oauth/types.js';
 export {
   AutoRouter,
   parseRateLimitError,
