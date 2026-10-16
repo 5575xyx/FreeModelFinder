@@ -6,15 +6,14 @@ import { SubscriptionAccountsPanel } from '../SubscriptionAccountsPanel';
 import { gateway, server } from '../../../test/server';
 import { en, zh } from '../../i18n';
 
-const accountsUrl = `${gateway}/api/subscription/accounts`;
-const importUrl = `${gateway}/api/subscription/import`;
+const accountsUrl = `${gateway}/api/subscription/credentials`;
 
 function accountUrl(provider: string, id: string): string {
-  return `${accountsUrl}/${provider}/${id}`;
+  return `${accountsUrl}?provider=${provider}&id=${id}`;
 }
 
-function refreshUrl(provider: string, id: string): string {
-  return `${accountUrl(provider, id)}/refresh`;
+function refreshUrl(): string {
+  return `${accountsUrl}/refresh`;
 }
 
 const codexAccount = {
@@ -56,11 +55,13 @@ describe('SubscriptionAccountsPanel', () => {
 
   it('imports an account by path and shows the managed-by-FMF notice', async () => {
     const bodies: Array<Record<string, unknown>> = [];
+    const providers: Array<string | null> = [];
     let imported = false;
     server.use(
       http.get(accountsUrl, () => HttpResponse.json({ accounts: imported ? [codexAccount] : [] })),
-      http.post(importUrl, async ({ request }) => {
+      http.post(accountsUrl, async ({ request }) => {
         bodies.push((await request.json()) as Record<string, unknown>);
+        providers.push(new URL(request.url).searchParams.get('provider'));
         imported = true;
         return HttpResponse.json({
           ok: true,
@@ -75,8 +76,14 @@ describe('SubscriptionAccountsPanel', () => {
     await user.click(screen.getByTestId('subscription-tile-codex').querySelector('button')!);
 
     expect(await screen.findByText(/已导入 ada@example.com，该账号已由 FMF 接管/)).toBeTruthy();
+    // provider 走查询参数、凭据走 body（对齐参考项目 v8 的路由形状）
+    await waitFor(() => expect(providers).toEqual(['codex']));
     await waitFor(() =>
-      expect(bodies).toEqual([{ provider: 'codex', path: '~/.codex/auth.json' }]),
+      expect(bodies).toEqual([
+        {
+          path: '~/.codex/auth.json',
+        },
+      ]),
     );
     expect(await screen.findByText('ada@example.com')).toBeTruthy();
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
@@ -85,7 +92,7 @@ describe('SubscriptionAccountsPanel', () => {
   it('prefers the raw textarea content over the path when both are present', async () => {
     const bodies: Array<Record<string, unknown>> = [];
     server.use(
-      http.post(importUrl, async ({ request }) => {
+      http.post(accountsUrl, async ({ request }) => {
         bodies.push((await request.json()) as Record<string, unknown>);
         return HttpResponse.json({ ok: true, account: { provider: 'codex', id: 'acc-codex' } });
       }),
@@ -97,12 +104,12 @@ describe('SubscriptionAccountsPanel', () => {
     await user.click(screen.getByTestId('subscription-tile-codex').querySelector('button')!);
 
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ provider: 'codex', raw: 'raw-credential-json' });
+    expect(bodies[0]).toEqual({ raw: 'raw-credential-json' });
   });
 
   it('surfaces the import failure and keeps the panel usable', async () => {
     server.use(
-      http.post(importUrl, () =>
+      http.post(accountsUrl, () =>
         HttpResponse.json({ error: 'invalid credential file' }, { status: 400 }),
       ),
     );
@@ -212,7 +219,7 @@ describe('SubscriptionAccountsPanel', () => {
     let refreshed = 0;
     server.use(
       http.get(accountsUrl, () => HttpResponse.json({ accounts: [invalidAccount] })),
-      http.post(refreshUrl('codex', 'acc-stale'), () => {
+      http.post(refreshUrl(), () => {
         refreshed += 1;
         return HttpResponse.json({ ok: true, account: { email: 'stale@example.com' } });
       }),
@@ -231,7 +238,7 @@ describe('SubscriptionAccountsPanel', () => {
   it('shows a refresh failure without leaking the token', async () => {
     server.use(
       http.get(accountsUrl, () => HttpResponse.json({ accounts: [invalidAccount] })),
-      http.post(refreshUrl('codex', 'acc-stale'), () =>
+      http.post(refreshUrl(), () =>
         HttpResponse.json(
           { error: 'refresh_token_reused for rt-secret-abcdef123456' },
           { status: 400 },

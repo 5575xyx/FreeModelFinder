@@ -40,8 +40,8 @@ type ImportResponse = {
   error?: string;
 };
 
-const accountsUrl = `${GATEWAY}/api/subscription/accounts`;
-const importUrl = `${GATEWAY}/api/subscription/import`;
+// 路由形状对齐参考项目 v8：provider 一律走查询参数，凭据本体走 body。
+const accountsUrl = `${GATEWAY}/api/subscription/credentials`;
 
 const REMOVE_ARM_MS = 5000;
 
@@ -119,13 +119,13 @@ export function SubscriptionAccountsPanel({ onChanged }: { onChanged?: () => voi
     if (pending) return;
     const trimmedRaw = rawText.trim();
     const trimmedPath = paths[provider].trim();
-    const body = trimmedRaw ? { provider, raw: trimmedRaw } : { provider, path: trimmedPath };
+    const body = trimmedRaw ? { raw: trimmedRaw } : { path: trimmedPath };
     setPending(provider);
     setImportError('');
     setNotice('');
     try {
       const res = await fetch(
-        importUrl,
+        `${accountsUrl}?provider=${encodeURIComponent(provider)}`,
         withUiHeaders({
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -170,7 +170,7 @@ export function SubscriptionAccountsPanel({ onChanged }: { onChanged?: () => voi
     setNotice('');
     try {
       const res = await fetch(
-        `${accountsUrl}/${encodeURIComponent(account.provider)}/${encodeURIComponent(account.id)}`,
+        `${accountsUrl}?provider=${encodeURIComponent(account.provider)}&id=${encodeURIComponent(account.id)}`,
         withUiHeaders({ method: 'DELETE' }),
       );
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
@@ -200,8 +200,12 @@ export function SubscriptionAccountsPanel({ onChanged }: { onChanged?: () => voi
     setNotice('');
     try {
       const res = await fetch(
-        `${accountsUrl}/${encodeURIComponent(account.provider)}/${encodeURIComponent(account.id)}/refresh`,
-        withUiHeaders({ method: 'POST' }),
+        `${accountsUrl}/refresh`,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ provider: account.provider, id: account.id }),
+        }),
       );
       const data = (await res.json().catch(() => null)) as {
         ok?: boolean;

@@ -20,6 +20,7 @@ const localUiHeaders = {
 type SubscriptionProviderId = 'codex' | 'claude' | 'google';
 const PLATFORMS: SubscriptionProviderId[] = ['codex', 'claude', 'google'];
 const originalCodexRefresh = SUBSCRIPTION_ADAPTERS.codex.refresh;
+const originalClaudeRefresh = SUBSCRIPTION_ADAPTERS.claude.refresh;
 
 function b64url(value: unknown): string {
   return Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -45,6 +46,26 @@ function codexAuthJson(overrides: Record<string, string> = {}): string {
       account_id: 'acct-123',
       ...overrides,
     },
+  });
+}
+
+function claudeCredentialsJson(): string {
+  return JSON.stringify({
+    claudeAiOauth: {
+      refreshToken: 'RT_CLAUDE_PLAINTEXT',
+      accessToken: 'AT_CLAUDE_PLAINTEXT',
+      accountUuid: 'acct-claude',
+      subscriptionType: 'max',
+    },
+  });
+}
+
+function googleOauthCredsJson(): string {
+  return JSON.stringify({
+    refresh_token: 'RT_GOOGLE_PLAINTEXT',
+    access_token: 'AT_GOOGLE_PLAINTEXT',
+    client_id: 'CID.apps.googleusercontent.com',
+    client_secret: 'CS_SECRET_PLAINTEXT',
   });
 }
 
@@ -79,14 +100,14 @@ async function listAccounts(
 ): Promise<Array<{ provider: string; id: string; status: string; email?: string; plan?: string }>> {
   const response = await app.inject({
     method: 'GET',
-    url: '/api/subscription/accounts',
+    url: '/api/subscription/credentials',
     headers: localUiHeaders,
   });
   assert.equal(response.statusCode, 200, response.body);
   return response.json().accounts;
 }
 
-describe('subscription account API', () => {
+describe('subscription credential API', () => {
   let app: FastifyInstance;
   let registry: ProviderRegistry;
 
@@ -110,14 +131,15 @@ describe('subscription account API', () => {
 
   afterEach(() => {
     SUBSCRIPTION_ADAPTERS.codex.refresh = originalCodexRefresh;
+    SUBSCRIPTION_ADAPTERS.claude.refresh = originalClaudeRefresh;
   });
 
   it('imports a codex account via raw and persists it encrypted at rest', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/api/subscription/import',
+      url: '/api/subscription/credentials?provider=codex',
       headers: localUiHeaders,
-      payload: { provider: 'codex', raw: codexAuthJson() },
+      payload: { raw: codexAuthJson() },
     });
     assert.equal(response.statusCode, 200, response.body);
     const body = response.json();
@@ -144,9 +166,9 @@ describe('subscription account API', () => {
   it('enables the provider on a successful import so the account is actually usable', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/api/subscription/import',
+      url: '/api/subscription/credentials?provider=codex',
       headers: localUiHeaders,
-      payload: { provider: 'codex', raw: codexAuthJson() },
+      payload: { raw: codexAuthJson() },
     });
     assert.equal(response.statusCode, 200, response.body);
 
@@ -162,20 +184,62 @@ describe('subscription account API', () => {
   it('reflects the enabled provider in the live registry, not only on disk', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/api/subscription/import',
+      url: '/api/subscription/credentials?provider=codex',
       headers: localUiHeaders,
-      payload: { provider: 'codex', raw: codexAuthJson() },
+      payload: { raw: codexAuthJson() },
     });
     assert.equal(response.statusCode, 200, response.body);
     assert.equal(registry.getConfig().providers.codex?.enabled, true);
   });
 
+  it('imports without a provider by sniffing the credential shape', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/credentials',
+      headers: localUiHeaders,
+      payload: { raw: claudeCredentialsJson() },
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json().account.provider, 'claude');
+  });
+
+  it('rejects a credential whose provider cannot be sniffed', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/credentials',
+      headers: localUiHeaders,
+      payload: { raw: '{"something":"else"}' },
+    });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.ok(response.body.includes('could not detect'), response.body);
+    assert.equal((await listAccounts(app)).length, 0);
+  });
+
+  it('lists every account under /credentials', async () => {
+    for (const [provider, raw] of [
+      ['codex', codexAuthJson()],
+      ['claude', claudeCredentialsJson()],
+      ['google', googleOauthCredsJson()],
+    ] as const) {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/subscription/credentials?provider=${provider}`,
+        headers: localUiHeaders,
+        payload: { raw },
+      });
+      assert.equal(response.statusCode, 200, response.body);
+    }
+
+    const accounts = await listAccounts(app);
+    assert.deepEqual(accounts.map((entry) => entry.provider).sort(), ['claude', 'codex', 'google']);
+  });
+
   it('rejects malformed JSON with a provider-scoped 400', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/api/subscription/import',
+      url: '/api/subscription/credentials?provider=codex',
       headers: localUiHeaders,
-      payload: { provider: 'codex', raw: 'not-json{' },
+      payload: { raw: 'not-json{' },
     });
     assert.equal(response.statusCode, 400);
     assert.ok(response.body.includes('codex'), response.body);
@@ -185,17 +249,17 @@ describe('subscription account API', () => {
   it('requires exactly one of raw or path', async () => {
     const neither = await app.inject({
       method: 'POST',
-      url: '/api/subscription/import',
+      url: '/api/subscription/credentials?provider=codex',
       headers: localUiHeaders,
-      payload: { provider: 'codex' },
+      payload: {},
     });
     assert.equal(neither.statusCode, 400);
 
     const both = await app.inject({
       method: 'POST',
-      url: '/api/subscription/import',
+      url: '/api/subscription/credentials?provider=codex',
       headers: localUiHeaders,
-      payload: { provider: 'codex', raw: codexAuthJson(), path: '~/.codex/auth.json' },
+      payload: { raw: codexAuthJson(), path: '~/.codex/auth.json' },
     });
     assert.equal(both.statusCode, 400);
   });
@@ -203,9 +267,9 @@ describe('subscription account API', () => {
   it('rejects an unknown provider', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/api/subscription/import',
+      url: '/api/subscription/credentials?provider=nope',
       headers: localUiHeaders,
-      payload: { provider: 'nope', raw: '{}' },
+      payload: { raw: '{}' },
     });
     assert.equal(response.statusCode, 400);
     assert.ok(response.body.includes('unknown provider'), response.body);
@@ -221,9 +285,9 @@ describe('subscription account API', () => {
     ]) {
       const response = await app.inject({
         method: 'POST',
-        url: '/api/subscription/import',
+        url: '/api/subscription/credentials?provider=codex',
         headers: localUiHeaders,
-        payload: { provider: 'codex', path },
+        payload: { path },
       });
       assert.equal(response.statusCode, 400, `${path} -> ${response.body}`);
     }
@@ -231,13 +295,12 @@ describe('subscription account API', () => {
   });
 
   it('rejects a google import whose oauth_creds.json lacks client_secret', async () => {
-    // Task 8 已接入真实 google 适配器：不再有 501 分支，导入错误统一走 provider 作用域 400
+    // 已接入真实 google 适配器：不再有 501 分支，导入错误统一走 provider 作用域 400
     const response = await app.inject({
       method: 'POST',
-      url: '/api/subscription/import',
+      url: '/api/subscription/credentials?provider=google',
       headers: localUiHeaders,
       payload: {
-        provider: 'google',
         raw: JSON.stringify({ refresh_token: 'RT', client_id: 'CID' }),
       },
     });
@@ -266,13 +329,13 @@ describe('subscription account API', () => {
   it('deletes an account', async () => {
     await app.inject({
       method: 'POST',
-      url: '/api/subscription/import',
+      url: '/api/subscription/credentials?provider=codex',
       headers: localUiHeaders,
-      payload: { provider: 'codex', raw: codexAuthJson() },
+      payload: { raw: codexAuthJson() },
     });
     const removed = await app.inject({
       method: 'DELETE',
-      url: '/api/subscription/accounts/codex/acct-123',
+      url: '/api/subscription/credentials?provider=codex&id=acct-123',
       headers: localUiHeaders,
     });
     assert.equal(removed.statusCode, 200);
@@ -283,7 +346,7 @@ describe('subscription account API', () => {
   it('404s a delete of an unknown account', async () => {
     const response = await app.inject({
       method: 'DELETE',
-      url: '/api/subscription/accounts/codex/missing',
+      url: '/api/subscription/credentials?provider=codex&id=missing',
       headers: localUiHeaders,
     });
     assert.equal(response.statusCode, 404);
@@ -304,8 +367,9 @@ describe('subscription account API', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/subscription/accounts/codex/acct-refresh/refresh',
+      url: '/api/subscription/credentials/refresh',
       headers: localUiHeaders,
+      payload: { provider: 'codex', id: 'acct-refresh' },
     });
     assert.equal(response.statusCode, 200, response.body);
     assert.equal(response.json().ok, true);
@@ -314,6 +378,48 @@ describe('subscription account API', () => {
     const stored = pool.accounts.find((entry) => entry.id === 'acct-refresh');
     assert.equal(stored?.payload.refreshToken, 'RT_NEW');
     assert.equal(stored?.status, 'active');
+  });
+
+  it('refreshes every account with {all:true}', async () => {
+    await getCredentialRuntime().upsertAccount('codex', {
+      id: 'acct-all-codex',
+      status: 'active',
+      addedAt: Date.now(),
+      payload: { refreshToken: 'RT_ALL_CODEX', accessToken: 'AT_OLD' },
+    });
+    await getCredentialRuntime().upsertAccount('claude', {
+      id: 'acct-all-claude',
+      status: 'active',
+      addedAt: Date.now(),
+      payload: { refreshToken: 'RT_ALL_CLAUDE', accessToken: 'AT_OLD' },
+    });
+
+    SUBSCRIPTION_ADAPTERS.codex.refresh = async ({ payload }) => ({
+      payload: { ...payload, accessToken: 'AT_NEW_CODEX' },
+    });
+    SUBSCRIPTION_ADAPTERS.claude.refresh = async ({ payload }) => ({
+      payload: { ...payload, accessToken: 'AT_NEW_CLAUDE' },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/credentials/refresh',
+      headers: localUiHeaders,
+      payload: { all: true },
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    const body = response.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.results.length, 2);
+    assert.ok(
+      body.results.every((entry: { ok: boolean }) => entry.ok),
+      response.body,
+    );
+
+    const codex = await getCredentialRuntime().getPool('codex');
+    const claude = await getCredentialRuntime().getPool('claude');
+    assert.equal(codex.accounts[0]?.payload.accessToken, 'AT_NEW_CODEX');
+    assert.equal(claude.accounts[0]?.payload.accessToken, 'AT_NEW_CLAUDE');
   });
 
   it('marks the account invalid on a fatal refresh error', async () => {
@@ -333,8 +439,9 @@ describe('subscription account API', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/subscription/accounts/codex/acct-fatal/refresh',
+      url: '/api/subscription/credentials/refresh',
       headers: localUiHeaders,
+      payload: { provider: 'codex', id: 'acct-fatal' },
     });
     assert.ok(response.statusCode >= 400 && response.statusCode < 500, response.body);
 
@@ -373,14 +480,16 @@ describe('subscription account API', () => {
 
     const first = app.inject({
       method: 'POST',
-      url: '/api/subscription/accounts/codex/acct-flight/refresh',
+      url: '/api/subscription/credentials/refresh',
       headers: localUiHeaders,
+      payload: { provider: 'codex', id: 'acct-flight' },
     });
     await firstReached;
     const second = app.inject({
       method: 'POST',
-      url: '/api/subscription/accounts/codex/acct-flight/refresh',
+      url: '/api/subscription/credentials/refresh',
       headers: localUiHeaders,
+      payload: { provider: 'codex', id: 'acct-flight' },
     });
     // 第一个请求此刻正卡在上游往返中；给第二个请求足够时间走到单飞锁。
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -408,8 +517,9 @@ describe('subscription account API', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/subscription/accounts/codex/acct-transient/refresh',
+      url: '/api/subscription/credentials/refresh',
       headers: localUiHeaders,
+      payload: { provider: 'codex', id: 'acct-transient' },
     });
     assert.equal(response.statusCode, 502);
   });
@@ -417,8 +527,9 @@ describe('subscription account API', () => {
   it('404s a refresh of an unknown account', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/api/subscription/accounts/codex/missing/refresh',
+      url: '/api/subscription/credentials/refresh',
       headers: localUiHeaders,
+      payload: { provider: 'codex', id: 'missing' },
     });
     assert.equal(response.statusCode, 404);
   });

@@ -18,7 +18,7 @@ import {
 export const SUBSCRIPTION_PROVIDERS = ['codex', 'claude', 'google'] as const;
 export type SubscriptionProvider = (typeof SUBSCRIPTION_PROVIDERS)[number];
 
-/** 瀵煎叆鏂囦欢鍙厑璁歌惤鍦ㄨ繖浜?`~/.<dir>` 鐧藉悕鍗曠洰褰曞唴锛岄槻姝换鎰忔枃浠惰銆?*/
+/** 导入文件只允许落在这几个 `~/.<dir>` 白名单目录内，防任意文件读。 */
 const IMPORT_ROOT_DIRS = ['.codex', '.claude', '.gemini'] as const;
 
 export const IMPORT_HINTS: ReadonlyArray<{ provider: SubscriptionProvider; path: string }> = [
@@ -36,8 +36,8 @@ function isSubscriptionProvider(value: unknown): value is SubscriptionProvider {
 }
 
 /**
- * 鎶?`~/...` 褰㈠紡瑙ｆ瀽涓虹粷瀵硅矾寰勶紝骞跺己鍒跺叾钀藉湪 `~/.codex`銆乣~/.claude`銆乣~/.gemini`
- * 涓夎€呬箣涓€鍐呫€備换浣曠┛瓒婏紙`../`锛夋垨钀藉湪鐧藉悕鍗曞鐨勮矾寰勯兘杩斿洖 null锛堣皟鐢ㄦ柟鍥?400锛夈€?
+ * 把 `~/...` 形式解析为绝对路径，并强制其落在 `~/.codex`、`~/.claude`、`~/.gemini`
+ * 三者之一内。任何穿越（`../`）或落在白名单外的路径都返回 null（调用方回 400）。
  */
 export function resolveImportPath(input: string): string | null {
   const trimmed = input.trim();
@@ -63,13 +63,88 @@ function profileFields(
   };
 }
 
+/**
+ * 未指定 provider 时按 `codex → claude → google` 顺序试解析，第一个成功者即所用平台。
+ *
+ * 三家的形状互斥，顺序其实无关：codex 认 `tokens.*`、claude 认 `claudeAiOauth`、
+ * google 认顶层 `refresh_token` + `client_secret`，任一家的文件不会被另一家解析成功。
+ */
+function detectProvider(
+  raw: string,
+): { provider: SubscriptionProvider; parsed: ParsedSubscription } | null {
+  for (const provider of SUBSCRIPTION_PROVIDERS) {
+    try {
+      return { provider, parsed: SUBSCRIPTION_ADAPTERS[provider].parseImport(raw) };
+    } catch {
+      // 形状不对就试下一家
+    }
+  }
+  return null;
+}
+
+interface RefreshLine {
+  provider: SubscriptionProvider;
+  id: string;
+  ok: boolean;
+  /** HTTP 语义状态：200 成功 / 404 账号不存在 / 400 致命 / 502 暂时性。 */
+  status: number;
+  fields?: { email?: string; plan?: string };
+  error?: string;
+}
+
+/**
+ * 手动刷新单个账号。
+ *
+ * 必须与 provider 内部的自动刷新共用同一把单飞锁：Codex 等轮换型 OAuth 下，用户点"刷新"的
+ * 瞬间若恰有一次请求触发了后台刷新，同一个 refresh_token 会被发两次，上游判为
+ * refresh_token_reused / invalid_grant，账号直接报废。
+ */
+async function refreshAccount(provider: SubscriptionProvider, id: string): Promise<RefreshLine> {
+  const runtime = getCredentialRuntime();
+  const adapter = SUBSCRIPTION_ADAPTERS[provider];
+  try {
+    const fields = await runSharedFlight(subscriptionFlightKey(provider, id), async () => {
+      // 单飞只对**在途**刷新去重，settled 后立即剔除；因此锁内必须重读运行时池，
+      // 否则用的是进入路由时读到的、可能已被另一次刷新消费掉的 refresh token。
+      const fresh = (await runtime.getPool(provider)).accounts.find((entry) => entry.id === id);
+      if (!fresh) return null;
+      const result = await adapter.refresh({
+        refreshToken: fresh.payload.refreshToken ?? '',
+        payload: fresh.payload,
+      });
+      const next = profileFields(result.profile, result.payload);
+      await runtime.upsertAccount(provider, {
+        ...fresh,
+        status: 'active',
+        payload: result.payload,
+        ...(next.email ? { label: next.email } : {}),
+      });
+      return next;
+    });
+    if (!fields) {
+      return { provider, id, ok: false, status: 404, error: 'account not found' };
+    }
+    return { provider, id, ok: true, status: 200, fields };
+  } catch (error) {
+    if (error instanceof SubscriptionRefreshError && error.kind === 'fatal') {
+      // 同样要重读后写回：拿陈旧对象 spread 会把已轮换掉的 payload 一并写回去。
+      const fresh = (await runtime.getPool(provider)).accounts.find((entry) => entry.id === id);
+      if (fresh) {
+        await runtime.upsertAccount(provider, { ...fresh, status: 'invalid' });
+      }
+      return { provider, id, ok: false, status: 400, error: redactMessage(error) };
+    }
+    return { provider, id, ok: false, status: 502, error: redactMessage(error) };
+  }
+}
+
 export function registerSubscriptionRoutes(
   app: FastifyInstance,
   getRegistry: () => ProviderRegistry,
 ): void {
   app.get('/api/subscription/import-hints', async () => IMPORT_HINTS);
 
-  app.get('/api/subscription/accounts', async () => {
+  app.get('/api/subscription/credentials', async () => {
     const runtime = getCredentialRuntime();
     const accounts: Array<Record<string, unknown>> = [];
     for (const provider of SUBSCRIPTION_PROVIDERS) {
@@ -101,18 +176,19 @@ export function registerSubscriptionRoutes(
     return { accounts };
   });
 
-  app.post<{ Body: { provider?: string; raw?: string; path?: string } }>(
-    '/api/subscription/import',
+  app.post<{ Querystring: { provider?: string }; Body: { raw?: string; path?: string } }>(
+    '/api/subscription/credentials',
     async (req, reply) => {
       const body = req.body ?? {};
-      if (!isSubscriptionProvider(body.provider)) {
-        return reply.code(400).send({ error: `unknown provider: ${body.provider ?? ''}` });
-      }
-      const provider = body.provider;
       const rawPresent = typeof body.raw === 'string' && body.raw.length > 0;
       const pathPresent = typeof body.path === 'string' && body.path.trim().length > 0;
       if (rawPresent === pathPresent) {
         return reply.code(400).send({ error: 'exactly one of raw or path is required' });
+      }
+
+      const providerParam = req.query.provider;
+      if (providerParam !== undefined && !isSubscriptionProvider(providerParam)) {
+        return reply.code(400).send({ error: `unknown provider: ${providerParam}` });
       }
 
       let content: string;
@@ -132,20 +208,28 @@ export function registerSubscriptionRoutes(
         }
       }
 
-      const adapter = SUBSCRIPTION_ADAPTERS[provider];
+      let provider: SubscriptionProvider;
       let parsed: ParsedSubscription;
-      try {
-        parsed = adapter.parseImport(content);
-      } catch (error) {
-        const message = redactMessage(error);
-        if (message.includes('not implemented')) {
-          return reply.code(501).send({ error: message });
+      if (providerParam !== undefined) {
+        provider = providerParam;
+        try {
+          parsed = SUBSCRIPTION_ADAPTERS[provider].parseImport(content);
+        } catch (error) {
+          return reply.code(400).send({ error: redactMessage(error) });
         }
-        return reply.code(400).send({ error: message });
+      } else {
+        const detected = detectProvider(content);
+        if (!detected) {
+          return reply
+            .code(400)
+            .send({ error: 'could not detect the provider from the supplied credential' });
+        }
+        provider = detected.provider;
+        parsed = detected.parsed;
       }
 
       const fields = profileFields(parsed.profile, parsed.payload);
-      const id = adapter.accountIdOf(parsed.profile, parsed.payload);
+      const id = SUBSCRIPTION_ADAPTERS[provider].accountIdOf(parsed.profile, parsed.payload);
       const label = fields.email ?? id;
       // getProvider 的第一道闸门是 config.providers.<id>.enabled，而三家订阅 provider 在
       // store.ts 里默认关闭、设置页也不含它们的开关。不在这儿启用的话，"导入成功"之后
@@ -174,11 +258,11 @@ export function registerSubscriptionRoutes(
     },
   );
 
-  app.delete<{ Params: { provider: string; id: string } }>(
-    '/api/subscription/accounts/:provider/:id',
+  app.delete<{ Querystring: { provider?: string; id?: string } }>(
+    '/api/subscription/credentials',
     async (req, reply) => {
-      const providerParam = req.params.provider;
-      const id = req.params.id;
+      const providerParam = req.query.provider ?? '';
+      const id = req.query.id ?? '';
       if (!isSubscriptionProvider(providerParam)) {
         return reply.code(400).send({ error: `unknown provider: ${providerParam}` });
       }
@@ -193,58 +277,52 @@ export function registerSubscriptionRoutes(
     },
   );
 
-  app.post<{ Params: { provider: string; id: string } }>(
-    '/api/subscription/accounts/:provider/:id/refresh',
+  app.post<{ Body: { provider?: string; id?: string; all?: boolean } }>(
+    '/api/subscription/credentials/refresh',
     async (req, reply) => {
-      const providerParam = req.params.provider;
-      const id = req.params.id;
-      if (!isSubscriptionProvider(providerParam)) {
-        return reply.code(400).send({ error: `unknown provider: ${providerParam}` });
-      }
-      const provider = providerParam;
-      const runtime = getCredentialRuntime();
-      const pool = await runtime.getPool(provider);
-      if (!pool.accounts.some((entry) => entry.id === id)) {
-        return reply.code(404).send({ error: 'account not found' });
-      }
-      const adapter = SUBSCRIPTION_ADAPTERS[provider];
-      try {
-        // 手动刷新必须与 provider 内部的自动刷新共用同一把单飞锁：Codex 等轮换型 OAuth 下，
-        // 用户点"刷新"的瞬间若恰有一次请求触发了后台刷新，同一个 refresh_token 会被发两次，
-        // 上游判为 refresh_token_reused / invalid_grant，账号直接报废。
-        const fields = await runSharedFlight(subscriptionFlightKey(provider, id), async () => {
-          // 单飞只对**在途**刷新去重，settled 后立即剔除；因此锁内必须重读运行时池，
-          // 否则用的是进入路由时读到的、可能已被另一次刷新消费掉的 refresh token。
-          const fresh = (await runtime.getPool(provider)).accounts.find((e) => e.id === id);
-          if (!fresh) return null;
-          const result = await adapter.refresh({
-            refreshToken: fresh.payload.refreshToken ?? '',
-            payload: fresh.payload,
-          });
-          const next = profileFields(result.profile, result.payload);
-          await runtime.upsertAccount(provider, {
-            ...fresh,
-            status: 'active',
-            payload: result.payload,
-            ...(next.email ? { label: next.email } : {}),
-          });
-          return next;
-        });
-        if (!fields) {
-          return reply.code(404).send({ error: 'account not found' });
+      const body = req.body ?? {};
+
+      // 对齐参考项目 `POST /credentials/refresh`：`{all:true}` 返回 {ok, results}，
+      // 单条返回 {ok, auth}。这里单条返回 {ok, account}，与本文件其余端点保持一致。
+      if (body.all === true) {
+        if (body.provider !== undefined && !isSubscriptionProvider(body.provider)) {
+          return reply.code(400).send({ error: `unknown provider: ${body.provider}` });
         }
-        return reply.send({ ok: true, account: { provider, id, ...fields } });
-      } catch (error) {
-        if (error instanceof SubscriptionRefreshError && error.kind === 'fatal') {
-          // 同样要重读后写回：拿陈旧对象 spread 会把已轮换掉的 payload 一并写回去。
-          const fresh = (await runtime.getPool(provider)).accounts.find((e) => e.id === id);
-          if (fresh) {
-            await runtime.upsertAccount(provider, { ...fresh, status: 'invalid' });
+        const providers: SubscriptionProvider[] =
+          body.provider === undefined ? [...SUBSCRIPTION_PROVIDERS] : [body.provider];
+        const results: Array<Record<string, unknown>> = [];
+        for (const provider of providers) {
+          const pool = await getCredentialRuntime().getPool(provider);
+          for (const account of pool.accounts) {
+            const line = await refreshAccount(provider, account.id);
+            results.push({
+              provider: line.provider,
+              id: line.id,
+              ok: line.ok,
+              ...(line.fields ?? {}),
+              ...(line.error ? { error: line.error } : {}),
+            });
           }
-          return reply.code(400).send({ error: redactMessage(error) });
         }
-        return reply.code(502).send({ error: redactMessage(error) });
+        return reply.send({ ok: true, results });
       }
+
+      if (!isSubscriptionProvider(body.provider)) {
+        return reply.code(400).send({ error: `unknown provider: ${body.provider ?? ''}` });
+      }
+      const id = typeof body.id === 'string' ? body.id : '';
+      if (!id) {
+        return reply.code(400).send({ error: 'id or all=true is required' });
+      }
+
+      const line = await refreshAccount(body.provider, id);
+      if (!line.ok) {
+        return reply.code(line.status).send({ error: line.error ?? 'refresh failed' });
+      }
+      return reply.send({
+        ok: true,
+        account: { provider: line.provider, id: line.id, ...(line.fields ?? {}) },
+      });
     },
   );
 }
