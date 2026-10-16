@@ -58,6 +58,7 @@ export {
   type SubscriptionOAuthConfig,
 } from './credentials/adapters/subscription/index.js';
 export { generatePkce } from './credentials/oauth/pkce.js';
+export { CallbackParseError, parseCallbackUrl } from './credentials/oauth/parse-callback.js';
 export {
   LoopbackPortBusyError,
   OAuthCallbackTimeoutError,

@@ -96,6 +96,42 @@ describe('loopback OAuth callback listener', () => {
     }
   });
 
+  // provider 的 error / error_description 原文要落进会话存储，再经 /status 回给 UI。
+  // 用户可能把整段 auth 响应粘进来，所以这里必须先脱敏 —— 和文件导入路径同一道防线。
+  // 纯原因值（access_denied）必须原样通过：UI 靠它匹配本地化文案。
+  it('masks a token inside the provider error before delivering it', async () => {
+    const state = 'a'.repeat(43);
+    const listener = await startLoopbackListener({ port: 0, path: '/auth/callback' });
+    try {
+      const wait = listener.waitForCode();
+      const response = await fetch(
+        `${listener.redirectUri}?error=access_denied&error_description=refresh_token=SECRET&state=${state}`,
+      );
+      assert.equal(response.status, 200);
+
+      const delivered = await wait;
+      assert.equal(delivered.state, state);
+      // error 优先于 error_description（对齐参考项目 misc/oauth.go:110-113）
+      assert.equal(delivered.error, 'access_denied');
+    } finally {
+      listener.close();
+    }
+  });
+
+  it('masks a token inside error_description when error is absent', async () => {
+    const state = 'b'.repeat(43);
+    const listener = await startLoopbackListener({ port: 0, path: '/auth/callback' });
+    try {
+      const wait = listener.waitForCode();
+      await fetch(`${listener.redirectUri}?error_description=refresh_token=SECRET&state=${state}`);
+
+      const delivered = await wait;
+      assert.equal(delivered.error, 'refresh_token=[REDACTED]');
+    } finally {
+      listener.close();
+    }
+  });
+
   it('a callback missing code or state returns 400 and does not resolve', async () => {
     const listener = await startLoopbackListener({ port: 0, path: '/auth/callback' });
     const wait = listener.waitForCode();

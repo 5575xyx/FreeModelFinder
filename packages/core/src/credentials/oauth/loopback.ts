@@ -188,7 +188,7 @@ export function startLoopbackListener(opts: LoopbackListenerOptions): Promise<Lo
       if (providerError) {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_KEEPALIVE });
         res.end(DENIED_BODY);
-        deliver({ code: '', state, error: providerError });
+        deliver({ code: '', state, error: redact(providerError) });
         return;
       }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_KEEPALIVE });
