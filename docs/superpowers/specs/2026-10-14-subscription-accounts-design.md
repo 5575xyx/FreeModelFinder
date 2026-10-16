@@ -27,11 +27,11 @@ FreeModelFinder 目前聚合的几乎全是"免费 API key"渠道（OpenRouter�
 4. Token 生命周期：提前刷新（复用 Cline `refreshChain` 模式）、并发刷新去重、401/403 判定账号失效、refresh token 轮换回写、导入后由 FMF 接管刷新。
 5. 路由集成：订阅模型进入 `registry`/`auto-router`，复用现有 429 冷却与 failover 链。
 6. UI：设置页新增"连接订阅账号"入口——文件路径导入/文件内容粘贴上传、账号列表（邮箱/套餐/过期时间/健康状态）、移除、风险提示文案。
-7. OAuth 交互登录（浏览器回调/PKCE）为**二期**，本期不实现，但适配器接口预留 `startOAuth()/completeOAuth()` 位置。
+7. OAuth 交互登录（浏览器回调/PKCE）~~为**二期**，本期不实现~~ → **第二波（2026-10-16）已实现**：三家全做，见 `2026-10-16-subscription-oauth-login-design.md`。
 
 ### 非目标（本期不做）
 
-- OAuth 网页/设备码交互登录（二期）
+- OAuth 网页/设备码交互登录（**第二波已实现**，见 `2026-10-16-subscription-oauth-login-design.md`）
 - 第二、三波 provider
 - 桌面端（Tauri macOS）UI 改造——本期仅 core + server + Next.js 设置页
 - 多用户/远程共享订阅账号；配额转卖类功能
@@ -102,17 +102,22 @@ interface SubscriptionAdapter {
 
 ### 4.4 服务端 API 与 UI
 
+> **本节已由第二波（2026-10-16）改写**：路由全面改名对齐参考项目 v8，旧路径 `accounts` / `import` **已删除**（API 未发布，无兼容负担）。以下为**当前实际**路由，逐条依据见
+> `2026-10-16-subscription-oauth-login-design.md` §13.1。
+
 Server 新增（照抄 `/api/cline/*` 模式，`packages/server/src/server.ts`）：
 
-- `GET /api/subscription/accounts` — 聚合三家账号列表（脱敏，仅 profile + 健康状态）
-- `POST /api/subscription/import` — `{provider, raw}`（文件内容由 UI 读出后 POST，服务端也可读默认路径一键导入）
-- `DELETE /api/subscription/accounts/:provider/:id`
-- `POST /api/subscription/accounts/:provider/:id/refresh` — 手动触发刷新
+- `GET /api/subscription/credentials` — 聚合三家账号列表（脱敏，仅 profile + 健康状态）
+- `POST /api/subscription/credentials?provider=` — body `{raw}` 或 `{path}`（**OAuth 交互登录与文件导入共用这一条落库路径**；文件内容由 UI 读出后 POST，服务端也可读默认路径一键导入）
+- `DELETE /api/subscription/credentials?provider=&id=` — 移除账号
+- `POST /api/subscription/credentials/refresh` — body `{provider,id}` 或 `{all:true}`
+- `GET|POST /api/subscription/oauth/{auth-url,status,session,callback}` — OAuth 交互登录（第二波新增，见第二波 spec §3）
+- `GET|PUT|PATCH /api/subscription/quota-exceeded/switch-project` — `switch-project` 全局配置项（第二波新增）
 
 UI（Next.js 设置页）：
 
-- "连接订阅账号"卡片：三个 provider 磁贴 → 选择"从 CLI 导入（自动检测默认路径）"或"粘贴文件内容"
-- 导入成功弹窗：展示账号身份 + **接管提示**（"此后 token 刷新由 FMF 管理；若原 CLI 再次运行可能导致凭证失效，可重新导入恢复"）+ ToS 灰色地带风险提示一句
+- "连接订阅账号"三张 provider 磁贴：**每家各自独立的弹窗**（第二波改写；弹窗内两条路 = 浏览器 OAuth 登录 / 选择凭据文件导入，并展示该家真实差异：回调端口、授权机制、登录后自动读取的字段）
+- 导入成功提示：展示账号身份 + **接管提示**（"此后 token 刷新由 FMF 管理；若原 CLI 再次运行可能导致凭证失效，可重新导入恢复"）+ ToS 灰色地带风险提示一句
 - 账号列表：邮箱/套餐/过期时间/状态徽标（正常/冷却/失效）/移除按钮
 
 ### 4.5 模型注册表与路由集成
@@ -127,7 +132,7 @@ UI（Next.js 设置页）：
 
 ### 5.1 Codex（`internal/auth/codex/openai_auth.go`）
 
-- 授权 URL：`https://auth.openai.com/oauth/authorize`，PKCE S256，`scope=openid email profile offline_access`，`redirect_uri=http://localhost:1455/auth/callback`（二期用）
+- 授权 URL：`https://auth.openai.com/oauth/authorize`，PKCE S256，`scope=openid email profile offline_access`，`redirect_uri=http://localhost:1455/auth/callback`（**第二波已实现**：OAuth 交互登录，含 `prompt=login` / `id_token_add_organizations=true` / `codex_cli_simplified_flow=true`，依据 `openai_auth.go:84-86`）
 - Token/刷新：`POST https://auth.openai.com/oauth/token`，form-urlencoded；刷新 `scope=openid profile email`；`client_id=app_EMoamEEZ73f0CkXaXp7hrann`
 - 响应：`access_token/refresh_token/id_token/expires_in`；id_token JWT claims 提取 `account_id/email/plan`
 - 致命刷新错误：`refresh_token_reused`
@@ -150,7 +155,7 @@ UI（Next.js 设置页）：
 
 - Google OAuth：`https://accounts.google.com/o/oauth2/v2/auth` → `https://oauth2.googleapis.com/token`（实现 `TOKEN_URL` 与参考 `constants.go:22` 一致）
   - userinfo `https://www.googleapis.com/oauth2/v2/userinfo?alt=json`（`constants.go:24`）：参考用它取 email（`auth.go:243`）；**实现未调用**——改用 `id_token` claims + refresh_token 派生 id 作账号标识（见 §10 偏差 ②）
-  - 授权端点 / PKCE 属二期（OAuth 交互登录），一期只做文件导入
+  - 授权端点 / PKCE **属第二波（2026-10-16）已实现**：Google 的授权码流**不带 PKCE**（仅 state），回调 `http://localhost:51121/oauth-callback`（端口取自参考项目 `antigravity/constants.go`，上游对 `redirect_uri` 做精确匹配）；文件导入路径不变
 - 参考项目的 client_id：`1071006060591-...apps.googleusercontent.com`（Antigravity 专用）；**导入 Gemini CLI 的 `oauth_creds.json` 时用文件内嵌的 client_id/client_secret**，无需内置 secret
 - API 通道：**两个 host，职责不同**（实现与参考一致）
   - 初始化：`https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`（**prod**）
@@ -252,6 +257,17 @@ UI（Next.js 设置页）：
   - **第一层（环境）**：本机 npm registry 为 `registry.npmmirror.com`，该镜像未实现 audit 端点，`smoke-package.mjs:116` 的 `npm audit --omit=dev --audit-level=moderate` 返回 `[NOT_IMPLEMENTED] /-/npm/v1/security/* not implemented yet`。已隔离验证：同一 lockfile 下 `--registry https://registry.npmjs.org/` 可正常返回报告。
   - **第二层（真实依赖漏洞，换官方 registry 后暴露）**：打包产物审计出 **3 个漏洞（1 moderate、2 high）**——`fastify <=5.12.4`（仓库精确固定 `5.10.0`，7 条 high 公告，含 auth bypass、X-Forwarded spoofing、schema validation bypass，npm 报 **No fix available**）、`undici 7.0.0-7.29.0`（精确固定 `7.29.0`，10 条 high 公告，含 TLS 证书校验绕过、response splitting、跨用户 cookie 泄露，`npm audit fix` 可修）。两者均为 `packages/cli/package.json` 的直接固定依赖；本分支未改动任何 `package.json`/`pnpm-lock.yaml`（diff 为空），故打包依赖集与基线逐字节一致，**`test:pack` 在 main 上同样必败**。缓解因素：Gateway 默认仅绑定 `127.0.0.1`，大幅降低远程攻击面；但这仍是发布包的真实安全债务，需单独开任务处理（提升 `fastify` 至 >=5.12.5、`undici` 至修复版本，并复核 `--audit-level` 策略）。
 - **CI 门槛修复（2026-10-16，本次交付的一部分）**：`format:check` 在基线上就有 396 个文件失败——成因有二，(a) 本机 `core.autocrlf=true` 使工作区为 CRLF 而 prettier 默认 `endOfLine: lf`；(b) lockfile 已锁定 prettier **3.9.6**（`package.json` 写 `^3.2.5`），而 31 个既有文件是旧版 prettier 格式化的，存在真实内容违规。已按 brief 第 2 步要求以仓库同版本 prettier 重排全部文件，`format:check` 现 EXIT=0；这 31 个文件的改动均为纯折行/表格对齐，无语义变化（已逐个抽查 `anthropic.ts`、`gemini.ts`、`ImageGeneratorView.tsx` 等）。`lint` 的 1 个 warning 是 `ZenProxyTransport` 类型导入后从未使用，已删除该导入，`lint` 现 EXIT=0。
+
+### 10.1 第二波交付状态（2026-10-16，OAuth 交互登录 + 逐家弹窗 UI）
+
+第二波的完整设计与逐条偏差见 `2026-10-16-subscription-oauth-login-design.md`；本节只记对**第一波文档语境**有影响的部分。
+
+- **本文件里所有「二期」标注均已落地**：§2 目标 7、§2 非目标、§4.4、§5.1、§5.3 的 OAuth 交互登录相关条目已改为「第二波已实现」，并在原处标注了实现细节（Codex 多了 `prompt=login` 等三个参数、Google 无 PKCE 且回调固定 `localhost:51121`）。
+- **路由改名（破坏性，但 API 未发布）**：`/api/subscription/accounts` → `/api/subscription/credentials`；`POST /api/subscription/import` → `POST /api/subscription/credentials?provider=`（`{raw}` 或 `{path}`）；删除账号与刷新改为查询参数形态；新增 `oauth/*` 四端点与 `quota-exceeded/switch-project`。详见本文件 §4.4（已改写为当前实际路由）。
+- **UI 改写**：原先「三张磁贴共用一个粘贴框」的形态被**每家独立弹窗**取代（弹窗内 OAuth 登录 + 文件导入两条路）；账号列表、移除/刷新行为不变。
+- **落库路径统一**：OAuth 登录成功的账号与文件导入的账号走**同一条** `POST /credentials` 落库路径，不存在第二套写入逻辑。
+- **验证**：`format:check` → `lint` → `build:runtime` → `typecheck` → `test:coverage` 串行全绿；core **824**、server **422**、ui **295**（26 文件）、cli **376**、zen **14**，全 0 失败。
+- **仍未执行**：R1（三家真实控制面探测）与真实账号端到端 chat —— 本机 `~/.codex/auth.json`、`~/.claude/.credentials.json`、`~/.gemini/oauth_creds.json` 均不存在（第二波不再把它当前置，OAuth 交互登录不需要预先登录官方 CLI）。§11 的遗留项（冷却清除按钮、core redact 阈值、`/v1/models` 只透出布尔等）**维持不变**，第二波未触碰。
 
 ## 11. 遗留问题（不阻塞交付）
 

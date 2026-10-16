@@ -1,5 +1,9 @@
 # 订阅账号集成实施计划（第一波：Codex / Claude / Google）
 
+> **状态：已完成（第一波，2026-10-16）。本文档是历史实施记录，不反映当前路由。**
+> 第二波（`plans/2026-10-16-subscription-oauth-login.md`）已把 `/api/subscription/accounts` 改名为 `/api/subscription/credentials`、把 `POST /api/subscription/import` 改名为 `POST /api/subscription/credentials?provider=`，并新增 OAuth 交互登录端点。下文出现的旧路由一律以
+> `specs/2026-10-14-subscription-accounts-design.md` §4.4 与 `specs/2026-10-16-subscription-oauth-login-design.md` §13.1 为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让用户把 ChatGPT(Codex)/Claude/Google 订阅账号的官方 CLI 凭证文件导入 FreeModelFinder，把订阅额度变成本地统一 API 算力（含自动刷新、多账号池、429 冷却、auto 兜底路由）。
@@ -196,6 +200,8 @@ export const SUBSCRIPTION_ADAPTERS: Record<'codex' | 'claude' | 'google', Subscr
 - Test: `packages/ui/app/components/__tests__/subscription-panel.test.tsx`
 
 **Interfaces:**
+
+> ⚠️ **本文档是第一波的实施计划历史记录**，其中的路由在**第二波（2026-10-16）已改名**：`/api/subscription/accounts` → `/api/subscription/credentials`（删除/刷新改为查询参数形态）、`POST /api/subscription/import` → `POST /api/subscription/credentials?provider=`。当前实际路由以 `specs/2026-10-14-subscription-accounts-design.md` §4.4 与 `specs/2026-10-16-subscription-oauth-login-design.md` §13.1 为准。
 
 - Consumes: Task 2 `SUBSCRIPTION_ADAPTERS`；`getCredentialRuntime()`；Task 1 的 CredentialPlatform
 - Produces（UI 与后续任务逐字使用）:
