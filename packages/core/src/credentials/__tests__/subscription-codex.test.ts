@@ -224,14 +224,17 @@ describe('codex refresh', () => {
   });
 
   it('maps network failures (fetch throws) to kind=network, not fatal', async () => {
+    // undici 的网络层失败只有泛泛的 `TypeError: fetch failed`，真正可行动的信息在 cause 里
+    // （DNS 失败 / 连接超时 / 证书错误）。真实账号验收时卡在这一层的概率最高，必须带出来。
     const failing = (async () => {
-      throw new TypeError('fetch failed');
+      throw new TypeError('fetch failed', { cause: new Error('Connect Timeout Error') });
     }) as typeof fetch;
     await assert.rejects(
       () => codex.refresh({ fetchImpl: failing, refreshToken: 'RT', payload: basePayload }),
       (error: unknown) => {
         assert.ok(error instanceof SubscriptionRefreshError);
         assert.equal(error.kind, 'network');
+        assert.match(error.message, /fetch failed: Connect Timeout Error/);
         assert.equal(codex.isFatalRefreshError(error), false);
         return true;
       },

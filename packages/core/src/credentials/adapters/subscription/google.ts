@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { decodeJwtPayload } from './helpers.js';
+import { decodeJwtPayload, describeFetchFailure } from './helpers.js';
 import type {
   ParsedSubscription,
   RefreshResult,
@@ -173,7 +173,7 @@ export const googleAdapter: SubscriptionAdapter = {
         }).toString(),
       });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = describeFetchFailure(error);
       throw new SubscriptionRefreshError(`google: token refresh network error: ${detail}`, {
         kind: 'network',
       });
@@ -280,7 +280,7 @@ export const googleAdapter: SubscriptionAdapter = {
         }).toString(),
       });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = describeFetchFailure(error);
       throw new SubscriptionImportError(`google: token exchange network error: ${detail}`);
     }
 

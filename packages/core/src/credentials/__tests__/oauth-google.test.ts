@@ -160,4 +160,21 @@ describe('google OAuth', () => {
       SubscriptionImportError,
     );
   });
+
+  it('exchangeCode surfaces the fetch cause so real-world network blockers are diagnosable', async () => {
+    const failing = (async () => {
+      throw new TypeError('fetch failed', {
+        cause: new Error('Connect Timeout Error (attempted address: oauth2.googleapis.com:443)'),
+      });
+    }) as typeof fetch;
+
+    await assert.rejects(
+      () => google.exchangeCode({ code: 'CODE', redirectUri: REDIRECT_URI, fetchImpl: failing }),
+      (error: unknown) => {
+        assert.ok(error instanceof SubscriptionImportError);
+        assert.match(error.message, /fetch failed: Connect Timeout Error/);
+        return true;
+      },
+    );
+  });
 });

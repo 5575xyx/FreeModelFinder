@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { codexAdapter } from '../adapters/subscription/codex.js';
+import { SubscriptionImportError } from '../adapters/subscription/index.js';
 import {
   SUBSCRIPTION_OAUTH,
   normalizeSubscriptionProvider,
@@ -129,5 +130,28 @@ describe('codex OAuth', () => {
     assert.equal(parsed.payload.idToken, idToken);
     assert.equal(parsed.profile.email, 'oauth@example.com');
     assert.equal(parsed.profile.plan, 'plus');
+  });
+
+  it('exchangeCode surfaces the fetch cause so real-world network blockers are diagnosable', async () => {
+    const failing = (async () => {
+      throw new TypeError('fetch failed', {
+        cause: new Error('Connect Timeout Error (attempted address: auth.openai.com:443)'),
+      });
+    }) as typeof fetch;
+
+    await assert.rejects(
+      () =>
+        codex.exchangeCode({
+          code: 'CODE',
+          redirectUri: REDIRECT_URI,
+          verifier: 'VERIFIER',
+          fetchImpl: failing,
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof SubscriptionImportError);
+        assert.match(error.message, /fetch failed: Connect Timeout Error/);
+        return true;
+      },
+    );
   });
 });

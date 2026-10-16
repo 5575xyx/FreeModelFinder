@@ -1,5 +1,5 @@
 import { pkceChallenge } from '../../oauth/pkce.js';
-import { decodeJwtPayload } from './helpers.js';
+import { decodeJwtPayload, describeFetchFailure } from './helpers.js';
 import type {
   ParsedSubscription,
   RefreshResult,
@@ -102,7 +102,7 @@ export const codexAdapter: SubscriptionAdapter = {
         }).toString(),
       });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = describeFetchFailure(error);
       throw new SubscriptionRefreshError(`codex: token refresh network error: ${detail}`, {
         kind: 'network',
       });
@@ -219,7 +219,7 @@ export const codexAdapter: SubscriptionAdapter = {
         body: body.toString(),
       });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = describeFetchFailure(error);
       throw new SubscriptionImportError(`codex: token exchange network error: ${detail}`);
     }
 

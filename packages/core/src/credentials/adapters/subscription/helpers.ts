@@ -2,6 +2,23 @@ const EXPIRY_MS_THRESHOLD = 1e12;
 const BASE64URL_SEGMENT = /^[A-Za-z0-9_-]+={0,2}$/;
 
 /**
+ * 把 fetch 的失败描述成一句人能用的错误。
+ *
+ * undici 的网络层失败一律抛泛泛的 `TypeError: fetch failed`，真正可行动的信息（DNS 失败 /
+ * 连接超时 / 证书错误 / 代理拒绝）藏在 `cause` 里。真实账号验收时卡在这一层的概率最高
+ * —— 目标域名被墙、需要代理、DNS 污染都会走到这里 —— 只报 `fetch failed` 等于什么都没说。
+ *
+ * 说明：调用方最终会经过 `redact()`，且 undici 的 cause 文本只有主机名与超时信息，不含凭据。
+ */
+export function describeFetchFailure(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause = (error as { cause?: unknown }).cause;
+  if (cause instanceof Error && cause.message) return `${error.message}: ${cause.message}`;
+  if (typeof cause === 'string' && cause.length > 0) return `${error.message}: ${cause}`;
+  return error.message;
+}
+
+/**
  * 飞行中请求去重：同一 key 并发调用共享同一 Promise，settled 后自动剔除以便重试。
  */
 export function createFlightCache<T>(): {

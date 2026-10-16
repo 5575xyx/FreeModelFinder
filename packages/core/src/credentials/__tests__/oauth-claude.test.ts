@@ -159,4 +159,27 @@ describe('claude OAuth', () => {
       SubscriptionImportError,
     );
   });
+
+  it('exchangeCode surfaces the fetch cause so real-world network blockers are diagnosable', async () => {
+    const failing = (async () => {
+      throw new TypeError('fetch failed', {
+        cause: new Error('getaddrinfo EAI_AGAIN platform.claude.com'),
+      });
+    }) as typeof fetch;
+
+    await assert.rejects(
+      () =>
+        claude.exchangeCode({
+          code: 'CODE',
+          redirectUri: REDIRECT_URI,
+          verifier: 'VERIFIER',
+          fetchImpl: failing,
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof SubscriptionImportError);
+        assert.match(error.message, /fetch failed: getaddrinfo EAI_AGAIN/);
+        return true;
+      },
+    );
+  });
 });

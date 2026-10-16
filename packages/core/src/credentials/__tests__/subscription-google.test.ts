@@ -248,7 +248,9 @@ describe('google refresh', () => {
 
   it('maps network failures (fetch throws) to kind=network, not fatal', async () => {
     const failing = (async () => {
-      throw new TypeError('fetch failed');
+      throw new TypeError('fetch failed', {
+        cause: new Error('getaddrinfo ENOTFOUND oauth2.googleapis.com'),
+      });
     }) as typeof fetch;
     await assert.rejects(
       () =>
@@ -260,6 +262,7 @@ describe('google refresh', () => {
       (error: unknown) => {
         assert.ok(error instanceof SubscriptionRefreshError);
         assert.equal(error.kind, 'network');
+        assert.match(error.message, /fetch failed: getaddrinfo ENOTFOUND oauth2\.googleapis\.com/);
         assert.equal(google.isFatalRefreshError(error), false);
         return true;
       },

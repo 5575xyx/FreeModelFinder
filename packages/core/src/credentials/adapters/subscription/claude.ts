@@ -6,6 +6,7 @@ import type {
   SubscriptionAdapter,
   SubscriptionAccountProfile,
 } from './types.js';
+import { describeFetchFailure } from './helpers.js';
 import { SubscriptionImportError, SubscriptionRefreshError } from './types.js';
 
 const PLATFORM = 'claude' as const;
@@ -244,7 +245,7 @@ export const claudeAdapter: SubscriptionAdapter = {
         }),
       });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = describeFetchFailure(error);
       throw new SubscriptionRefreshError(`claude: token refresh network error: ${detail}`, {
         kind: 'network',
       });
@@ -389,7 +390,7 @@ export const claudeAdapter: SubscriptionAdapter = {
         body: JSON.stringify(body),
       });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = describeFetchFailure(error);
       throw new SubscriptionImportError(`claude: token exchange network error: ${detail}`);
     }
 

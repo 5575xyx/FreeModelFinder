@@ -384,7 +384,7 @@ describe('claude refresh', () => {
 
   it('maps network failures (fetch throws) to kind=network, not fatal', async () => {
     const failing = (async () => {
-      throw new TypeError('fetch failed');
+      throw new TypeError('fetch failed', { cause: new Error('ECONNREFUSED 127.0.0.1:7890') });
     }) as typeof fetch;
     await assert.rejects(
       () =>
@@ -396,6 +396,7 @@ describe('claude refresh', () => {
       (error: unknown) => {
         assert.ok(error instanceof SubscriptionRefreshError);
         assert.equal(error.kind, 'network');
+        assert.match(error.message, /fetch failed: ECONNREFUSED 127\.0\.0\.1:7890/);
         assert.equal(claude.isFatalRefreshError(error), false);
         return true;
       },
