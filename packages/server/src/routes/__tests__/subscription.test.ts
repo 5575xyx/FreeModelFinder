@@ -7,6 +7,7 @@ import {
   SUBSCRIPTION_ADAPTERS,
   SubscriptionRefreshError,
   getCredentialRuntime,
+  updateConfig,
   type AppConfig,
 } from '@freemodelfinder/core';
 import type { FastifyInstance } from 'fastify';
@@ -16,6 +17,8 @@ const localUiHeaders = {
   origin: 'http://127.0.0.1:11435',
   'x-fmf-client': 'ui',
 };
+
+const SWITCH_PROJECT_URL = '/api/subscription/quota-exceeded/switch-project';
 
 type SubscriptionProviderId = 'codex' | 'claude' | 'google';
 const PLATFORMS: SubscriptionProviderId[] = ['codex', 'claude', 'google'];
@@ -532,5 +535,104 @@ describe('subscription credential API', () => {
       payload: { provider: 'codex', id: 'missing' },
     });
     assert.equal(response.statusCode, 404);
+  });
+
+  // 参考项目 v1 管理接口：GET|PUT|PATCH /quota-exceeded/switch-project，
+  // 响应体固定 `{"switch-project": bool}`（连中划线键名都照抄），PUT 收 `{"value": bool}`。
+  // 本项目当前**不消费**这个开关（参考项目本快照里同样只写不读，真正的切换在
+  // antigravity provider 内部），所以这里只落配置项 + 端点，不编造切换行为。
+  describe('quota-exceeded switch-project setting', () => {
+    beforeEach(async () => {
+      // 每条用例都从"字段不存在"起步：默认值语义即缺省 = false。
+      await updateConfig((cfg) => {
+        delete cfg.quotaExceeded;
+        return cfg;
+      });
+    });
+
+    it('reads switch-project as false by default', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: SWITCH_PROJECT_URL,
+        headers: localUiHeaders,
+      });
+      assert.equal(response.statusCode, 200, response.body);
+      assert.deepEqual(response.json(), { 'switch-project': false });
+    });
+
+    it('persists switch-project through PUT and reads it back', async () => {
+      const put = await app.inject({
+        method: 'PUT',
+        url: SWITCH_PROJECT_URL,
+        headers: localUiHeaders,
+        payload: { 'switch-project': true },
+      });
+      assert.equal(put.statusCode, 200, put.body);
+      assert.deepEqual(put.json(), { 'switch-project': true });
+
+      const get = await app.inject({
+        method: 'GET',
+        url: SWITCH_PROJECT_URL,
+        headers: localUiHeaders,
+      });
+      assert.deepEqual(get.json(), { 'switch-project': true });
+
+      // 这是配置项而非运行时状态：必须落到 config.json，重启后仍在。
+      const onDisk = JSON.parse(await readFile(rawConfigPath(), 'utf8')) as {
+        quotaExceeded?: { switchProject?: boolean };
+      };
+      assert.equal(onDisk.quotaExceeded?.switchProject, true);
+    });
+
+    it('accepts the reference project body shape {value: boolean}', async () => {
+      const response = await app.inject({
+        method: 'PUT',
+        url: SWITCH_PROJECT_URL,
+        headers: localUiHeaders,
+        payload: { value: true },
+      });
+      assert.equal(response.statusCode, 200, response.body);
+      assert.deepEqual(response.json(), { 'switch-project': true });
+    });
+
+    it('accepts PATCH like the reference project', async () => {
+      const response = await app.inject({
+        method: 'PATCH',
+        url: SWITCH_PROJECT_URL,
+        headers: localUiHeaders,
+        payload: { 'switch-project': true },
+      });
+      assert.equal(response.statusCode, 200, response.body);
+      assert.deepEqual(response.json(), { 'switch-project': true });
+    });
+
+    it('rejects a non-boolean switch-project with 400 and keeps the stored value', async () => {
+      const response = await app.inject({
+        method: 'PUT',
+        url: SWITCH_PROJECT_URL,
+        headers: localUiHeaders,
+        payload: { 'switch-project': 'yes' },
+      });
+      assert.equal(response.statusCode, 400, response.body);
+      assert.deepEqual(response.json(), { error: 'invalid body' });
+
+      const get = await app.inject({
+        method: 'GET',
+        url: SWITCH_PROJECT_URL,
+        headers: localUiHeaders,
+      });
+      assert.deepEqual(get.json(), { 'switch-project': false });
+    });
+
+    it('rejects an empty body with 400', async () => {
+      const response = await app.inject({
+        method: 'PUT',
+        url: SWITCH_PROJECT_URL,
+        headers: localUiHeaders,
+        payload: {},
+      });
+      assert.equal(response.statusCode, 400, response.body);
+      assert.deepEqual(response.json(), { error: 'invalid body' });
+    });
   });
 });

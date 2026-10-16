@@ -420,6 +420,12 @@ export interface CredentialPoolConfig {
   cooldownFallbackMinutes?: number;
 }
 
+/** 额度超限后的兜底行为（对齐参考项目的 `quota-exceeded` 配置段）。 */
+export interface QuotaExceededSettings {
+  /** 额度超限时自动切换 GCP 项目（对齐参考项目 `quota-exceeded/switch-project`）。 */
+  switchProject?: boolean;
+}
+
 export interface AppConfig {
   version: number;
   port: number;
@@ -429,6 +435,7 @@ export interface AppConfig {
   autoRoute?: AutoRouteSettings;
   onboarding?: OnboardingState;
   credentials?: Partial<Record<CredentialPlatform, CredentialPoolConfig>>;
+  quotaExceeded?: QuotaExceededSettings;
   /** External alias -> real model id (composed form, e.g. "opencode:mimo-v2.6-flash-free"). */
   modelAliases?: Record<string, string>;
   /**

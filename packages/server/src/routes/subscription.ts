@@ -6,6 +6,7 @@ import {
   SUBSCRIPTION_ADAPTERS,
   SubscriptionRefreshError,
   getCredentialRuntime,
+  loadConfig,
   redact,
   runSharedFlight,
   subscriptionFlightKey,
@@ -350,5 +351,40 @@ export function registerSubscriptionRoutes(
         account: { provider: line.provider, id: line.id, ...(line.fields ?? {}) },
       });
     },
+  );
+
+  // 对齐参考项目 `GET|PUT|PATCH /quota-exceeded/switch-project`：
+  // 读回与写入都固定用 `{"switch-project": bool}`，PUT 收 `{"value": bool}`（参考项目
+  // 的 updateBoolField 就是这个形状），PATCH 是 PUT 的别名。
+  // 注意：这里**只落配置**，不实现任何切换行为 —— 参考项目本快照里该字段同样只被写入、
+  // 没有被读取（切换发生在 antigravity provider 内部），凭空造切换逻辑就是编造行为。
+  app.get('/api/subscription/quota-exceeded/switch-project', async () => ({
+    'switch-project': (await loadConfig()).quotaExceeded?.switchProject ?? false,
+  }));
+
+  const putSwitchProject = async (
+    req: FastifyRequest<{ Body: { value?: unknown; 'switch-project'?: unknown } }>,
+    reply: FastifyReply,
+  ): Promise<unknown> => {
+    const body = req.body ?? {};
+    // 优先认参考项目形状 `{value}`；`{"switch-project"}` 作为等价写法一并接受。
+    const value = typeof body.value === 'boolean' ? body.value : body['switch-project'];
+    if (typeof value !== 'boolean') {
+      return reply.code(400).send({ error: 'invalid body' });
+    }
+    await updateConfig((cfg) => ({
+      ...cfg,
+      quotaExceeded: { ...cfg.quotaExceeded, switchProject: value },
+    }));
+    return reply.send({ 'switch-project': value });
+  };
+
+  app.put<{ Body: { value?: unknown; 'switch-project'?: unknown } }>(
+    '/api/subscription/quota-exceeded/switch-project',
+    putSwitchProject,
+  );
+  app.patch<{ Body: { value?: unknown; 'switch-project'?: unknown } }>(
+    '/api/subscription/quota-exceeded/switch-project',
+    putSwitchProject,
   );
 }
