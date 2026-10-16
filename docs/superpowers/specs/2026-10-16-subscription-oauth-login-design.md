@@ -117,7 +117,7 @@
 |                  | Codex                               | Claude                                    | Google                                                                              |
 | ---------------- | ----------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------- |
 | 授权机制         | OAuth + **PKCE S256**               | OAuth + **PKCE S256**                     | OAuth **无 PKCE**（仅 state）                                                       |
-| 回调             | `127.0.0.1:1455/auth/callback`      | `127.0.0.1:54545/callback`                | `127.0.0.1:<动态>/oauth-callback`                                                   |
+| 回调             | `localhost:1455/auth/callback`      | `localhost:54545/callback`                | `localhost:51121/oauth-callback`                                                    |
 | 换 token 的 body | form-urlencoded                     | **JSON**（axios 风格头）                  | form-urlencoded                                                                     |
 | 登录后补取       | id_token JWT claims                 | `GET api.anthropic.com/api/oauth/profile` | `GET googleapis.com/oauth2/v2/userinfo`（email）＋ `FetchProjectID`（`project_id`） |
 | 展示字段         | 邮箱、**套餐 Plus/Pro**、account_id | 邮箱、**组织**、account_uuid、device_ids  | 邮箱、**GCP 项目 project_id**                                                       |
@@ -299,12 +299,15 @@
 3. **`switch-project` 走专用端点**（不是 §7 写的「复用 `/api/config`」）。依据：参考项目 `internal/api/server_management.go` 就注册了 `GET|PUT|PATCH /quota-exceeded/switch-project`；已批准的实施计划按参考实现改为专用端点，`PUT` 同时接受参考项目的 `{"value":bool}` 与计划里的 `{"switch-project":bool}`。
 4. **回调主机名 `localhost`**（不是 §3.3 写的 `127.0.0.1`）。依据：三家参考项目注册的 `redirect_uri` 都是 `http://localhost:<port><path>`，上游精确匹配，`127.0.0.1` 会真实失败；`listen` 不指定 host，Node 绑双栈 `::`。
 5. **Google 仍然只落配置**：`switch-project` 没有运行时消费点（参考项目本快照里同样只写不读），UI 开关背后不存在「编造出来的切换行为」。
+6. **CORS 预检的方法白名单**（验收期新增修复）：`@fastify/cors` 默认只广播 `GET,HEAD,POST`，而本波新增了 `PUT`/`PATCH`/`DELETE`。**真机表现是「点了没反应」**：取消登录不释放会话、`switch-project` 开关写不进去、移除账号无效。历史代码全用 GET/POST 所以从未暴露；而 `app.inject` 测试**不过预检**，全绿也守不住这一层。修法：显式声明 6 个方法 + 一条只走 `OPTIONS` 的回归用例。
+7. **网络失败的 `cause` 被吞掉**（验收期新增修复）：undici 的网络层失败一律抛泛泛的 `TypeError: fetch failed`，真正可行动的信息（连接超时 / DNS / 代理拒绝）在 `cause` 里。三家共 6 处改为 `describeFetchFailure()`。这是真实账号验收最可能卡住的一层，只报 `fetch failed` 等于没报。
 
 ### 13.4 验证
 
 - `pnpm format:check` → `pnpm lint` → `pnpm build:runtime` → `pnpm typecheck` → `pnpm test:coverage` 串行全绿。
-- 测试计数：core **824**、server **422**、ui **295**（26 文件）、cli **376**、zen **14**，全 0 失败。
-- 真实账号端到端（流式 + 非流式）与 R1 控制面探测：见交付说明（`~/.codex`、`~/.claude`、`~/.gemini` 在本机均无预置凭据，属预期 —— OAuth 交互登录不需要预登录官方 CLI）。
+- 测试计数：core **827**、server **423**、ui **295**（26 文件）、cli **376**、zen **14**，全 0 失败。
+- **真机浏览器端到端**（`pnpm dev:ui` + 真实 server，非 msw）：三家磁贴在设置页「来源」下渲染；打开 Codex 弹窗显示 `OAuth + PKCE S256` / `本机回调 localhost:1455/auth/callback` / 自动读取「邮箱、套餐、账号 ID」；点「打开浏览器登录」真的申请到端口并进入「等待授权中」，`auth-url` 返回的 URL 含 `redirect_uri=http://localhost:1455/auth/callback`、`prompt=login`、`code_challenge`；同家第二次申请 409；点「取消」→ 重新登录可以再次成功（未修 CORS 时这里会一直 409）；`switch-project` 开关点两下，服务端真值随之 `true` → `false`。
+- 真实账号端到端（流式 + 非流式）与 R1 控制面探测见 §11 与交付说明。
 
 ### 13.5 已知遗留（非目标外的额外记录）
 

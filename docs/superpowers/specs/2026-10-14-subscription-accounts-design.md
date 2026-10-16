@@ -266,7 +266,7 @@ UI（Next.js 设置页）：
 - **路由改名（破坏性，但 API 未发布）**：`/api/subscription/accounts` → `/api/subscription/credentials`；`POST /api/subscription/import` → `POST /api/subscription/credentials?provider=`（`{raw}` 或 `{path}`）；删除账号与刷新改为查询参数形态；新增 `oauth/*` 四端点与 `quota-exceeded/switch-project`。详见本文件 §4.4（已改写为当前实际路由）。
 - **UI 改写**：原先「三张磁贴共用一个粘贴框」的形态被**每家独立弹窗**取代（弹窗内 OAuth 登录 + 文件导入两条路）；账号列表、移除/刷新行为不变。
 - **落库路径统一**：OAuth 登录成功的账号与文件导入的账号走**同一条** `POST /credentials` 落库路径，不存在第二套写入逻辑。
-- **验证**：`format:check` → `lint` → `build:runtime` → `typecheck` → `test:coverage` 串行全绿；core **824**、server **422**、ui **295**（26 文件）、cli **376**、zen **14**，全 0 失败。
+- **验证**：`format:check` → `lint` → `build:runtime` → `typecheck` → `test:coverage` 串行全绿；core **827**、server **423**、ui **295**（26 文件）、cli **376**、zen **14**，全 0 失败。真机浏览器（`dev:ui` + 真实 server）已点通三家弹窗、OAuth 拉起、取消后重登、`switch-project` 开关；验收期还修掉两个只在真机才暴露的缺陷（CORS 预检漏 `PUT/PATCH/DELETE`、网络失败吞掉 `cause`），详见第二波 spec §13.3。
 - **仍未执行**：R1（三家真实控制面探测）与真实账号端到端 chat —— 本机 `~/.codex/auth.json`、`~/.claude/.credentials.json`、`~/.gemini/oauth_creds.json` 均不存在（第二波不再把它当前置，OAuth 交互登录不需要预先登录官方 CLI）。§11 的遗留项（冷却清除按钮、core redact 阈值、`/v1/models` 只透出布尔等）**维持不变**，第二波未触碰。
 
 ## 11. 遗留问题（不阻塞交付）
