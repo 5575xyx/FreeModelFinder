@@ -56,6 +56,12 @@ export {
 } from './credentials/adapters/subscription/index.js';
 export { generatePkce } from './credentials/oauth/pkce.js';
 export {
+  LoopbackPortBusyError,
+  startLoopbackListener,
+  type LoopbackCallback,
+  type LoopbackListenerOptions,
+} from './credentials/oauth/loopback.js';
+export {
   createOAuthSessionStore,
   OAUTH_SESSION_TTL_MS,
   OAuthSessionBusyError,
