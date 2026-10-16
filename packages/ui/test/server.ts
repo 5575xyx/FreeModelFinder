@@ -224,6 +224,9 @@ export const defaultHandlers = [
   ),
   http.get(`${gateway}/api/cline/accounts`, () => HttpResponse.json({ accounts: [] })),
   http.get(`${gateway}/api/subscription/credentials`, () => HttpResponse.json({ accounts: [] })),
+  http.get(`${gateway}/api/subscription/quota-exceeded/switch-project`, () =>
+    HttpResponse.json({ 'switch-project': false }),
+  ),
   http.post(`${gateway}/api/providers`, () => HttpResponse.json({ ok: true })),
   http.post(`${gateway}/api/gateway`, () =>
     HttpResponse.json({

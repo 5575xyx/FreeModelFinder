@@ -36,6 +36,8 @@ export type SubscriptionAccount = {
 
 // 路由形状对齐参考项目 v8：provider 一律走查询参数，凭据本体走 body。
 const accountsUrl = `${GATEWAY}/api/subscription/credentials`;
+// 参考项目 `GET|PUT|PATCH /quota-exceeded/switch-project`（我们挂在订阅命名空间下）。
+const switchProjectUrl = `${GATEWAY}/api/subscription/quota-exceeded/switch-project`;
 
 const REMOVE_ARM_MS = 5000;
 
@@ -69,6 +71,9 @@ export function SubscriptionAccountsPanel({ onChanged }: { onChanged?: () => voi
   const [refreshError, setRefreshError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [switchProject, setSwitchProject] = useState(false);
+  const [switchProjectBusy, setSwitchProjectBusy] = useState(false);
+  const [switchProjectError, setSwitchProjectError] = useState('');
 
   const aliveRef = useRef(true);
   const removeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -97,6 +102,57 @@ export function SubscriptionAccountsPanel({ onChanged }: { onChanged?: () => voi
       if (removeTimerRef.current) clearTimeout(removeTimerRef.current);
     };
   }, [refreshAccounts]);
+
+  // 额度超限自动切换 GCP 项目（参考项目 `quota-exceeded/switch-project`）。
+  // 只读配置项：服务端不消费它，真正的项目切换发生在 Google provider 内部。
+  const refreshSwitchProject = useCallback(async () => {
+    try {
+      const res = await fetch(switchProjectUrl, withUiHeaders());
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { 'switch-project'?: boolean };
+      if (!aliveRef.current) return;
+      setSwitchProject(data['switch-project'] === true);
+      setSwitchProjectError('');
+    } catch (error) {
+      // 读不出来就把失败摆出来：静默当成 false 会让用户以为它是关的。
+      if (aliveRef.current) setSwitchProjectError(redactSecrets(messageOf(error)));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSwitchProject();
+  }, [refreshSwitchProject]);
+
+  async function toggleSwitchProject(next: boolean): Promise<void> {
+    if (switchProjectBusy) return;
+    // 先乐观置位，失败再回滚 —— 开关必须立刻跟手，最终以服务端回包为准。
+    setSwitchProject(next);
+    setSwitchProjectBusy(true);
+    setSwitchProjectError('');
+    try {
+      const res = await fetch(
+        switchProjectUrl,
+        withUiHeaders({
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ 'switch-project': next }),
+        }),
+      );
+      const data = (await res.json().catch(() => null)) as {
+        'switch-project'?: boolean;
+        error?: string;
+      } | null;
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      if (!aliveRef.current) return;
+      setSwitchProject(data?.['switch-project'] === true);
+    } catch (error) {
+      if (!aliveRef.current) return;
+      setSwitchProject(!next);
+      setSwitchProjectError(redactSecrets(messageOf(error)));
+    } finally {
+      if (aliveRef.current) setSwitchProjectBusy(false);
+    }
+  }
 
   // 弹窗里登入/导入成功都会走到这里：面板自己的列表要立刻反映出来，
   // 同时把上层（设置页）的配置也刷新一遍。
@@ -244,6 +300,32 @@ export function SubscriptionAccountsPanel({ onChanged }: { onChanged?: () => voi
 
       <p className="text-[11px] text-warning">{t('settings.subscription.tos')}</p>
 
+      <div className="flex items-start gap-2 rounded-md border border-border bg-surface-muted/40 p-2.5">
+        <input
+          type="checkbox"
+          role="switch"
+          data-testid="subscription-switch-project"
+          checked={switchProject}
+          disabled={switchProjectBusy}
+          onChange={(event) => void toggleSwitchProject(event.target.checked)}
+          aria-label={t('settings.subscription.quotaExceeded.switchProject')}
+          className="mt-0.5 h-3.5 w-3.5 rounded border-input"
+        />
+        <span className="space-y-0.5">
+          <span className="block text-xs font-medium text-foreground">
+            {t('settings.subscription.quotaExceeded.switchProject')}
+          </span>
+          <span className="block text-[11px] text-muted-foreground">
+            {t('settings.subscription.quotaExceeded.switchProject.hint')}
+          </span>
+        </span>
+      </div>
+
+      {switchProjectError && (
+        <p className="text-xs text-destructive">
+          {t('settings.subscription.actionFailed', { err: switchProjectError })}
+        </p>
+      )}
       {loadFailed && (
         <p className="text-xs text-destructive">{t('settings.subscription.accounts.loadFailed')}</p>
       )}

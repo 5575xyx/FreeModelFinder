@@ -4,12 +4,13 @@ import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SubscriptionAccountsPanel } from '../SubscriptionAccountsPanel';
 import { gateway, server } from '../../../test/server';
-import { en, zh } from '../../i18n';
+import { I18nProvider, en, zh } from '../../i18n';
 
 const credentialsUrl = `${gateway}/api/subscription/credentials`;
 const authUrl = `${gateway}/api/subscription/oauth/auth-url`;
 const statusUrl = `${gateway}/api/subscription/oauth/status`;
 const sessionUrl = `${gateway}/api/subscription/oauth/session`;
+const switchProjectUrl = `${gateway}/api/subscription/quota-exceeded/switch-project`;
 
 const state = 'a'.repeat(43);
 
@@ -51,6 +52,7 @@ async function openDialog(
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.localStorage.removeItem('fmf-language');
 });
 
 describe('SubscriptionAccountsPanel tiles', () => {
@@ -248,6 +250,23 @@ describe('SubscriptionProviderDialog OAuth flow', () => {
     expect(screen.queryByText(/等待授权中/)).toBeNull();
   });
 
+  // 用户在授权页点了「拒绝」：服务端把 provider 回的 access_denied 原样带回来，
+  // UI 不该把这种明确的用户操作显示成一句英文报错。
+  it('renders a localized denial when the provider reports access_denied', async () => {
+    vi.stubGlobal('open', vi.fn());
+    server.use(
+      http.get(authUrl, () => HttpResponse.json({ status: 'ok', url: 'https://x/y', state })),
+      http.get(statusUrl, () => HttpResponse.json({ status: 'error', error: 'access_denied' })),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'google');
+    await user.click(screen.getByTestId('subscription-start-google'));
+
+    expect(await screen.findByText(/授权被拒绝/)).toBeTruthy();
+  });
+
   it('turns a busy callback port into a provider-scoped, actionable error', async () => {
     vi.stubGlobal('open', vi.fn());
     server.use(
@@ -420,6 +439,83 @@ describe('SubscriptionProviderDialog isolation', () => {
   });
 });
 
+describe('SubscriptionAccountsPanel quota-exceeded switch-project', () => {
+  it('reads the stored value and PUTs the new one through the switch', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(switchProjectUrl, () => HttpResponse.json({ 'switch-project': false })),
+      http.put(switchProjectUrl, async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        return HttpResponse.json({ 'switch-project': body['switch-project'] });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    const toggle = (await screen.findByRole('switch', {
+      name: '额度超限时自动切换 GCP 项目',
+    })) as HTMLInputElement;
+    // 初值来自服务端，不能假定 false
+    await waitFor(() => expect(toggle.checked).toBe(false));
+
+    await user.click(toggle);
+    await waitFor(() => expect(bodies).toEqual([{ 'switch-project': true }]));
+    await waitFor(() => expect(toggle.checked).toBe(true));
+  });
+
+  it('reflects an already-enabled server value on mount', async () => {
+    server.use(http.get(switchProjectUrl, () => HttpResponse.json({ 'switch-project': true })));
+    render(<SubscriptionAccountsPanel />);
+
+    const toggle = (await screen.findByRole('switch', {
+      name: '额度超限时自动切换 GCP 项目',
+    })) as HTMLInputElement;
+    await waitFor(() => expect(toggle.checked).toBe(true));
+  });
+
+  it('rolls the switch back and reports when the PUT fails', async () => {
+    server.use(
+      http.get(switchProjectUrl, () => HttpResponse.json({ 'switch-project': false })),
+      http.put(switchProjectUrl, () =>
+        HttpResponse.json({ error: 'invalid body' }, { status: 400 }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    const toggle = (await screen.findByRole('switch', {
+      name: '额度超限时自动切换 GCP 项目',
+    })) as HTMLInputElement;
+    await waitFor(() => expect(toggle.checked).toBe(false));
+
+    await user.click(toggle);
+
+    expect(await screen.findByText(/invalid body/)).toBeTruthy();
+    await waitFor(() => expect(toggle.checked).toBe(false));
+  });
+});
+
+describe('subscription copy', () => {
+  // 语言由 I18nProvider 在 effect 里落地，所以这里只等本地化文本出现，不假定首帧。
+  it.each(['zh', 'en'] as const)('renders the panel and a dialog in %s', async (language) => {
+    window.localStorage.setItem('fmf-language', language);
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <SubscriptionAccountsPanel />
+      </I18nProvider>,
+    );
+
+    const expectedTitle = language === 'zh' ? 'Codex 订阅账号' : 'Codex subscription account';
+    await user.click(await screen.findByTestId('subscription-connect-codex'));
+    expect(await screen.findByText(expectedTitle)).toBeTruthy();
+
+    // 缺翻译时会直接渲染原始 key —— 这里就是那道闸门
+    expect(document.body.textContent ?? '').not.toContain('settings.subscription.');
+  });
+});
+
 describe('SubscriptionAccountsPanel account list', () => {
   it('renders active and invalid badges from the account list', async () => {
     server.use(
@@ -567,7 +663,6 @@ describe('subscription i18n keys', () => {
     'settings.subscription.provider.codex',
     'settings.subscription.provider.claude',
     'settings.subscription.provider.google',
-    'settings.subscription.import',
     'settings.subscription.imported',
     'settings.subscription.importFailed',
     'settings.subscription.tos',
@@ -620,6 +715,9 @@ describe('subscription i18n keys', () => {
     'settings.subscription.oauth.error.portBusy',
     'settings.subscription.oauth.error.pending',
     'settings.subscription.oauth.error.state',
+    'settings.subscription.oauth.error.denied',
+    'settings.subscription.quotaExceeded.switchProject',
+    'settings.subscription.quotaExceeded.switchProject.hint',
   ];
 
   it('ships every subscription string in zh and en', () => {

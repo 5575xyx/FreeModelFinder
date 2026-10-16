@@ -45,6 +45,7 @@ function describeOAuthError(message: string, t: Translate): string {
   if (!message) return t('settings.subscription.oauth.error.state');
   if (message === 'timeout') return t('settings.subscription.oauth.error.timeout');
   if (message === 'session already pending') return t('settings.subscription.oauth.error.pending');
+  if (message.startsWith('access_denied')) return t('settings.subscription.oauth.error.denied');
   const busy = /^port (\d+) is already in use/.exec(message);
   if (busy) return t('settings.subscription.oauth.error.portBusy', { port: busy[1] ?? '' });
   if (

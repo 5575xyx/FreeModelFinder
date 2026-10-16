@@ -635,10 +635,6 @@ export const zh: Dict = {
   'settings.subscription.provider.codex': 'Codex',
   'settings.subscription.provider.claude': 'Claude',
   'settings.subscription.provider.google': 'Gemini',
-  'settings.subscription.pathLabel': '{provider} 凭据文件路径',
-  'settings.subscription.rawLabel': '或粘贴凭据内容',
-  'settings.subscription.rawPlaceholder': '粘贴 auth.json / 凭据文件的原始内容',
-  'settings.subscription.import': '导入',
   'settings.subscription.imported': '已导入 {label}，该账号已由 FMF 接管',
   'settings.subscription.importFailed': '导入失败：{err}',
   'settings.subscription.tos':
@@ -701,6 +697,10 @@ export const zh: Dict = {
     '本机端口 {port} 被占用：先关掉占用它的程序（通常是官方 CLI）再重试',
   'settings.subscription.oauth.error.pending': '该平台已有一个登录会话在进行中，请先完成或取消它',
   'settings.subscription.oauth.error.state': '登录会话已失效，请重新发起',
+  'settings.subscription.oauth.error.denied': '授权被拒绝：请在浏览器里点「允许」后重试',
+  'settings.subscription.quotaExceeded.switchProject': '额度超限时自动切换 GCP 项目',
+  'settings.subscription.quotaExceeded.switchProject.hint':
+    '仅影响 Gemini 订阅账号：某个项目的额度用尽时，改用同一账号下的其他 GCP 项目。',
 
   'imagegen.model': '选择图片模型',
   'imagegen.noModels': '暂无图片生成模型',
@@ -1395,11 +1395,6 @@ export const en: Dict = {
   'settings.subscription.provider.codex': 'Codex',
   'settings.subscription.provider.claude': 'Claude',
   'settings.subscription.provider.google': 'Gemini',
-  'settings.subscription.pathLabel': '{provider} credential file path',
-  'settings.subscription.rawLabel': 'Or paste credential content',
-  'settings.subscription.rawPlaceholder':
-    'Paste the raw contents of auth.json / the credential file',
-  'settings.subscription.import': 'Import',
   'settings.subscription.imported': 'Imported {label}. This account is now managed by FMF.',
   'settings.subscription.importFailed': 'Import failed: {err}',
   'settings.subscription.tos':
@@ -1466,6 +1461,11 @@ export const en: Dict = {
     'A sign-in session for this provider is already pending. Finish or cancel it first.',
   'settings.subscription.oauth.error.state':
     'The sign-in session is no longer valid. Please start again.',
+  'settings.subscription.oauth.error.denied':
+    'Authorization was denied. Approve the request in the browser and try again.',
+  'settings.subscription.quotaExceeded.switchProject': 'Switch GCP project when quota is exceeded',
+  'settings.subscription.quotaExceeded.switchProject.hint':
+    'Affects Gemini subscription accounts only: when one project runs out of quota, use another GCP project on the same account.',
 
   'imagegen.model': 'Select image model',
   'imagegen.noModels': 'No image models available',
