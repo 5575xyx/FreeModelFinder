@@ -25,8 +25,10 @@ describe('loopback OAuth callback listener', () => {
     const listener = await startLoopbackListener({ port: 0, path: '/oauth-callback' });
     try {
       const url = new URL(listener.redirectUri);
-      assert.equal(url.hostname, '127.0.0.1');
+      // 参考项目注册的 redirect_uri 主机名是 localhost（上游做精确匹配），不能用 127.0.0.1
+      assert.equal(url.hostname, 'localhost');
       assert.equal(url.pathname, '/oauth-callback');
+      assert.match(listener.redirectUri, /^http:\/\/localhost:\d+\/oauth-callback$/);
       assert.ok(Number(url.port) > 0, `expected a real port, got ${url.port}`);
     } finally {
       listener.close();

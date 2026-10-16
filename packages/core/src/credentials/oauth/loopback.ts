@@ -12,7 +12,7 @@ export interface LoopbackListenerOptions {
 }
 
 export interface LoopbackCallback {
-  /** 'http://127.0.0.1:<port><path>'，即要写进 OAuth authorize 请求的 redirect_uri。 */
+  /** 'http://localhost:<port><path>'，即要写进 OAuth authorize 请求的 redirect_uri。 */
   redirectUri: string;
   waitForCode(): Promise<{ code: string; state: string }>;
   close(): void;
@@ -121,14 +121,17 @@ export function startLoopbackListener(opts: LoopbackListenerOptions): Promise<Lo
       reject(error);
     });
 
-    server.listen(opts.port, '127.0.0.1', () => {
+    // 不指定 host：Node 会绑到 IPv6 通配 `::`（双栈），localhost 解析到 ::1 还是 127.0.0.1 都能连上。
+    // 参考项目也是绑 `:port`（Go 的 Addr: ":port"），但对外宣告的 redirect_uri 主机名固定是 localhost
+    // —— 上游对 redirect_uri 做精确匹配，写成 127.0.0.1 会被直接拒绝。
+    server.listen(opts.port, () => {
       const address = server.address();
       const actualPort = typeof address === 'object' && address !== null ? address.port : opts.port;
       timer = setTimeout(() => {
         abort(new Error(`OAuth callback timed out after ${timeoutMs}ms`));
       }, timeoutMs);
       resolve({
-        redirectUri: `http://127.0.0.1:${actualPort}${path}`,
+        redirectUri: `http://localhost:${actualPort}${path}`,
         waitForCode() {
           if (result !== null) return Promise.resolve(result);
           if (failure !== null) return Promise.reject(failure);
