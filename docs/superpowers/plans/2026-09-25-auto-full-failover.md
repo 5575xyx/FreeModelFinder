@@ -9,6 +9,7 @@
 **Tech Stack:** TypeScript, node:test, tsup, vitest (ui)。Spec: `docs/superpowers/specs/2026-09-25-auto-full-failover-design.md`
 
 **环境须知（每步遵守）:**
+
 - PowerShell 链接用 `; if ($?) { ... }`，禁用 `&&`；`rg` 不可用。
 - server 测试加载 core 的 `dist`——**core 改动后必须先** `pnpm --filter @freemodelfinder/core build`。
 - 禁止 build 与 typecheck 并行。
@@ -19,6 +20,7 @@
 ### Task 1: core `AutoRouter.rankCandidates`
 
 **Files:**
+
 - Create: `packages/core/src/router/__tests__/rank-candidates.test.ts`
 - Modify: `packages/core/src/router/auto-router.ts`（`pickFallback` 之后、`notify` 之前，约 :396）
 
@@ -62,7 +64,10 @@ describe('AutoRouter.rankCandidates', () => {
   });
 
   it('returns an empty list when auto route is disabled', async () => {
-    const harness = makeRouter([makeModel('alive-mini', 'custom')], makeSettings({ enabled: false }));
+    const harness = makeRouter(
+      [makeModel('alive-mini', 'custom')],
+      makeSettings({ enabled: false }),
+    );
     assert.deepEqual(await harness.router.rankCandidates(), []);
   });
 });
@@ -117,6 +122,7 @@ git commit -m "feat(core): rankCandidates for full-pool failover walks"
 ### Task 2: core 永久剔除标记 + `formatResetTime`
 
 **Files:**
+
 - Modify: `packages/core/src/router/auto-router.ts`（:28 常量、:291 默认值、:190 formatResetTime）
 - Modify: `packages/core/src/index.ts`（:19 导出）
 - Modify: `packages/core/src/router/__tests__/model-unavailable.test.ts`
@@ -132,13 +138,13 @@ import { formatResetTime, parseModelUnavailableError } from '../auto-router.js';
 第一个 `markModelUnavailable` 用例中把：
 
 ```ts
-    assert.ok(state.resetAt > Date.now(), 'cooldown expires in the future');
+assert.ok(state.resetAt > Date.now(), 'cooldown expires in the future');
 ```
 
 替换为：
 
 ```ts
-    assert.equal(state.resetAt, Number.POSITIVE_INFINITY, 'unavailable models are removed permanently');
+assert.equal(state.resetAt, Number.POSITIVE_INFINITY, 'unavailable models are removed permanently');
 ```
 
 文件末尾追加：
@@ -163,15 +169,15 @@ Expected: FAIL（resetAt 不是 Infinity；formatResetTime 返回 Invalid Date �
 
 - [ ] **Step 3: 实现三处**
 
-1) `auto-router.ts:28` 删除整行 `export const MODEL_UNAVAILABLE_COOLDOWN_MS = 10 * 60_000;`
+1. `auto-router.ts:28` 删除整行 `export const MODEL_UNAVAILABLE_COOLDOWN_MS = 10 * 60_000;`
 
-2) `markModelUnavailable` 内 `resetAt` 默认值改为永久：
+2. `markModelUnavailable` 内 `resetAt` 默认值改为永久：
 
 ```ts
       resetAt: resetAt ?? Number.POSITIVE_INFINITY,
 ```
 
-3) `formatResetTime` 开头补有限性判断：
+3. `formatResetTime` 开头补有限性判断：
 
 ```ts
 export function formatResetTime(resetAt: number | undefined): string {
@@ -183,9 +189,9 @@ export function formatResetTime(resetAt: number | undefined): string {
 }
 ```
 
-4) `packages/core/src/index.ts` 删除导出行 `MODEL_UNAVAILABLE_COOLDOWN_MS,`
+4. `packages/core/src/index.ts` 删除导出行 `MODEL_UNAVAILABLE_COOLDOWN_MS,`
 
-5) 确认无残留引用：`grep -rn "MODEL_UNAVAILABLE_COOLDOWN_MS" packages --include=*.ts` → 0 结果
+5. 确认无残留引用：`grep -rn "MODEL_UNAVAILABLE_COOLDOWN_MS" packages --include=*.ts` → 0 结果
 
 - [ ] **Step 4: 运行确认通过 + core 构建**
 
@@ -204,6 +210,7 @@ git commit -m "feat(core): permanently remove upstream-unavailable models from a
 ### Task 3: server 非流式全量 failover + 分类 + 穷尽报错
 
 **Files:**
+
 - Modify: `packages/core/src/types.ts`（:214 `SwitchNotice` 加 `cause`）
 - Modify: `packages/server/src/routes/openai.ts`（:1-27 import、:64-83 helper 区、:85-186 `dispatchWithAutoRoute`、:677 外层 catch）
 - Test: `packages/server/src/__tests__/model-unavailable-failover.test.ts`
@@ -451,15 +458,19 @@ describe('model-unavailable auto failover', () => {
 - [ ] **Step 4: 新增 5 个行为测试（同文件追加 describe）**
 
 ```ts
-const RATE_LIMIT_429 =
-  'custom stream failed 429: rate limit exceeded, retry later';
+const RATE_LIMIT_429 = 'custom stream failed 429: rate limit exceeded, retry later';
 const UPSTREAM_500 = 'custom stream failed 500: internal server error';
 const PARAM_400 =
   'custom stream failed 400: {"error":{"message":"temperature must be between 0 and 2","type":"invalid_request_error"}}';
 
 describe('full-pool failover semantics', () => {
   it('walks past the whole Top-3 down to a lower-ranked healthy model', async () => {
-    const dead = ['deepseek-v3.0-dead', 'deepseek-v3.1-dead', 'deepseek-v3.2-dead', 'deepseek-v3.3-dead'];
+    const dead = [
+      'deepseek-v3.0-dead',
+      'deepseek-v3.1-dead',
+      'deepseek-v3.2-dead',
+      'deepseek-v3.3-dead',
+    ];
     const failures = Object.fromEntries(dead.map((id) => [id, UNAVAILABLE_400]));
     const { app, seenModels } = await appWithPool({
       models: [...dead, 'alive-mini'],
@@ -656,7 +667,14 @@ function buildFailoverNotice(
       : kind === 'unavailable'
         ? `⚠️ 模型 "${failedKey}" 上游不可用，已永久剔除并自动切换到：${to}`
         : `⚠️ 模型 "${failedKey}" 上游请求失败，已自动切换到：${to}`;
-  return { type: 'switch-away', from: failedKey, to, strategy: router.getStrategy(), reason, cause };
+  return {
+    type: 'switch-away',
+    from: failedKey,
+    to,
+    strategy: router.getStrategy(),
+    reason,
+    cause,
+  };
 }
 ```
 
@@ -776,16 +794,16 @@ async function dispatchWithAutoRoute(
 `openai.ts` 非流式 handler 的 `catch (err)`（原 :677）中，`const msg = ...` 之后插入：
 
 ```ts
-          if (err instanceof CandidatesExhaustedError) {
-            record(req, t0, {
-              kind: 'chat',
-              ...resolvePM(reg, chatReq.model),
-              status: 'error',
-              httpStatus: 503,
-              error: msg,
-            });
-            return reply.code(503).send({ error: { message: msg, type: 'model_unavailable' } });
-          }
+if (err instanceof CandidatesExhaustedError) {
+  record(req, t0, {
+    kind: 'chat',
+    ...resolvePM(reg, chatReq.model),
+    status: 'error',
+    httpStatus: 503,
+    error: msg,
+  });
+  return reply.code(503).send({ error: { message: msg, type: 'model_unavailable' } });
+}
 ```
 
 - [ ] **Step 9: 运行新测试到绿**
@@ -811,6 +829,7 @@ git commit -m "feat(server): non-stream auto requests walk the whole ranked pool
 ### Task 4: server 流式全量 failover
 
 **Files:**
+
 - Modify: `packages/server/src/routes/openai.ts`（:722-889 流式段）
 - Test: `packages/server/src/__tests__/model-unavailable-failover.test.ts`
 
@@ -891,78 +910,78 @@ Expected: 新 3 个 + 既有"stream exhausted summary"共 4 个 FAIL，其余 PA
 
 流式段改动：
 
-1) :759 `let modelUnavailableRetries = 0;` 替换为：
+1. :759 `let modelUnavailableRetries = 0;` 替换为：
 
 ```ts
-      const seq = newFailoverSeq();
+const seq = newFailoverSeq();
 ```
 
-2) catch 内 vision 分支之后的整段（原 :825-884，unavailable 块 + rate-limit 块 + 报错尾巴）替换为：
+2. catch 内 vision 分支之后的整段（原 :825-884，unavailable 块 + rate-limit 块 + 报错尾巴）替换为：
 
 ```ts
-            const failure = classifyFailure(err);
-            const failedKey = `${provider.id}:${realModelId}`;
-            const isAutoReq = originalRequested === 'auto' || originalRequested === 'default';
-            const mark = () => {
-              if (failure.kind === 'unavailable') {
-                router.markModelUnavailable(realModelId, provider.id, failure.message);
-              } else if (failure.kind === 'rate-limit') {
-                router.markRateLimited(
-                  chatReq.model,
-                  extractProviderIdFromError(chatReq, reg) as ProviderId,
-                  parseRateLimitError(err),
-                );
-              }
-            };
+const failure = classifyFailure(err);
+const failedKey = `${provider.id}:${realModelId}`;
+const isAutoReq = originalRequested === 'auto' || originalRequested === 'default';
+const mark = () => {
+  if (failure.kind === 'unavailable') {
+    router.markModelUnavailable(realModelId, provider.id, failure.message);
+  } else if (failure.kind === 'rate-limit') {
+    router.markRateLimited(
+      chatReq.model,
+      extractProviderIdFromError(chatReq, reg) as ProviderId,
+      parseRateLimitError(err),
+    );
+  }
+};
 
-            let reportErr: unknown = err;
-            if (isAutoReq && router.isEnabled() && !wroteChunk && failure.kind !== 'request') {
-              const next = await advanceFailover(router, seq, failedKey, failure.kind, mark);
-              if (next) {
-                router.rememberPreference(originalRequested);
-                const notice = buildFailoverNotice(router, failure.kind, failedKey, next);
-                router.notify(notice);
-                reply.raw.write(
-                  `data: ${JSON.stringify({ fmf_route_notice: notice, id: 'fmf', object: 'chat.completion.chunk', choices: [] })}\n\n`,
-                );
-                chatReq.model = `${next.provider}:${next.id}`;
-                try {
-                  const resolved = reg.resolveModel(chatReq.model);
-                  provider = resolved.provider;
-                  realModelId = resolved.modelId;
-                  maxTokensRetried = false;
-                  continue;
-                } catch {
-                  // fall through to error reporting below
-                }
-              } else {
-                reportErr = new CandidatesExhaustedError(seq.attempts, seq.counts);
-              }
-            } else {
-              mark();
-            }
+let reportErr: unknown = err;
+if (isAutoReq && router.isEnabled() && !wroteChunk && failure.kind !== 'request') {
+  const next = await advanceFailover(router, seq, failedKey, failure.kind, mark);
+  if (next) {
+    router.rememberPreference(originalRequested);
+    const notice = buildFailoverNotice(router, failure.kind, failedKey, next);
+    router.notify(notice);
+    reply.raw.write(
+      `data: ${JSON.stringify({ fmf_route_notice: notice, id: 'fmf', object: 'chat.completion.chunk', choices: [] })}\n\n`,
+    );
+    chatReq.model = `${next.provider}:${next.id}`;
+    try {
+      const resolved = reg.resolveModel(chatReq.model);
+      provider = resolved.provider;
+      realModelId = resolved.modelId;
+      maxTokensRetried = false;
+      continue;
+    } catch {
+      // fall through to error reporting below
+    }
+  } else {
+    reportErr = new CandidatesExhaustedError(seq.attempts, seq.counts);
+  }
+} else {
+  mark();
+}
 
-            const msg = reportErr instanceof Error ? reportErr.message : String(reportErr);
-            const { status, httpStatus } = classifyStatus(reportErr);
-            record(req, t0, {
-              kind: 'chat',
-              ...resolvePM(reg, chatReq.model),
-              status,
-              httpStatus,
-              error: msg,
-            });
-            reply.raw.write(
-              `data: ${JSON.stringify({
-                error: {
-                  message: msg,
-                  type:
-                    reportErr instanceof CandidatesExhaustedError
-                      ? 'model_unavailable'
-                      : streamErrorType(msg, reportErr),
-                },
-              })}\n\n`,
-            );
-            break;
+const msg = reportErr instanceof Error ? reportErr.message : String(reportErr);
+const { status, httpStatus } = classifyStatus(reportErr);
+record(req, t0, {
+  kind: 'chat',
+  ...resolvePM(reg, chatReq.model),
+  status,
+  httpStatus,
+  error: msg,
+});
+reply.raw.write(
+  `data: ${JSON.stringify({
+    error: {
+      message: msg,
+      type:
+        reportErr instanceof CandidatesExhaustedError
+          ? 'model_unavailable'
+          : streamErrorType(msg, reportErr),
+    },
+  })}\n\n`,
+);
+break;
 ```
 
 注意保持其上的 max_tokens 分支、vision 分支原样不动；catch 内 `parseModelUnavailableError`/`parseRateLimitError` 旧 import 仍被 helper 使用，无需删。
@@ -989,6 +1008,7 @@ git commit -m "feat(server): stream auto requests walk the whole ranked pool"
 ### Task 5: UI 永久剔除显示
 
 **Files:**
+
 - Modify: `packages/ui/app/components/SettingsView.tsx`（:1408-1411）
 - Modify: `packages/ui/app/i18n.tsx`（:244 zh、:717 en）
 
@@ -1011,9 +1031,11 @@ en 块（`'settings.autoRoute.cooldown.reset': 'Reset: ',` 行后）加：
 `SettingsView.tsx` 冷却列表 span 内 `new Date(c.resetAt).toLocaleString()` 替换为：
 
 ```tsx
-                        {Number.isFinite(c.resetAt)
-                          ? new Date(c.resetAt).toLocaleString()
-                          : t('settings.autoRoute.cooldown.permanent')}
+{
+  Number.isFinite(c.resetAt)
+    ? new Date(c.resetAt).toLocaleString()
+    : t('settings.autoRoute.cooldown.permanent');
+}
 ```
 
 （JSON 会把 `Infinity` 序列化为 `null`；`Number.isFinite(null)` 为 false，同一分支覆盖两种表示。"清除冷却"按钮走既有 `clearCooldown`，可手动恢复永久剔除。）
@@ -1037,17 +1059,21 @@ git commit -m "feat(ui): show permanently removed models in the cooldown list"
 - [ ] **Step 1: 格式化本次全部改动文件**
 
 Run:
+
 ```bash
 npx prettier --write 'packages/core/src/router/auto-router.ts' 'packages/core/src/router/__tests__/rank-candidates.test.ts' 'packages/core/src/router/__tests__/model-unavailable.test.ts' 'packages/core/src/index.ts' 'packages/core/src/types.ts' 'packages/server/src/routes/openai.ts' 'packages/server/src/__tests__/model-unavailable-failover.test.ts' 'packages/ui/app/components/SettingsView.tsx' 'packages/ui/app/i18n.tsx'
 ```
+
 Expected: 无报错
 
 - [ ] **Step 2: ESLint 零警告**
 
 Run:
+
 ```bash
 npx eslint 'packages/core/src/router/auto-router.ts' 'packages/core/src/router/__tests__/rank-candidates.test.ts' 'packages/core/src/router/__tests__/model-unavailable.test.ts' 'packages/core/src/index.ts' 'packages/core/src/types.ts' 'packages/server/src/routes/openai.ts' 'packages/server/src/__tests__/model-unavailable-failover.test.ts' 'packages/ui/app/components/SettingsView.tsx' 'packages/ui/app/i18n.tsx' --max-warnings=0
 ```
+
 Expected: 无输出（0 problems）
 
 - [ ] **Step 3: 构建 + 类型检查（严格串行）**
@@ -1058,9 +1084,11 @@ Expected: 全部 Done，无 TS 错误
 - [ ] **Step 4: 三包全量测试**
 
 Run:
+
 ```bash
 pnpm --filter @freemodelfinder/core test; if ($?) { pnpm --filter @freemodelfinder/server test }
 ```
+
 Run: `pnpm --filter @freemodelfinder/ui test`
 Expected: 全 PASS
 
@@ -1071,6 +1099,7 @@ git status -s
 git add -A packages/
 git commit -m "chore: formatting and lint cleanups for full-pool failover"
 ```
+
 （若 Step 1-4 无 diff 则跳过。）
 
 ---

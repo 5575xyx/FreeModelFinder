@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createNodeHttpClient } from '../http.js';
 import { parseProxyList } from '../proxy/spec.js';
-import { ZenKeyPool, ZenAnonymousPool, type ZenProxyTransport } from '../gateway/pool.js';
+import { ZenKeyPool, ZenAnonymousPool } from '../gateway/pool.js';
 import { FIRST_EVENT_TIMEOUT_CODE, PhasedError } from '../gateway/first-event.js';
 import { isProxyFailure } from '../gateway/upstream.js';
 import {

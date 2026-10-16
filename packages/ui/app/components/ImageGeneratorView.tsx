@@ -35,10 +35,7 @@ export function ImageGeneratorView({
     [models],
   );
 
-  const selectedModel = useMemo(
-    () => models.find((m) => modelValue(m) === model),
-    [models, model],
-  );
+  const selectedModel = useMemo(() => models.find((m) => modelValue(m) === model), [models, model]);
 
   const isImageModel = selectedModel?.capabilities?.includes('image') ?? false;
 
@@ -48,14 +45,11 @@ export function ImageGeneratorView({
     setError('');
 
     try {
-      const response = await fetch(
-        `${GATEWAY}/v1/images/generations`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, prompt: prompt.trim(), size, n: 1 }),
-        },
-      );
+      const response = await fetch(`${GATEWAY}/v1/images/generations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, prompt: prompt.trim(), size, n: 1 }),
+      });
 
       if (!response.ok) {
         const detail = await response.text().catch(() => '');
@@ -106,9 +100,7 @@ export function ImageGeneratorView({
               disabled={imageModels.length === 0}
               className="h-11 w-full rounded-xl border border-input bg-surface px-3 text-sm font-medium text-foreground shadow-sm outline-none transition focus:border-ring focus:ring-4 focus:ring-ring/10 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {imageModels.length === 0 && (
-                <option value="">{t('imagegen.noModels')}</option>
-              )}
+              {imageModels.length === 0 && <option value="">{t('imagegen.noModels')}</option>}
               {imageModels.map((item) => (
                 <option key={modelValue(item)} value={modelValue(item)}>
                   {item.provider} · {item.display_name ?? item.id}
@@ -156,9 +148,13 @@ export function ImageGeneratorView({
           {images.length > 0 && (
             <div className="grid gap-4 sm:grid-cols-2">
               {images.map((img, index) => {
-                const src = img.url || (img.b64_json ? `data:image/png;base64,${img.b64_json}` : '');
+                const src =
+                  img.url || (img.b64_json ? `data:image/png;base64,${img.b64_json}` : '');
                 return (
-                  <div key={`${img.model}-${index}`} className="group rounded-2xl border border-border bg-surface overflow-hidden">
+                  <div
+                    key={`${img.model}-${index}`}
+                    className="group rounded-2xl border border-border bg-surface overflow-hidden"
+                  >
                     <div className="relative aspect-square bg-surface-muted">
                       {src ? (
                         <img
@@ -204,7 +200,9 @@ export function ImageGeneratorView({
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-border bg-surface">
                 <Image className="text-muted-foreground" size={20} />
               </div>
-              <h2 className="mt-4 text-base font-semibold text-foreground">{t('imagegen.empty.title')}</h2>
+              <h2 className="mt-4 text-base font-semibold text-foreground">
+                {t('imagegen.empty.title')}
+              </h2>
               <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
                 {t('imagegen.empty.body')}
               </p>

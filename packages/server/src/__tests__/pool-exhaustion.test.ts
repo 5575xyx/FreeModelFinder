@@ -131,7 +131,7 @@ async function gemini(app: FastifyInstance) {
   });
 }
 
-describe('an exhausted pool reports exhaustion, not the first candidate\'s error', () => {
+describe("an exhausted pool reports exhaustion, not the first candidate's error", () => {
   it('OpenAI chat: 503 model_unavailable carrying both candidates and the hint', async () => {
     const res = await openai(await allDownApp());
 
@@ -152,8 +152,7 @@ describe('an exhausted pool reports exhaustion, not the first candidate\'s error
     assert.equal(res.statusCode, 200);
     assert.match(res.headers['content-type'] as string, /text\/event-stream/);
     const frame = ssePayloads(res.body).find((p) => p.error) as
-      | { error: { type: string; message: string; retry_after?: number } }
-      | undefined;
+      { error: { type: string; message: string; retry_after?: number } } | undefined;
     assert.ok(frame, `expected a streaming error event, got ${res.body}`);
     assert.equal(frame.error.type, 'model_unavailable');
     assert.equal(frame.error.retry_after, 45);
@@ -175,8 +174,7 @@ describe('an exhausted pool reports exhaustion, not the first candidate\'s error
 
     assert.equal(res.statusCode, 200);
     const frame = ssePayloads(res.body).find((p) => p.error) as
-      | { error: { type: string; retry_after?: number } }
-      | undefined;
+      { error: { type: string; retry_after?: number } } | undefined;
     assert.ok(frame, `expected a streaming error event, got ${res.body}`);
     assert.equal(frame.error.type, 'model_unavailable');
     assert.equal(frame.error.retry_after, 45);
@@ -193,7 +191,9 @@ describe('an exhausted pool reports exhaustion, not the first candidate\'s error
   });
 
   it('Gemini streamGenerateContent: model_unavailable with retry_after', async () => {
-    const res = await (await allDownApp()).inject({
+    const res = await (
+      await allDownApp()
+    ).inject({
       method: 'POST',
       url: '/v1beta/models/auto:streamGenerateContent',
       payload: { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
@@ -201,8 +201,7 @@ describe('an exhausted pool reports exhaustion, not the first candidate\'s error
 
     assert.equal(res.statusCode, 200);
     const frame = ssePayloads(res.body).find((p) => p.error) as
-      | { error: { type: string; retry_after?: number } }
-      | undefined;
+      { error: { type: string; retry_after?: number } } | undefined;
     assert.ok(frame, `expected a streaming error event, got ${res.body}`);
     assert.equal(frame.error.type, 'model_unavailable');
     assert.equal(frame.error.retry_after, 45);
@@ -211,7 +210,9 @@ describe('an exhausted pool reports exhaustion, not the first candidate\'s error
 
 describe('an explicit model keeps its own error semantics', () => {
   it('a rate-limited explicit model is not reported as pool exhaustion', async () => {
-    const res = await (await allDownApp()).inject({
+    const res = await (
+      await allDownApp()
+    ).inject({
       method: 'POST',
       url: '/v1/chat/completions',
       payload: { model: 'custom:fx:fast', messages: MESSAGES },

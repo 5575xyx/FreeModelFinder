@@ -462,7 +462,7 @@ describe('gateway key model allowlist', () => {
     assert.deepEqual(hooks.dispatchLog, ['fx:fast']);
   });
 
-  it('never picks outside a restricted key\'s allowlist when auto-routing', async () => {
+  it("never picks outside a restricted key's allowlist when auto-routing", async () => {
     // The catalog also holds openrouter:gpt-4o-mini, which is NOT on this key's
     // list. With `fx:fast` cooling, `fx:plain` is the only eligible model — an
     // unconstrained pick would happily reach for the openrouter model instead.
@@ -486,7 +486,7 @@ describe('gateway key model allowlist', () => {
     );
   });
 
-  it('keeps the pool walk inside a restricted key\'s allowlist', async () => {
+  it("keeps the pool walk inside a restricted key's allowlist", async () => {
     // No pre-request cooldown: `fx:fast` is picked, the provider 429s, and the
     // whole-pool walk has to stay inside the list rather than stepping onto the
     // openrouter model that `auto` would normally consider.
@@ -508,7 +508,7 @@ describe('gateway key model allowlist', () => {
     assert.ok(!hooks.dispatchLog.includes('gpt-4o-mini'), 'the walk must not leave the list');
   });
 
-  it('fails clearly when a restricted key\'s allowlist admits no model', async () => {
+  it("fails clearly when a restricted key's allowlist admits no model", async () => {
     // The only allowed model is cooling, so `auto` has nothing legal to serve.
     // It must NOT fall through to the first catalog model — that is the bypass.
     const hooks = { dispatchLog: [] as string[] };
@@ -543,10 +543,7 @@ describe('gateway key model allowlist', () => {
     const appDenied = await appWith(withoutDefault);
     const denied = await chat(appDenied, 'default');
     assert.equal(denied.statusCode, 403, JSON.stringify(denied.json()));
-    assert.equal(
-      (denied.json() as { error: { code: string } }).error.code,
-      'model_not_allowed',
-    );
+    assert.equal((denied.json() as { error: { code: string } }).error.code, 'model_not_allowed');
   });
 
   it('keeps automatic routing working for an unrestricted key', async () => {

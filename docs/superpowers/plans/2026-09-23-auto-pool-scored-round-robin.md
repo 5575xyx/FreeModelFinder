@@ -12,12 +12,12 @@
 
 ## 文件结构
 
-| 文件 | 职责 |
-|------|------|
-| `packages/core/src/registry.ts` | `resolveModel` auto 分支 + `pickFromScoredPool()` + 模块级 `autoPoolCursor` |
-| `packages/core/src/registry/__tests__/registry.test.ts` | auto 池单测 |
-| `packages/server/src/routes/openai.ts` | 响应附加 `fmf_auto_route`（仅 auto 文本路径命中池时） |
-| `packages/server/src/routes/__tests__/auto-modality.test.ts` | 集成：连续两次 auto 请求轮询 + `fmf_auto_route` |
+| 文件                                                         | 职责                                                                        |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `packages/core/src/registry.ts`                              | `resolveModel` auto 分支 + `pickFromScoredPool()` + 模块级 `autoPoolCursor` |
+| `packages/core/src/registry/__tests__/registry.test.ts`      | auto 池单测                                                                 |
+| `packages/server/src/routes/openai.ts`                       | 响应附加 `fmf_auto_route`（仅 auto 文本路径命中池时）                       |
+| `packages/server/src/routes/__tests__/auto-modality.test.ts` | 集成：连续两次 auto 请求轮询 + `fmf_auto_route`                             |
 
 设计文档：`docs/superpowers/specs/2026-09-23-auto-pool-scored-round-robin-design.md`
 
@@ -26,10 +26,12 @@
 ### Task 1: RED — auto 打分池单测（失败测试先行）
 
 **Files:**
+
 - Modify: `packages/core/src/registry/__tests__/registry.test.ts`
 
 **背景（给零上下文的实现者）：**
 `resolveModel` 在 `packages/core/src/registry.ts:275`。当前 `auto` 分支（276-293）：
+
 1. `defaultModel` 有效 → `resolveModel(defaultModel)`（**Task 2 会把这段移到 `default` 专用分支**）
 2. 否则取 `modelsCache.models[0]`
 3. 无缓存 → 抛错
@@ -169,6 +171,7 @@ describe('ProviderRegistry auto scored pool', () => {
 ```powershell
 pnpm --filter @freemodelfinder/core test
 ```
+
 预期：4 个新用例 FAIL（auto 仍走第一个模型 `tiny-3b`，轮询/打分/跳过行为未实现），既有 148 用例不变。
 
 - [ ] **Step 3: 提交测试（TDD 记录点）**
@@ -183,6 +186,7 @@ git commit -m "test(core): auto scored pool expectations (red)"
 ### Task 2: GREEN — resolveModel auto 打分池 + default 语义拆分
 
 **Files:**
+
 - Modify: `packages/core/src/registry.ts`（`resolveModel` 275-293 + 新增方法与模块级游标）
 - Modify: `packages/core/src/registry/__tests__/registry.test.ts`（补 `default` 回归用例 + auto 池游标重置辅助）
 
@@ -269,13 +273,12 @@ if (modelId === 'auto' || modelId === 'default') {
     const first = cached[0]!;
     return { provider: this.getProvider(first.provider), modelId: first.id };
   }
-  throw new Error(
-    'no default model available; set a default model or wait for /v1/models to load',
-  );
+  throw new Error('no default model available; set a default model or wait for /v1/models to load');
 }
 ```
 
 语义总结：
+
 - `default` → defaultModel 优先，否则第一兜底（与现状一致，只是不再碰打分池）
 - `auto` → 打分池轮询优先，池空/无缓存 → 第一兜底（现状兜底保留）
 - 注意：`auto` **不再**优先 defaultModel（设计决策：auto 纯打分轮询）
@@ -290,6 +293,7 @@ if (modelId === 'auto' || modelId === 'default') {
 ```ts
 import { ProviderRegistry, resetAutoPoolCursor } from '../../registry.js';
 ```
+
 并在 `registry.ts` 导出 `resetAutoPoolCursor`。
 
 - [ ] **Step 2: 追加 `default` 回归用例**
@@ -317,6 +321,7 @@ it('default resolves defaultModel first (regression)', async () => {
 ```powershell
 pnpm --filter @freemodelfinder/core test
 ```
+
 预期：全绿。若既有 `selectOnboardingModel` 等用例因 `resolveModel` 变化失败，逐个分析（onboarding 有自己的 selectOnboardingModel，不应受影响）。
 
 - [ ] **Step 5: 格式 + lint + 提交**
@@ -333,6 +338,7 @@ git commit -m "feat(core): auto resolves via strategy-scored top-3 pool with rou
 ### Task 3: 集成 — auto 响应附加 fmf_auto_route + 轮询验证
 
 **Files:**
+
 - Modify: `packages/server/src/routes/openai.ts`（auto 文本路径 payload 附加字段）
 - Modify: `packages/server/src/routes/__tests__/auto-modality.test.ts`（集成用例）
 
@@ -359,12 +365,16 @@ it('auto text request round-robins across the scored pool and reports fmf_auto_r
   await withApp(
     {
       autoRoute: { enabled: false, strategy: 'capability' },
-      models: [textOnlyModel, capabilityImageModel, {
-        id: 'another-text-1',
-        provider: 'custom',
-        displayName: 'Another',
-        free: true,
-      }],
+      models: [
+        textOnlyModel,
+        capabilityImageModel,
+        {
+          id: 'another-text-1',
+          provider: 'custom',
+          displayName: 'Another',
+          free: true,
+        },
+      ],
     },
     async (app) => {
       resetModalityCursors?.(); // 若无此辅助则跳过；本用例不涉模态
@@ -388,6 +398,7 @@ it('auto text request round-robins across the scored pool and reports fmf_auto_r
 ```
 
 注意：
+
 - `你好` 是纯文本（不触发模态分支）
 - 该 fixture 的 resolveModel 被覆写为固定返回（modalityRegistry 里 `registry.resolveModel = ...`），需要在新用例中**不覆写** resolveModel 或改为委托真实实现：`registry.resolveModel = (id: string) => { if (id === 'auto' || id === 'default') return realResolve(id); ... }`。检查 `withApp`/`modalityRegistry` 是否强制覆写（registry.ts 现有 fixture 覆写了 resolveModel + listAllModels）——若覆写死，则本用例改用直接 `new ProviderRegistry` + `createServer({ registry })` 的新 fixture（参考 auto-route-round-robin.test.ts 的 `rrRegistry` 风格，保留真实 resolveModel，仅覆写 provider 实例）。
 - 响应 `model` 字段在 payload 上是 `finalModel`（完整 `provider:model` 形式，见 openai.ts:522 `payload.model = finalModel`）。

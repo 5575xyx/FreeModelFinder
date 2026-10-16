@@ -173,6 +173,6 @@ export interface GatewayKeyEntry {
 - 新增的 key 解析函数放在 `packages/server/src/routes/openai.ts`
   `resolveGatewayKeyId` 旁边（`extractBearer` / `keyMatches` 也在这一簇）。
 - 需要 core 重新 `pnpm build:runtime`，否则 server 侧报 `is not a
-  function`——那是构建产物过期，不是代码问题。
+function`——那是构建产物过期，不是代码问题。
 - Windows 上 `prettier --check` 因 CRLF 全仓报警，属历史遗留；不要为行尾
   跑 `--write` 整个大文件。

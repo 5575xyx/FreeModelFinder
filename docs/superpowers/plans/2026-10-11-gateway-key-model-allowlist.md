@@ -10,18 +10,21 @@ TDD + 两阶段审查（规格符合性 → 代码质量）。
 ## Task 1：server 端白名单强制（核心行为）
 
 **Files**
+
 - Modify `packages/core/src/types.ts`
 - Modify `packages/server/src/routes/openai.ts`
 - Modify `packages/server/src/server.ts`
 - Create `packages/server/src/__tests__/gateway-allowlist.test.ts`
 
 **Step 1** `GatewayKeyEntry` 加字段：
+
 ```ts
   /** Composed real model ids this key may access. Omit or [] = unrestricted. */
   modelAllowlist?: string[];
 ```
 
 **Step 2** `openai.ts`，在 `resolveGatewayKeyId`（第 53 行）旁加：
+
 - `resolveGatewayKey(reg, req): GatewayKeyEntry | undefined` —— 把现有
   `resolveGatewayKeyId` 的循环体抽出返回整个 entry，`resolveGatewayKeyId`
   改为它的薄封装（`return entry?.id`）。
@@ -34,21 +37,31 @@ TDD + 两阶段审查（规格符合性 → 代码质量）。
   4. 否则返回越权文案（列出允许的模型）
 
 **Step 3** `GET /v1/models`（openai.ts:473）在别名替换前过滤：
+
 ```ts
 const allowlist = keyModelAllowlist(resolveGatewayKey(reg, _req));
 const visible = allowlist
   ? models.filter((m) => allowlist.has(composeModelId(m.provider, m.id)))
   : models;
 ```
+
 `data:` 用 `visible`，`fmf` 块保持原样。
 
 **Step 4** `server.ts` preHandler，在日限额块（559-579）之后：
+
 ```ts
 const violation = modelAllowlistViolation(
-  getRegistry(), matchedKey, extractGatewayModel(url, req.body),
+  getRegistry(),
+  matchedKey,
+  extractGatewayModel(url, req.body),
 );
-if (violation) { return reply.code(403).send({ error: { message: violation, type: 'permission_error', code: 'model_not_allowed' } }); }
+if (violation) {
+  return reply
+    .code(403)
+    .send({ error: { message: violation, type: 'permission_error', code: 'model_not_allowed' } });
+}
 ```
+
 `extractGatewayModel(url, body)`：chat/messages/images/videos 取
 `body.model`；`/v1beta/models/:model:generateContent` 从 path 取；
 `/v1/videos/status|proxy` 和其他 → `null`（跳过）。
@@ -56,6 +69,7 @@ if (violation) { return reply.code(403).send({ error: { message: violation, type
 **Step 5** 测试 `gateway-allowlist.test.ts`，复用 model-aliases.test.ts 的
 `appWith` 脚手架（`ProviderRegistry` + 假 provider + `createServer`）。
 覆盖：
+
 1. 未配置白名单 → `/v1/models` 返回全部，行为与现在一致
 2. 白名单 1 个模型 → `/v1/models` 只返回它
 3. 白名单命中空目录 → `data: []`（不 500）
@@ -75,6 +89,7 @@ if (violation) { return reply.code(403).send({ error: { message: violation, type
 ## Task 2：管理 API
 
 **Files**
+
 - Modify `packages/server/src/server.ts`（`GET`/`POST /api/gateway`，1648-1772）
 - Append tests 到 `gateway-allowlist.test.ts`
 
@@ -85,6 +100,7 @@ if (violation) { return reply.code(403).send({ error: { message: violation, type
   - `update`：传入（含 `[]`）→ 覆盖；不传 → 保持不变
 
 测试：
+
 1. GET 返回 `modelAllowlist: []` 当未配置
 2. create 带 `modelAllowlist` → 持久化并回显
 3. create 带脏数据（数字、空串、重复）→ 过滤去重
@@ -97,6 +113,7 @@ if (violation) { return reply.code(403).send({ error: { message: violation, type
 ## Task 3：UI
 
 **Files**
+
 - Modify `packages/ui/app/components/SettingsView.tsx`
 - Modify `packages/ui/app/i18n.tsx`
 - Modify `packages/ui/test/server.ts`
@@ -112,6 +129,7 @@ if (violation) { return reply.code(403).send({ error: { message: violation, type
 - `test/server.ts` 的 `/api/gateway` handler 返回补 `modelAllowlist: []`
 
 测试：
+
 1. 未配置白名单的 key 显示「全部」
 2. 展开编辑器，从下拉加一个模型，保存 → POST payload 含 `modelAllowlist`
 3. 移除已选模型，保存 → POST 空数组

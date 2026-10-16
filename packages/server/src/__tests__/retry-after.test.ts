@@ -23,9 +23,7 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-const CATALOG = [
-  { id: 'fx:fast', provider: 'custom' as const, displayName: 'Fast', free: true },
-];
+const CATALOG = [{ id: 'fx:fast', provider: 'custom' as const, displayName: 'Fast', free: true }];
 
 function baseConfig(): AppConfig {
   return {
@@ -138,13 +136,15 @@ async function gemini(
 
 /** The `data:` payloads of an SSE body, in order. */
 function ssePayloads(body: string): Array<Record<string, unknown>> {
-  return body
-    .split(/\r?\n\r?\n/)
-    // Anthropic prefixes its error frame with an `event:` line.
-    .map((frame) => frame.replace(/^event:[^\n]*\n/, ''))
-    .map((frame) => (frame.startsWith('data: ') ? frame.slice('data: '.length).trim() : ''))
-    .filter((json) => json.startsWith('{'))
-    .map((json) => JSON.parse(json) as Record<string, unknown>);
+  return (
+    body
+      .split(/\r?\n\r?\n/)
+      // Anthropic prefixes its error frame with an `event:` line.
+      .map((frame) => frame.replace(/^event:[^\n]*\n/, ''))
+      .map((frame) => (frame.startsWith('data: ') ? frame.slice('data: '.length).trim() : ''))
+      .filter((json) => json.startsWith('{'))
+      .map((json) => JSON.parse(json) as Record<string, unknown>)
+  );
 }
 
 describe('OpenAI Retry-After passthrough', () => {
@@ -200,8 +200,7 @@ describe('OpenAI Retry-After passthrough', () => {
     assert.equal(res.statusCode, 200);
     assert.match(res.headers['content-type'] as string, /text\/event-stream/);
     const frame = ssePayloads(res.body).find((p) => p.error) as
-      | { error: { type: string; retry_after?: number } }
-      | undefined;
+      { error: { type: string; retry_after?: number } } | undefined;
     assert.ok(frame, `expected a streaming error event, got ${res.body}`);
     assert.equal(frame.error.retry_after, 45);
   });
@@ -223,8 +222,7 @@ describe('Anthropic Retry-After passthrough', () => {
 
     assert.equal(res.statusCode, 200);
     const frame = ssePayloads(res.body).find((p) => p.error) as
-      | { error: { type: string; retry_after?: number } }
-      | undefined;
+      { error: { type: string; retry_after?: number } } | undefined;
     assert.ok(frame, `expected a streaming error event, got ${res.body}`);
     assert.equal(frame.error.retry_after, 45);
   });
@@ -248,15 +246,14 @@ describe('Gemini Retry-After passthrough', () => {
 
     assert.equal(res.statusCode, 200);
     const frame = ssePayloads(res.body).find((p) => p.error) as
-      | { error: { type: string; retry_after?: number } }
-      | undefined;
+      { error: { type: string; retry_after?: number } } | undefined;
     assert.ok(frame, `expected a streaming error event, got ${res.body}`);
     assert.equal(frame.error.retry_after, 45);
   });
 });
 
 describe('no fabricated hints', () => {
-  it('an exhausted pool reports the last candidate\'s real hint, not a guess', async () => {
+  it("an exhausted pool reports the last candidate's real hint, not a guess", async () => {
     // The exhaustion message itself contains the words "rate-limited", so a hint
     // derived by reading that message would be a coincidence rather than a
     // measurement. The value must come from the failure the router actually saw.

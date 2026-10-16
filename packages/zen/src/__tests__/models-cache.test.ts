@@ -11,7 +11,9 @@ describe('zen json cache', () => {
     try {
       const path = join(dir, 'catalog.json');
       await writeJsonCache(path, { updatedAt: 1, models: { a: true } });
-      const loaded = await readJsonCache<{ updatedAt: number; models: Record<string, boolean> }>(path);
+      const loaded = await readJsonCache<{ updatedAt: number; models: Record<string, boolean> }>(
+        path,
+      );
       assert.deepEqual(loaded, { updatedAt: 1, models: { a: true } });
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -63,7 +65,10 @@ describe('zen json cache', () => {
       const path = join(dir, 'clean.json');
       await writeJsonCache(path, { v: 1 });
       const entries = await readdir(dir);
-      assert.deepEqual(entries.filter((name) => name.endsWith('.tmp')), []);
+      assert.deepEqual(
+        entries.filter((name) => name.endsWith('.tmp')),
+        [],
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

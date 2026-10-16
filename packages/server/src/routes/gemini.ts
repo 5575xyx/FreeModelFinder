@@ -89,14 +89,25 @@ async function handleGenerate(
         if (failure.kind === 'unavailable') {
           router.markModelUnavailable(chatReq.model, provider.id as ProviderId, failure.message);
         } else if (failure.kind === 'rate-limit') {
-          router.markRateLimited(chatReq.model, provider.id as ProviderId, parseRateLimitError(err));
+          router.markRateLimited(
+            chatReq.model,
+            provider.id as ProviderId,
+            parseRateLimitError(err),
+          );
         } else if (failure.kind === 'context') {
           router.markContextOverflow(chatReq.model, provider.id as ProviderId, failure.message);
         }
       };
 
       if (allowPoolWalk && router.isEnabled() && failure.kind !== 'request') {
-        const next = await advanceFailover(router, seq, failedKey, failure.kind, mark, allowedModels);
+        const next = await advanceFailover(
+          router,
+          seq,
+          failedKey,
+          failure.kind,
+          mark,
+          allowedModels,
+        );
         if (next) {
           router.rememberPreference(originalRequested);
           const notice = buildFailoverNotice(router, failure.kind, failedKey, next);
@@ -185,9 +196,9 @@ async function handleStream(
   let firstChunk: StreamChunk | null = null;
   for (;;) {
     const resolved = reg.resolveModel(chatReq.model, { allowed: allowedModels });
-    const it = resolved.provider.stream({ ...chatReq, model: resolved.modelId })[
-      Symbol.asyncIterator
-    ]();
+    const it = resolved.provider
+      .stream({ ...chatReq, model: resolved.modelId })
+      [Symbol.asyncIterator]();
     try {
       const head = await it.next();
       provider = resolved.provider;
@@ -224,14 +235,7 @@ async function handleStream(
         return;
       }
 
-      const next = await advanceFailover(
-        router,
-        seq,
-        failedKey,
-        failure.kind,
-        mark,
-        allowedModels,
-      );
+      const next = await advanceFailover(router, seq, failedKey, failure.kind, mark, allowedModels);
       if (next) {
         router.rememberPreference(originalRequested);
         const notice = buildFailoverNotice(router, failure.kind, failedKey, next);
@@ -240,12 +244,7 @@ async function handleStream(
         chatReq.model = composeModelId(next.provider, next.id);
         continue;
       }
-      const exhausted = new CandidatesExhaustedError(
-        seq.attempts,
-        seq.counts,
-        seq.triedIds,
-        err,
-      );
+      const exhausted = new CandidatesExhaustedError(seq.attempts, seq.counts, seq.triedIds, err);
       reply.raw.write(
         `data: ${JSON.stringify({
           error: {

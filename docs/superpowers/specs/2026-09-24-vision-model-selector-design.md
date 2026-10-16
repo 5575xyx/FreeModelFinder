@@ -25,12 +25,12 @@ Root cause: `SettingsView.AutoRouteInfo` omits `visionModel`, and `ModelMultiSel
 
 ## Decisions (user-confirmed)
 
-| Topic              | Decision                                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Candidate filtering| Backend tags each `model-options` entry with `vision: boolean` via core `isVisionCapable` (option A)          |
-| Endpoint           | Extend shared `GET /api/auto-route/model-options`; no dedicated endpoint                                      |
-| Placement          | Third `ModelMultiSelect` inside the existing 模态路由 card                                                      |
-| Save path          | Existing `saveAutoRoute({ visionModel })` → `POST /api/auto-route` merge (already implemented server-side)     |
+| Topic               | Decision                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Candidate filtering | Backend tags each `model-options` entry with `vision: boolean` via core `isVisionCapable` (option A)       |
+| Endpoint            | Extend shared `GET /api/auto-route/model-options`; no dedicated endpoint                                   |
+| Placement           | Third `ModelMultiSelect` inside the existing 模态路由 card                                                 |
+| Save path           | Existing `saveAutoRoute({ visionModel })` → `POST /api/auto-route` merge (already implemented server-side) |
 
 ## 1. Backend: `vision` field on `model-options`
 
@@ -84,10 +84,10 @@ Offline / fetch failure: `modelOptions` stays `[]`, dropdown shows the existing 
 
 Add zh + en keys:
 
-| Key                                    | zh                                | en                                       |
-| -------------------------------------- | --------------------------------- | ---------------------------------------- |
-| `...modality.visionModel`              | 视觉理解模型                       | Vision (image input) model               |
-| `...modality.visionModelPh`            | 例如 custom:cpa:DeepSeek-V4-Flash-Vision-Exp | e.g. custom:cpa:qwen2-vl         |
+| Key                         | zh                                           | en                         |
+| --------------------------- | -------------------------------------------- | -------------------------- |
+| `...modality.visionModel`   | 视觉理解模型                                 | Vision (image input) model |
+| `...modality.visionModelPh` | 例如 custom:cpa:DeepSeek-V4-Flash-Vision-Exp | e.g. custom:cpa:qwen2-vl   |
 
 Update `...modality.desc` — append one sentence (zh/en) to the existing text:
 

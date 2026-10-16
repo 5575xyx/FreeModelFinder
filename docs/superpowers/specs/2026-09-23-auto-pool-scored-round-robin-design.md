@@ -6,6 +6,7 @@
 ## 背景
 
 `model: "auto"` 目前的行为：
+
 1. 模态检测（image/video）命中模态池 → 池内轮询（已有）
 2. 未命中模态池（或模态池为空）→ 落入 `resolveModel('auto')`：
    - `defaultModel` 有效 → 固定用它（**问题：永远同一个模型，处理不了就失败了**）
@@ -15,14 +16,14 @@
 
 ## 已确认的需求决策
 
-| 决策点 | 选择 |
-|--------|------|
-| auto vs default 语义 | `model="auto"` → 打分池轮询；`model="default"` → `defaultModel`（保留现状） |
-| defaultModel 角色 | 不再参与 auto 路由，仅 UI 默认展示 |
-| 池大小 | Top-3 写死（不新增配置项） |
-| 冷却成员 | 轮询时跳过冷却成员（池实时收缩；全冷却 → 回退目录第一个可用模型，即现状兜底） |
-| 作用路径 | 仅文本兜底路径；模态池命中不经过打分池 |
-| 池重算 | 每次请求现算（基于 5 分钟 TTL 的 modelsCache，零额外 provider 调用） |
+| 决策点               | 选择                                                                          |
+| -------------------- | ----------------------------------------------------------------------------- |
+| auto vs default 语义 | `model="auto"` → 打分池轮询；`model="default"` → `defaultModel`（保留现状）   |
+| defaultModel 角色    | 不再参与 auto 路由，仅 UI 默认展示                                            |
+| 池大小               | Top-3 写死（不新增配置项）                                                    |
+| 冷却成员             | 轮询时跳过冷却成员（池实时收缩；全冷却 → 回退目录第一个可用模型，即现状兜底） |
+| 作用路径             | 仅文本兜底路径；模态池命中不经过打分池                                        |
+| 池重算               | 每次请求现算（基于 5 分钟 TTL 的 modelsCache，零额外 provider 调用）          |
 
 ## 行为规格
 
@@ -72,9 +73,9 @@
 
 ## 文件影响
 
-| 文件 | 改动 |
-|------|------|
-| `packages/core/src/registry.ts` | resolveModel auto 分支重写 + 新增 `pickFromScoredPool()` |
-| `packages/core/src/registry/__tests__/registry.test.ts` | 新增 auto 池用例 |
-| `packages/server/src/routes/openai.ts` | auto 文本路径附加 `fmf_auto_route` |
-| `packages/server/src/routes/__tests__/auto-modality.test.ts` 或新文件 | 集成用例 |
+| 文件                                                                  | 改动                                                     |
+| --------------------------------------------------------------------- | -------------------------------------------------------- |
+| `packages/core/src/registry.ts`                                       | resolveModel auto 分支重写 + 新增 `pickFromScoredPool()` |
+| `packages/core/src/registry/__tests__/registry.test.ts`               | 新增 auto 池用例                                         |
+| `packages/server/src/routes/openai.ts`                                | auto 文本路径附加 `fmf_auto_route`                       |
+| `packages/server/src/routes/__tests__/auto-modality.test.ts` 或新文件 | 集成用例                                                 |

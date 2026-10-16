@@ -22,33 +22,34 @@
 
 ## File Structure
 
-| 文件 | 职责 |
-|------|------|
-| `packages/core/src/types.ts` | `AppConfig.modelAliases?: Record<string,string>` 类型声明 |
-| `packages/core/src/config/aliases.ts` **(新建)** | `validateModelAliases()` 别名表校验（纯函数，可单测） |
-| `packages/core/src/index.ts` | 导出 `validateModelAliases` / `AliasValidationResult` |
-| `packages/core/src/registry.ts` | `resolveAlias()` / `toClientFacingModel()` / `resolveModel()` 顶部别名钩子 |
-| `packages/core/src/registry/__tests__/registry.test.ts` | 别名解析与反查测试 |
-| `packages/core/src/config/__tests__/aliases.test.ts` **(新建)** | 校验函数测试 |
-| `packages/server/src/routes/openai.ts` | 路由归一化 + `/v1/models` 别名替换 + 响应回显 |
-| `packages/server/src/routes/anthropic.ts` | 路由归一化 + 响应回显 |
-| `packages/server/src/routes/gemini.ts` | 路由归一化（Gemini 响应无 model 字段，无需回显） |
-| `packages/server/src/server.ts` | `GET/POST /api/model-aliases` 端点 |
-| `packages/server/src/__tests__/model-aliases.test.ts` **(新建)** | 端到端：列表替换 + 三协议路由 + 回显 + 端点 |
-| `packages/ui/app/lib/models.ts` | `ModelItem.alias_of` + `modelValue()` 用真实 id |
-| `packages/ui/app/components/TesterView.tsx` | `<option>` 标签显示「别名 (真实id)」 |
-| `packages/ui/app/components/ModelAliasesSection.tsx` **(新建)** | 设置页别名编辑区 |
-| `packages/ui/app/components/SettingsView.tsx` | 挂载 `ModelAliasesSection` |
-| `packages/ui/app/i18n.tsx` | zh/en 双字典新增 11 个键 |
-| `packages/ui/app/components/__tests__/model-aliases.test.tsx` **(新建)** | UI 渲染 + 保存 |
-| `packages/ui/app/lib/__tests__/models.test.ts` **(新建)** | `modelValue()` 用 `alias_of` |
-| `packages/ui/test/server.ts` | 新增 `/api/model-aliases` 默认 msw handler |
+| 文件                                                                     | 职责                                                                       |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `packages/core/src/types.ts`                                             | `AppConfig.modelAliases?: Record<string,string>` 类型声明                  |
+| `packages/core/src/config/aliases.ts` **(新建)**                         | `validateModelAliases()` 别名表校验（纯函数，可单测）                      |
+| `packages/core/src/index.ts`                                             | 导出 `validateModelAliases` / `AliasValidationResult`                      |
+| `packages/core/src/registry.ts`                                          | `resolveAlias()` / `toClientFacingModel()` / `resolveModel()` 顶部别名钩子 |
+| `packages/core/src/registry/__tests__/registry.test.ts`                  | 别名解析与反查测试                                                         |
+| `packages/core/src/config/__tests__/aliases.test.ts` **(新建)**          | 校验函数测试                                                               |
+| `packages/server/src/routes/openai.ts`                                   | 路由归一化 + `/v1/models` 别名替换 + 响应回显                              |
+| `packages/server/src/routes/anthropic.ts`                                | 路由归一化 + 响应回显                                                      |
+| `packages/server/src/routes/gemini.ts`                                   | 路由归一化（Gemini 响应无 model 字段，无需回显）                           |
+| `packages/server/src/server.ts`                                          | `GET/POST /api/model-aliases` 端点                                         |
+| `packages/server/src/__tests__/model-aliases.test.ts` **(新建)**         | 端到端：列表替换 + 三协议路由 + 回显 + 端点                                |
+| `packages/ui/app/lib/models.ts`                                          | `ModelItem.alias_of` + `modelValue()` 用真实 id                            |
+| `packages/ui/app/components/TesterView.tsx`                              | `<option>` 标签显示「别名 (真实id)」                                       |
+| `packages/ui/app/components/ModelAliasesSection.tsx` **(新建)**          | 设置页别名编辑区                                                           |
+| `packages/ui/app/components/SettingsView.tsx`                            | 挂载 `ModelAliasesSection`                                                 |
+| `packages/ui/app/i18n.tsx`                                               | zh/en 双字典新增 11 个键                                                   |
+| `packages/ui/app/components/__tests__/model-aliases.test.tsx` **(新建)** | UI 渲染 + 保存                                                             |
+| `packages/ui/app/lib/__tests__/models.test.ts` **(新建)**                | `modelValue()` 用 `alias_of`                                               |
+| `packages/ui/test/server.ts`                                             | 新增 `/api/model-aliases` 默认 msw handler                                 |
 
 ---
 
 ## Task 1: 核心类型 + 校验函数
 
 **Files:**
+
 - Modify: `packages/core/src/types.ts:363-372`（`AppConfig` 加字段）
 - Create: `packages/core/src/config/aliases.ts`
 - Modify: `packages/core/src/index.ts`
@@ -167,10 +168,7 @@ export interface AliasValidationResult {
  * list refreshes continuously, so an alias may be configured before its
  * target appears. A missing target surfaces as a normal resolve error.
  */
-export function validateModelAliases(
-  input: unknown,
-  knownIds: Set<string>,
-): AliasValidationResult {
+export function validateModelAliases(input: unknown, knownIds: Set<string>): AliasValidationResult {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     return { ok: false, error: 'modelAliases must be an object' };
   }
@@ -222,6 +220,7 @@ git commit -m "feat(core): 模型别名配置类型与校验函数"
 ## Task 2: Registry 别名解析与反查
 
 **Files:**
+
 - Modify: `packages/core/src/registry.ts`
 - Test: `packages/core/src/registry/__tests__/registry.test.ts`
 
@@ -359,10 +358,10 @@ function stripProviderPrefix(id: string): string {
 在 `packages/core/src/registry.ts` 的 `resolveModel` 方法体开头，紧接 `): { provider: BaseProvider; modelId: string; sticky?: boolean } {` 之后、`if (modelId === 'auto' || modelId === 'default') {` 之前，插入：
 
 ```ts
-    const aliased = this.config.modelAliases?.[modelId];
-    if (aliased && aliased !== modelId) {
-      return this.resolveModel(aliased, opts);
-    }
+const aliased = this.config.modelAliases?.[modelId];
+if (aliased && aliased !== modelId) {
+  return this.resolveModel(aliased, opts);
+}
 ```
 
 - [ ] **Step 6: 运行测试确认通过**
@@ -389,6 +388,7 @@ git commit -m "feat(core): registry 解析别名并反查对外名称"
 ## Task 3: /v1/models 别名替换
 
 **Files:**
+
 - Modify: `packages/server/src/routes/openai.ts:479-492`
 
 - [ ] **Step 1: 写失败测试**
@@ -512,10 +512,7 @@ describe('/v1/models alias replacement', () => {
     const app = await appWith(baseConfig());
     const res = await app.inject({ method: 'GET', url: '/v1/models' });
     const body = res.json() as { data: Array<{ id: string; alias_of?: string }> };
-    assert.deepEqual(
-      body.data.map((m) => m.id).sort(),
-      ['custom:fx:fast', 'custom:fx:plain'],
-    );
+    assert.deepEqual(body.data.map((m) => m.id).sort(), ['custom:fx:fast', 'custom:fx:plain']);
     assert.equal(
       body.data.every((m) => m.alias_of === undefined),
       true,
@@ -576,6 +573,7 @@ git commit -m "feat(server): /v1/models 用别名替换模型 id 并附带 alias
 ## Task 4: 三协议路由归一化 + 响应回显别名
 
 **Files:**
+
 - Modify: `packages/server/src/routes/openai.ts`
 - Modify: `packages/server/src/routes/anthropic.ts`
 - Modify: `packages/server/src/routes/gemini.ts`
@@ -700,9 +698,9 @@ Expected: FAIL —— 回显类用例返回 `custom:fx:fast` 而非 `my-model`
 在 `packages/server/src/routes/openai.ts` 的 chat 路由中，`const requestedModel = String(body.model);`（540 行）之后立刻插入：
 
 ```ts
-      // Resolve an external alias to its real id BEFORE preflight so cooldown
-      // lookups and markRateLimited stay keyed by the real model.
-      chatReq.model = reg.resolveAlias(chatReq.model);
+// Resolve an external alias to its real id BEFORE preflight so cooldown
+// lookups and markRateLimited stay keyed by the real model.
+chatReq.model = reg.resolveAlias(chatReq.model);
 ```
 
 - [ ] **Step 4: openai.ts 非流式回显**
@@ -710,7 +708,7 @@ Expected: FAIL —— 回显类用例返回 `custom:fx:fast` 而非 `my-model`
 把 794 行的 `payload.model = finalModel;` 替换为：
 
 ```ts
-          payload.model = reg.toClientFacingModel(finalModel);
+payload.model = reg.toClientFacingModel(finalModel);
 ```
 
 - [ ] **Step 5: openai.ts 流式回显**
@@ -718,14 +716,14 @@ Expected: FAIL —— 回显类用例返回 `custom:fx:fast` 而非 `my-model`
 在 `packages/server/src/routes/openai.ts` 的流式循环中，`const payload = streamChunkToOpenAI(chunk);`（937 行）之后、`if (body.model === 'auto') {` 之前插入：
 
 ```ts
-                  // Echo the alias (when one is configured) instead of the
-                  // upstream's bare model id, without touching the
-                  // non-aliased path that clients already rely on.
-                  const chunkComposed = `${provider.id}:${realModelId}`;
-                  const chunkClientFacing = reg.toClientFacingModel(chunkComposed);
-                  if (chunkClientFacing !== chunkComposed) {
-                    (payload as Record<string, unknown>).model = chunkClientFacing;
-                  }
+// Echo the alias (when one is configured) instead of the
+// upstream's bare model id, without touching the
+// non-aliased path that clients already rely on.
+const chunkComposed = `${provider.id}:${realModelId}`;
+const chunkClientFacing = reg.toClientFacingModel(chunkComposed);
+if (chunkClientFacing !== chunkComposed) {
+  (payload as Record<string, unknown>).model = chunkClientFacing;
+}
 ```
 
 - [ ] **Step 6: anthropic.ts 归一化 + 回显**
@@ -735,15 +733,15 @@ Expected: FAIL —— 回显类用例返回 `custom:fx:fast` 而非 `my-model`
 （a）`const chatReq = anthropicToChatRequest(body);`（88 行）之后插入：
 
 ```ts
-      // Resolve an external alias before preflight keeps cooldowns keyed by
-      // the real model id.
-      chatReq.model = reg.resolveAlias(chatReq.model);
+// Resolve an external alias before preflight keeps cooldowns keyed by
+// the real model id.
+chatReq.model = reg.resolveAlias(chatReq.model);
 ```
 
 （b）94 行的 `payload.model = finalModel;` 替换为：
 
 ```ts
-          payload.model = reg.toClientFacingModel(finalModel);
+payload.model = reg.toClientFacingModel(finalModel);
 ```
 
 （c）125-136 行的 `message_start` 帧中，`model: `${provider.id}:${modelId}`,` 替换为：
@@ -759,7 +757,7 @@ Expected: FAIL —— 回显类用例返回 `custom:fx:fast` 而非 `my-model`
 （a）`handleGenerate` 内，`const chatReq = geminiToChatRequest(model, req.body, false);`（36 行）之后插入：
 
 ```ts
-  chatReq.model = reg.resolveAlias(chatReq.model);
+chatReq.model = reg.resolveAlias(chatReq.model);
 ```
 
 （b）`handleStream` 内，`const chatReq = geminiToChatRequest(model, req.body, true);`（102 行）之后插入同样的单行。
@@ -790,6 +788,7 @@ git commit -m "feat(server): 三协议按别名路由并回显别名"
 ## Task 5: 管理端点 GET/POST /api/model-aliases
 
 **Files:**
+
 - Modify: `packages/server/src/server.ts`
 - Test: `packages/server/src/__tests__/model-aliases.test.ts`（追加）
 
@@ -913,30 +912,30 @@ import {
 在 `packages/server/src/server.ts` 中，`POST /api/auto-route/clear-cooldown` 端点（1579-1588 行）之后新增：
 
 ```ts
-    app.get('/api/model-aliases', async () => {
-      return { modelAliases: getRegistry().getConfig().modelAliases ?? {} };
-    });
+app.get('/api/model-aliases', async () => {
+  return { modelAliases: getRegistry().getConfig().modelAliases ?? {} };
+});
 
-    app.post<{ Body: { modelAliases?: unknown } }>('/api/model-aliases', async (req, reply) => {
-      const reg = getRegistry();
-      const { models } = await reg.listAllModels();
-      const knownIds = new Set<string>();
-      for (const m of models) {
-        knownIds.add(m.id);
-        knownIds.add(bareModelId(m.provider, m.id));
-      }
-      const result = validateModelAliases(req.body?.modelAliases, knownIds);
-      if (!result.ok) {
-        return reply.code(400).send({ error: result.error });
-      }
-      const aliases = result.aliases ?? {};
-      const next = await updateConfig((cfg) => {
-        cfg.modelAliases = aliases;
-        return cfg;
-      });
-      reg.updateConfig(next, { preserveModels: true });
-      return { ok: true, modelAliases: next.modelAliases };
-    });
+app.post<{ Body: { modelAliases?: unknown } }>('/api/model-aliases', async (req, reply) => {
+  const reg = getRegistry();
+  const { models } = await reg.listAllModels();
+  const knownIds = new Set<string>();
+  for (const m of models) {
+    knownIds.add(m.id);
+    knownIds.add(bareModelId(m.provider, m.id));
+  }
+  const result = validateModelAliases(req.body?.modelAliases, knownIds);
+  if (!result.ok) {
+    return reply.code(400).send({ error: result.error });
+  }
+  const aliases = result.aliases ?? {};
+  const next = await updateConfig((cfg) => {
+    cfg.modelAliases = aliases;
+    return cfg;
+  });
+  reg.updateConfig(next, { preserveModels: true });
+  return { ok: true, modelAliases: next.modelAliases };
+});
 ```
 
 - [ ] **Step 5: 运行测试确认通过**
@@ -963,6 +962,7 @@ git commit -m "feat(server): 新增模型别名管理端点"
 ## Task 6: UI 模型值与显示
 
 **Files:**
+
 - Modify: `packages/ui/app/lib/models.ts`
 - Modify: `packages/ui/app/components/TesterView.tsx:171-175`
 - Create: `packages/ui/app/lib/__tests__/models.test.ts`
@@ -1020,7 +1020,9 @@ Expected: FAIL —— 「uses alias_of as the request value」断言不通过
 然后把 `modelValue`（57-60 行）替换为：
 
 ```ts
-export function modelValue(model: Pick<ModelItem, 'provider' | 'id'> & { alias_of?: string }): string {
+export function modelValue(
+  model: Pick<ModelItem, 'provider' | 'id'> & { alias_of?: string },
+): string {
   // The UI always dispatches the REAL model id, never the alias: aliases are an
   // external-facing surface, and the UI already knows the real id via alias_of.
   const realId = model.alias_of ?? model.id;
@@ -1040,23 +1042,27 @@ Expected: PASS —— 4 个子测试全绿
 在 `packages/ui/app/components/TesterView.tsx` 的模型下拉列表（171-175 行）中，把
 
 ```tsx
-              {models.map((item) => (
-                <option key={modelValue(item)} value={modelValue(item)}>
-                  {item.provider} · {item.display_name ?? item.id}
-                </option>
-              ))}
+{
+  models.map((item) => (
+    <option key={modelValue(item)} value={modelValue(item)}>
+      {item.provider} · {item.display_name ?? item.id}
+    </option>
+  ));
+}
 ```
 
 替换为：
 
 ```tsx
-              {models.map((item) => (
-                <option key={modelValue(item)} value={modelValue(item)}>
-                  {item.alias_of
-                    ? `${item.id} (${item.alias_of})`
-                    : `${item.provider} · ${item.display_name ?? item.id}`}
-                </option>
-              ))}
+{
+  models.map((item) => (
+    <option key={modelValue(item)} value={modelValue(item)}>
+      {item.alias_of
+        ? `${item.id} (${item.alias_of})`
+        : `${item.provider} · ${item.display_name ?? item.id}`}
+    </option>
+  ));
+}
 ```
 
 - [ ] **Step 6: 跑全量 ui 测试确保无回归**
@@ -1077,6 +1083,7 @@ git commit -m "feat(ui): 模型选择器用真实 id 请求并显示别名"
 ## Task 7: 设置页别名编辑区 + i18n
 
 **Files:**
+
 - Create: `packages/ui/app/components/ModelAliasesSection.tsx`
 - Modify: `packages/ui/app/components/SettingsView.tsx`
 - Modify: `packages/ui/app/i18n.tsx`
@@ -1421,7 +1428,7 @@ import { ModelAliasesSection } from './ModelAliasesSection';
 在 autoRoute `<section>` 的闭合 `</section>` 之后、gateway `<section>`（约 2013 行）之前插入：
 
 ```tsx
-      <ModelAliasesSection />
+<ModelAliasesSection />
 ```
 
 - [ ] **Step 8: 跑全量 ui 测试**
@@ -1500,12 +1507,12 @@ git commit -m "style: prettier 格式化模型别名改动"
 
 **1. Spec 覆盖检查**
 
-| Spec 章节 | 对应任务 |
-|-----------|---------|
-| 第 1 节 配置与类型 | Task 1（`modelAliases` 字段）、Task 1（校验规则） |
-| 第 2 节 解析链路 | Task 2（`resolveModel` 钩子、`resolveAlias`）、Task 4（三路由 `preflight` 前归一化） |
-| 第 3 节 呈现层 | Task 3（`/v1/models` 替换 + `alias_of`）、Task 4（非流式/流式/`message_start` 回显）、Task 6（UI 显示） |
-| 第 4 节 管理 API / UI / 测试 | Task 5（端点）、Task 7（设置区 + i18n）、全部任务的测试步骤 |
+| Spec 章节                    | 对应任务                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 第 1 节 配置与类型           | Task 1（`modelAliases` 字段）、Task 1（校验规则）                                                       |
+| 第 2 节 解析链路             | Task 2（`resolveModel` 钩子、`resolveAlias`）、Task 4（三路由 `preflight` 前归一化）                    |
+| 第 3 节 呈现层               | Task 3（`/v1/models` 替换 + `alias_of`）、Task 4（非流式/流式/`message_start` 回显）、Task 6（UI 显示） |
+| 第 4 节 管理 API / UI / 测试 | Task 5（端点）、Task 7（设置区 + i18n）、全部任务的测试步骤                                             |
 
 诊断元数据保留真实 id —— spec 要求不变更 `SwitchNotice`/`fmf_auto_route.picked`，本计划未触碰这些字段，符合。
 

@@ -37,10 +37,12 @@
 ### Task 1: `decodeContextTable` 解码与多数投票
 
 **Files:**
+
 - Create: `packages/core/src/models-dev-context.ts`
 - Test: `packages/core/src/__tests__/models-dev-context.test.ts`
 
 **Interfaces:**
+
 - Consumes: 无（纯函数）
 - Produces: `decodeContextTable(data: unknown): Map<string, number>` —— 输入 models.dev 原始 payload，输出 `模型标识 → context window` 的全局表。Task 2 的磁盘加载与网络刷新都只消费这个函数的返回值。
 
@@ -73,17 +75,17 @@ test('indexes both the model id and its canonical id', () => {
 
 test('picks the most frequent context value', () => {
   const table = decodeContextTable({
-    a: { models: { 'x': { id: 'x', ...model(1_000_000) } } },
-    b: { models: { 'x': { id: 'x', ...model(1_000_000) } } },
-    c: { models: { 'x': { id: 'x', ...model(327_680) } } },
+    a: { models: { x: { id: 'x', ...model(1_000_000) } } },
+    b: { models: { x: { id: 'x', ...model(1_000_000) } } },
+    c: { models: { x: { id: 'x', ...model(327_680) } } },
   });
   assert.equal(table.get('x'), 1_000_000);
 });
 
 test('breaks ties toward the smaller value', () => {
   const table = decodeContextTable({
-    a: { models: { 'x': { id: 'x', ...model(1_048_576) } } },
-    b: { models: { 'x': { id: 'x', ...model(1_000_000) } } },
+    a: { models: { x: { id: 'x', ...model(1_048_576) } } },
+    b: { models: { x: { id: 'x', ...model(1_000_000) } } },
   });
   assert.equal(table.get('x'), 1_000_000);
 });
@@ -136,6 +138,7 @@ Expected: PASS（6 个用例）。
 git add packages/core/src/models-dev-context.ts packages/core/src/__tests__/models-dev-context.test.ts
 git commit -F <commit-message-file>
 ```
+
 commit message: `feat(zen/core): decode models.dev global context table with majority vote`
 
 ---
@@ -143,10 +146,12 @@ commit message: `feat(zen/core): decode models.dev global context table with maj
 ### Task 2: `ModelsDevContextStore` 缓存与两级匹配
 
 **Files:**
+
 - Modify: `packages/core/src/models-dev-context.ts`（追加 Store）
 - Test: `packages/core/src/__tests__/models-dev-context.test.ts`（追加用例）
 
 **Interfaces:**
+
 - Consumes: Task 1 的 `decodeContextTable(data: unknown): Map<string, number>`
 - Produces:
   - `class ModelsDevContextStore` —— `lookup(model: { provider: string; id: string }): number | undefined`（同步）、`loadFromDisk(): Promise<void>`、`refresh(): Promise<void>`（均不抛）
@@ -165,10 +170,16 @@ let home: string;
 let previousHome: string | undefined;
 const writeTable = (table: Record<string, number>) => {
   mkdirSync(join(home), { recursive: true });
-  writeFileSync(join(home, 'models.dev.context.json'), JSON.stringify({ updated_at: Date.now(), table }));
+  writeFileSync(
+    join(home, 'models.dev.context.json'),
+    JSON.stringify({ updated_at: Date.now(), table }),
+  );
 };
-const storeOf = (fetchImpl: typeof fetch = (async () => { throw new Error('offline'); }) as typeof fetch) =>
-  new ModelsDevContextStore({ dir: home, fetchImpl });
+const storeOf = (
+  fetchImpl: typeof fetch = (async () => {
+    throw new Error('offline');
+  }) as typeof fetch,
+) => new ModelsDevContextStore({ dir: home, fetchImpl });
 
 beforeEach(() => {
   previousHome = process.env.FREEMODELFINDER_HOME;
@@ -185,7 +196,10 @@ test('matches a prefixed cline id by its last segment', async () => {
   writeTable({ 'deepseek-v4.1-flash': 1_000_000 });
   const store = storeOf();
   await store.loadFromDisk();
-  assert.equal(store.lookup({ provider: 'cline', id: 'cline-free/deepseek-v4.1-flash' }), 1_000_000);
+  assert.equal(
+    store.lookup({ provider: 'cline', id: 'cline-free/deepseek-v4.1-flash' }),
+    1_000_000,
+  );
   assert.equal(store.lookup({ provider: 'cline', id: 'deepseek/deepseek-v4-flash' }), undefined);
 });
 
@@ -245,10 +259,12 @@ commit message: `feat(core): models.dev context store with disk cache and two-le
 ### Task 3: registry 兜底接入
 
 **Files:**
+
 - Modify: `packages/core/src/registry.ts`（`refreshModels()` 内，`deduped` Map 构建之前）
 - Test: `packages/core/src/registry/__tests__/registry.test.ts`（追加用例）
 
 **Interfaces:**
+
 - Consumes: `modelsDevContextStore(): ModelsDevContextStore` 的 `lookup(model)`（Task 2）
 - Produces: `refreshModels()` 返回的 `ListAllModelsResult.models[]` 中，缺失 `contextWindow` 的条目被补上（表内有匹配时）
 
@@ -294,11 +310,13 @@ commit message: `feat(core): backfill missing model contextWindow from models.de
 ### Task 4: UI 快捷入口
 
 **Files:**
+
 - Modify: `packages/ui/app/components/FinderView.tsx`（第 362-365 行 context 展示区）
 - Modify: `packages/ui/app/i18n.tsx`（中英各一条新 key）
 - Test: `packages/ui/app/components/__tests__/finder-context.test.tsx`（新建，渲染方式照抄 `finder-aliases.test.tsx` 的 `renderFinder`/`cardOf`）
 
 **Interfaces:**
+
 - Consumes: 已有 `FinderView` prop `onOpenSettings: () => void`
 - Produces: i18n key `models.ctx.set`（中文"填写上下文"、英文"Set context"）
 
@@ -307,7 +325,12 @@ commit message: `feat(core): backfill missing model contextWindow from models.de
 ```tsx
 const CUSTOM_NO_CTX: ModelItem = { id: 'my-model', provider: 'custom', display_name: 'My Model' };
 const CLINE_NO_CTX: ModelItem = { id: 'cline-free/x', provider: 'cline', display_name: 'Cline X' };
-const WITH_CTX: ModelItem = { id: 'gpt', provider: 'openrouter', display_name: 'GPT', context_window: 128_000 };
+const WITH_CTX: ModelItem = {
+  id: 'gpt',
+  provider: 'openrouter',
+  display_name: 'GPT',
+  context_window: 128_000,
+};
 ```
 
 1. custom 且 `context_window` 缺失 → 卡片内出现"填写上下文"按钮；点击调用 `onOpenSettings`（`toHaveBeenCalledTimes(1)`）。

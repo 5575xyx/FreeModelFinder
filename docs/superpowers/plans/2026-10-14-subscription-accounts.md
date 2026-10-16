@@ -40,11 +40,13 @@
 ### Task 1: 类型与配置骨架
 
 **Files:**
+
 - Modify: `packages/core/src/types.ts:4-24`（ProviderIdSchema）、`:401`（CredentialPlatform）、`:193-209`（ModelInfo）
 - Modify: `packages/core/src/config/store.ts:83` 附近（DEFAULT_CONFIG）
 - Test: `packages/core/src/credentials/__tests__/subscription-scaffold.test.ts`
 
 **Interfaces:**
+
 - Produces: `ProviderId` 增三项 `'codex' | 'claude' | 'google'`；`CredentialPlatform = 'cline' | 'codex' | 'claude' | 'google'`；`ModelInfo.subscription?: boolean`；DEFAULT_CONFIG 含 `codex/claude/google: { enabled: false }`
 - 后续所有任务依赖这三个枚举值与 `subscription` 字段
 
@@ -60,30 +62,45 @@
 ### Task 2: 订阅适配器框架
 
 **Files:**
+
 - Create: `packages/core/src/credentials/adapters/subscription/types.ts`
 - Create: `packages/core/src/credentials/adapters/subscription/helpers.ts`
 - Create: `packages/core/src/credentials/adapters/subscription/index.ts`
 - Test: `packages/core/src/credentials/__tests__/subscription-adapter.test.ts`
 
 **Interfaces:**
+
 - Produces（Task 3/6/8 逐字使用）:
+
 ```ts
 export interface SubscriptionAdapter {
   readonly platform: 'codex' | 'claude' | 'google';
-  parseImport(raw: string): ParsedSubscription;            // 失败抛 SubscriptionImportError
+  parseImport(raw: string): ParsedSubscription; // 失败抛 SubscriptionImportError
   refresh(opts: {
     fetchImpl?: typeof fetch;
     refreshToken: string;
     payload: Record<string, string>;
-  }): Promise<RefreshResult>;                               // 失败抛 SubscriptionRefreshError
-  isFatalRefreshError(error: unknown): boolean;             // true = 账号永久失效（invalid_grant 等）
+  }): Promise<RefreshResult>; // 失败抛 SubscriptionRefreshError
+  isFatalRefreshError(error: unknown): boolean; // true = 账号永久失效（invalid_grant 等）
   accountIdOf(profile: SubscriptionAccountProfile, payload: Record<string, string>): string;
 }
-export interface ParsedSubscription { payload: Record<string, string>; profile: SubscriptionAccountProfile; }
-export interface RefreshResult { payload: Record<string, string>; profile?: SubscriptionAccountProfile; }
-export interface SubscriptionAccountProfile { id: string; email?: string; plan?: string; organization?: string; }
-export class SubscriptionImportError extends Error {}       // 构造时 redact()
-export class SubscriptionRefreshError extends Error {       // 构造时 redact()
+export interface ParsedSubscription {
+  payload: Record<string, string>;
+  profile: SubscriptionAccountProfile;
+}
+export interface RefreshResult {
+  payload: Record<string, string>;
+  profile?: SubscriptionAccountProfile;
+}
+export interface SubscriptionAccountProfile {
+  id: string;
+  email?: string;
+  plan?: string;
+  organization?: string;
+}
+export class SubscriptionImportError extends Error {} // 构造时 redact()
+export class SubscriptionRefreshError extends Error {
+  // 构造时 redact()
   readonly kind: 'fatal' | 'rate_limit' | 'network';
   readonly status?: number;
   readonly resetAt?: number;
@@ -93,8 +110,9 @@ export const REFRESH_SKEW_MS = 60_000;
 export function createFlightCache<T>(): { run(key: string, fn: () => Promise<T>): Promise<T> };
 export function parseExpiryMs(raw: string | undefined, now?: number): number; // 空/非法 → now（视同过期，触发刷新）
 export function decodeJwtPayload(token: string): Record<string, unknown> | null; // 仅 base64url 解中段，不验签（身份展示用）
-export const SUBSCRIPTION_ADAPTERS: Record<'codex'|'claude'|'google', SubscriptionAdapter>; // index.ts，Task 3/6/8 各自往里注册
+export const SUBSCRIPTION_ADAPTERS: Record<'codex' | 'claude' | 'google', SubscriptionAdapter>; // index.ts，Task 3/6/8 各自往里注册
 ```
+
 - Consumes: `redact()`、Task 1 的 `CredentialPlatform`
 
 - [ ] **Step 1: 写失败测试** `subscription-adapter.test.ts`
@@ -110,12 +128,14 @@ export const SUBSCRIPTION_ADAPTERS: Record<'codex'|'claude'|'google', Subscripti
 ### Task 3: Codex 适配器
 
 **Files:**
+
 - Create: `packages/core/src/credentials/adapters/subscription/codex.ts`
 - Modify: `packages/core/src/credentials/adapters/subscription/index.ts`（注册）
 - Test: `packages/core/src/credentials/__tests__/subscription-codex.test.ts`
 - Fixture: 测试内联构造（不建 fixture 文件），auth.json 形状见 spec §5.1
 
 **Interfaces:**
+
 - Consumes: Task 2 全部接口
 - Produces: `SUBSCRIPTION_ADAPTERS.codex` 可用；payload 键名固定集合：`{ accessToken, refreshToken, idToken, accountId, email, plan, expiresAt }`（全部命中加密白名单；expiresAt 导入时置空串=未知，首次使用强制刷新）
 
@@ -133,6 +153,7 @@ export const SUBSCRIPTION_ADAPTERS: Record<'codex'|'claude'|'google', Subscripti
 ### Task 4: Codex Provider（Responses 协议翻译）
 
 **Files:**
+
 - Create: `packages/core/src/providers/codex.ts`
 - Create: `packages/core/src/providers/codex-catalog.ts`
 - Modify: `packages/core/src/providers/index.ts`（导出 CodexProvider）
@@ -140,6 +161,7 @@ export const SUBSCRIPTION_ADAPTERS: Record<'codex'|'claude'|'google', Subscripti
 - Test: `packages/core/src/providers/__tests__/codex.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2/3（SUBSCRIPTION_ADAPTERS.codex、REFRESH_SKEW_MS、SubscriptionRefreshError）；`CredentialRuntime`（`providers/cline.ts` 同款用法）；`BaseProvider`/`ProviderContext`
 - Produces: `CodexProvider`（`id='codex'`，`hasCredentials()` = `runtime.hasActiveAccounts('codex')`）；catalog 模型列表 `CODEX_CATALOG_MODELS`（条目 `{id, displayName?, contextWindow?}`，初版收录 gpt-5.1-codex-max / gpt-5-codex 等官方 Codex 可用模型，实现时对照参考源码 `internal/runtime/executor/` 出现过的模型名核实）
 
@@ -165,6 +187,7 @@ export const SUBSCRIPTION_ADAPTERS: Record<'codex'|'claude'|'google', Subscripti
 ### Task 5: 订阅账号 Server API + 最小 UI 导入面板
 
 **Files:**
+
 - Create: `packages/server/src/routes/subscription.ts`
 - Modify: `packages/server/src/server.ts:2278-2283` 附近（注册路由，模式照抄 cline 端点 server.ts:1193-1284）
 - Test: `packages/server/src/routes/__tests__/subscription.test.ts`
@@ -173,8 +196,10 @@ export const SUBSCRIPTION_ADAPTERS: Record<'codex'|'claude'|'google', Subscripti
 - Test: `packages/ui/app/components/__tests__/subscription-panel.test.tsx`
 
 **Interfaces:**
+
 - Consumes: Task 2 `SUBSCRIPTION_ADAPTERS`；`getCredentialRuntime()`；Task 1 的 CredentialPlatform
 - Produces（UI 与后续任务逐字使用）:
+
 ```
 GET  /api/subscription/accounts
   → { accounts: Array<{ provider, id, label, email?, plan?, status, addedAt, expiresAt?, cooldowns: Array<{model,resetAt}>, usage: {requests,promptTokens,completionTokens,lastError?} }> }
@@ -205,11 +230,13 @@ POST /api/subscription/accounts/:provider/:id/refresh → { ok: true, account: {
 ### Task 6: Claude 适配器
 
 **Files:**
+
 - Create: `packages/core/src/credentials/adapters/subscription/claude.ts`
 - Modify: `packages/core/src/credentials/adapters/subscription/index.ts`（注册）
 - Test: `packages/core/src/credentials/__tests__/subscription-claude.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2 框架
 - Produces: `SUBSCRIPTION_ADAPTERS.claude`；payload 键名集合：`{ accessToken, refreshToken, expiresAt, scopes, subscriptionType, email, accountUuid, orgUuid, orgName, blockedUntil }`（全部命中加密白名单）
 
@@ -230,12 +257,14 @@ POST /api/subscription/accounts/:provider/:id/refresh → { ok: true, account: {
 ### Task 7: Claude Provider（Messages 协议）
 
 **Files:**
+
 - Create: `packages/core/src/providers/claude.ts`
 - Create: `packages/core/src/providers/claude-catalog.ts`
 - Modify: `packages/core/src/providers/index.ts`、`packages/core/src/registry.ts`（PROVIDER_CTORS 加 `claude: ClaudeProvider`）
 - Test: `packages/core/src/providers/__tests__/claude.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2/6；`providers/openai-messages.ts` 反向可参考（入站翻译已有，出站自写 `toAnthropicMessages`）
 - Produces: `ClaudeProvider`（`id='claude'`）；`CLAUDE_CATALOG_MODELS`（sonnet/opus 线，实现时对照参考 `claude` executor 出现的模型名核实）
 
@@ -256,11 +285,13 @@ POST /api/subscription/accounts/:provider/:id/refresh → { ok: true, account: {
 ### Task 8: Google 适配器
 
 **Files:**
+
 - Create: `packages/core/src/credentials/adapters/subscription/google.ts`
 - Modify: `packages/core/src/credentials/adapters/subscription/index.ts`（注册）
 - Test: `packages/core/src/credentials/__tests__/subscription-google.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2 框架
 - Produces: `SUBSCRIPTION_ADAPTERS.google`；payload 键名：`{ accessToken, refreshToken, clientId, clientSecret, expiryDate, scope, idToken }`（clientSecret 命中加密白名单）
 
@@ -278,6 +309,7 @@ POST /api/subscription/accounts/:provider/:id/refresh → { ok: true, account: {
 ### Task 9: Google Provider（cloudcode-pa v1internal）
 
 **Files:**
+
 - Create: `packages/core/src/providers/google.ts`
 - Create: `packages/core/src/providers/google-catalog.ts`
 - Modify: `packages/core/src/providers/index.ts`、`packages/core/src/registry.ts`（PROVIDER_CTORS 加 `google: GoogleProvider`）
@@ -285,6 +317,7 @@ POST /api/subscription/accounts/:provider/:id/refresh → { ok: true, account: {
 - Test: `packages/core/src/providers/__tests__/google.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2/8
 - Produces: `GoogleProvider`（`id='google'`）；`GOOGLE_CATALOG_MODELS`（gemini-2.5-pro/flash、gemini-3-pro 等；实现时对照参考 antigravity executor 的 loadCodeAssist 返回的模型清单字段核实命名）
 
@@ -303,12 +336,14 @@ POST /api/subscription/accounts/:provider/:id/refresh → { ok: true, account: {
 ### Task 10: 路由与 auto 兜底集成
 
 **Files:**
+
 - Modify: `packages/core/src/registry.ts:709-722`（catalog 命中分支）、`:728-780`（buildFallbackChain 排序）
 - Modify: `packages/server/src/routes/openai.ts`（/v1/models 响应透出 subscription 标记；找到 models 响应项构造处，加 `subscription: m.subscription === true`）
 - Modify: `scripts/audit-free-models.mjs`（订阅 provider 排除）
 - Test: `packages/core/src/registry/__tests__/registry.test.ts`（追加用例）
 
 **Interfaces:**
+
 - Consumes: Task 1 `ModelInfo.subscription`；Task 4/7/9 注册的三个 provider
 - Produces: 兜底行为契约——auto 链中 subscription 模型恒在非订阅模型之后；裸名/目录命中优先非订阅 provider；`/v1/models` 项含 `subscription` 布尔
 
@@ -317,7 +352,7 @@ POST /api/subscription/accounts/:provider/:id/refresh → { ok: true, account: {
   - `全免费冷却时订阅兜底`：A 冷却（mock autoRouter.isRateLimited），B 可用 → 链含 B（兜底生效，不被过滤掉）
   - `目录命中偏好免费 provider`：同一裸名同时命中免费 catalog 与订阅 catalog → 解析到免费 provider
   - `显式前缀不受限`：`codex:<model>` 直连订阅 provider（现有前缀逻辑回归断言）
-  - `/v1/models` 透出：server 测试（routes/__tests__/openai 相关文件）断言订阅模型项 `subscription===true`、免费项无该字段
+  - `/v1/models` 透出：server 测试（routes/**tests**/openai 相关文件）断言订阅模型项 `subscription===true`、免费项无该字段
   - audit 脚本：`node --test scripts` 不适用——改为对 `scripts/audit-free-models.mjs` 导出的 provider 过滤函数做单测，或以 dry-run 方式断言输出 providers 不含 codex/claude/google（实现时选可行者；scripts 无测试基建则以手工运行 `pnpm audit:daily` 观察报告无三家为准，标注在步骤里）
 - [ ] **Step 2: 跑测试确认失败**
 - [ ] **Step 3: 实现**
@@ -331,10 +366,12 @@ POST /api/subscription/accounts/:provider/:id/refresh → { ok: true, account: {
 ### Task 11: UI 完整化
 
 **Files:**
+
 - Modify: `packages/ui/app/components/SubscriptionAccountsPanel.tsx`（Task 5 创建）
 - Test: `packages/ui/app/components/__tests__/subscription-panel.test.tsx`（追加）
 
 **Interfaces:**
+
 - Consumes: Task 5 的 API 形状
 - Produces: 完整面板——账号卡列表（email/plan/状态徽标 active·invalid·cooldown/过期时间/用量 requests+tokens）、移除按钮（确认弹窗，照抄 ClineAccountsPanel 模式）、手动刷新按钮（调 refresh 端点，成功后更新卡片）、冷却清除（复用 cline 的 cooldowns/clear 模式可后补，非本期必须）
 
@@ -349,6 +386,7 @@ POST /api/subscription/accounts/:provider/:id/refresh → { ok: true, account: {
 ### Task 12: 文档与全量 CI 验证
 
 **Files:**
+
 - Modify: `README.md`（或 `FREE_MODELS.md` 头部说明区，二选一放订阅账号章节）
 - Modify: `docs/superpowers/specs/2026-10-14-subscription-accounts-design.md`（状态改为已交付，记录偏差）
 - Test: 无新代码；全量 CI 命令验收
@@ -373,4 +411,3 @@ POST /api/subscription/accounts/:provider/:id/refresh → { ok: true, account: {
 - **类型一致性**：SubscriptionAdapter/RefreshResult/payload 键名在 Task 2 定义、3/6/8 引用一致；`hasActiveAccounts/getPool/upsertAccount` 等 runtime 方法名与 `credentials/runtime.ts:12-48` 逐一核对；`REFRESH_SKEW_MS` 名称与 cline.ts 现有常量无冲突（不同模块）。
 - **比例**：计划以接口签名、测试名与断言为主，仅对"协议事件→内部结构"这类不可推导的映射给出参照源码路径，未贴实现体。
 - **开放点（留给实现者，已在任务内标注）**：cloudcode-pa 精确路径（Task 9 Step 1 注明以参考测试文件核实）、catalog 具体模型条目（对照参考执行器核实）、audit 脚本测试方式（无基建时降级为手工验证）。
-

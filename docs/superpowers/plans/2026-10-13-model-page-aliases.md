@@ -269,9 +269,13 @@ Expected: PASS
 Create `packages/ui/app/components/__tests__/finder-aliases.test.tsx`，直接渲染 `FinderView`（补全其必填 props：`models`、`selectedModel`、`gatewayReachable`、`loading`、`failures`、`onSelectModel`、`onOpenTester`、`onOpenSettings`、`onRefresh`、`onProbeModel`、`probingModels`，加上新的 `aliases`、`onSaveAlias`）。测试用模型：
 
 ```ts
-const ALIASED = { id: 'nemotron', provider: 'nvidia', display_name: 'Nemotron',
-                  alias_of: 'nvidia/nemotron-3-super-120b-a12b' };
-const PLAIN   = { id: 'gpt-4o-mini', provider: 'openrouter', display_name: 'GPT-4o Mini' };
+const ALIASED = {
+  id: 'nemotron',
+  provider: 'nvidia',
+  display_name: 'Nemotron',
+  alias_of: 'nvidia/nemotron-3-super-120b-a12b',
+};
+const PLAIN = { id: 'gpt-4o-mini', provider: 'openrouter', display_name: 'GPT-4o Mini' };
 ```
 
 覆盖：
