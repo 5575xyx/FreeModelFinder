@@ -10,6 +10,7 @@ const credentialsUrl = `${gateway}/api/subscription/credentials`;
 const authUrl = `${gateway}/api/subscription/oauth/auth-url`;
 const statusUrl = `${gateway}/api/subscription/oauth/status`;
 const sessionUrl = `${gateway}/api/subscription/oauth/session`;
+const callbackUrl = `${gateway}/api/subscription/oauth/callback`;
 const switchProjectUrl = `${gateway}/api/subscription/quota-exceeded/switch-project`;
 
 const state = 'a'.repeat(43);
@@ -307,6 +308,129 @@ describe('SubscriptionProviderDialog OAuth flow', () => {
     await user.click(screen.getByTestId('subscription-start-claude'));
 
     expect(await screen.findByText(/provider_not_found/)).toBeTruthy();
+  });
+});
+
+describe('SubscriptionProviderDialog manual callback', () => {
+  // 复用 OAuth flow 那组的前置：auth-url 成功进入 waiting
+  const pendingHandlers = [
+    http.get(authUrl, () => HttpResponse.json({ status: 'ok', url: 'https://x/y', state })),
+    http.get(statusUrl, () => HttpResponse.json({ status: 'wait' })),
+  ];
+
+  it('renders a callback url field and a submit button while waiting', async () => {
+    vi.stubGlobal('open', vi.fn());
+    server.use(...pendingHandlers);
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'codex');
+    await user.click(screen.getByTestId('subscription-start-codex'));
+    await screen.findByText(/等待授权中/);
+
+    expect(screen.getByTestId('subscription-callback-url-codex')).toBeTruthy();
+    expect(screen.getByTestId('subscription-callback-submit-codex')).toBeTruthy();
+    // 设计 §4：提示必须逐家准确。端口与回调路径不同，不能写死 Codex 的 ——
+    // 断言值来自 SUBSCRIPTION_PROVIDER_META，三家共用同一个计算（endpoint 变量）。
+    expect(
+      screen.getByTestId('subscription-callback-url-codex').getAttribute('placeholder'),
+    ).toContain('localhost:1455/auth/callback');
+    // 空值要禁用，避免打一次空请求
+    expect(screen.getByTestId('subscription-callback-submit-codex')).toBeDisabled();
+  });
+
+  it('posts the pasted url with the session state and keeps polling on success', async () => {
+    vi.stubGlobal('open', vi.fn());
+    const seen: Array<Record<string, string>> = [];
+    server.use(
+      ...pendingHandlers,
+      http.post(callbackUrl, async ({ request }) => {
+        seen.push((await request.json().catch(() => ({}))) as Record<string, string>);
+        return new HttpResponse('授权完成', { headers: { 'content-type': 'text/html' } });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'codex');
+    await user.click(screen.getByTestId('subscription-start-codex'));
+    await screen.findByText(/等待授权中/);
+
+    await user.type(
+      screen.getByTestId('subscription-callback-url-codex'),
+      'http://localhost:1455/auth/callback?code=C1',
+    );
+    await user.click(screen.getByTestId('subscription-callback-submit-codex'));
+
+    // state 必须是 UI 手里那份（auth-url 返回的），不是从粘进来的 URL 里抠的
+    expect(seen).toEqual([{ redirect_url: 'http://localhost:1455/auth/callback?code=C1', state }]);
+    // 成功 = 留在 waiting 继续轮询（会话由 /status 报 ok 才真正结束）；
+    // 服务端回的是 HTML，组件绝不能 response.json()
+    expect(screen.getByText(/等待授权中/)).toBeTruthy();
+    expect(screen.getByTestId('subscription-callback-url-codex')).toBeTruthy();
+  });
+
+  it('shows the error and stays in waiting so the user can paste again', async () => {
+    vi.stubGlobal('open', vi.fn());
+    const seen: Array<Record<string, string>> = [];
+    server.use(
+      ...pendingHandlers,
+      http.post(callbackUrl, async ({ request }) => {
+        seen.push((await request.json().catch(() => ({}))) as Record<string, string>);
+        return HttpResponse.json(
+          { status: 'error', error: 'unknown or expired state' },
+          { status: 400 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'codex');
+    await user.click(screen.getByTestId('subscription-start-codex'));
+    await screen.findByText(/等待授权中/);
+
+    await user.type(screen.getByTestId('subscription-callback-url-codex'), 'garbage');
+    await user.click(screen.getByTestId('subscription-callback-submit-codex'));
+
+    expect(await screen.findByText(/登录失败/)).toBeTruthy();
+    // 会话不退出：用户改粘正确的串还能重试
+    expect(screen.getByText(/等待授权中/)).toBeTruthy();
+    expect(screen.getByTestId('subscription-callback-submit-codex')).toBeTruthy();
+
+    // 第二次提交必须真的发出去
+    server.use(
+      ...pendingHandlers,
+      http.post(callbackUrl, async ({ request }) => {
+        seen.push((await request.json().catch(() => ({}))) as Record<string, string>);
+        return new HttpResponse('ok', { headers: { 'content-type': 'text/html' } });
+      }),
+    );
+    await user.clear(screen.getByTestId('subscription-callback-url-codex'));
+    await user.type(
+      screen.getByTestId('subscription-callback-url-codex'),
+      `code=CODE2&state=${state}`,
+    );
+    await user.click(screen.getByTestId('subscription-callback-submit-codex'));
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toEqual({ redirect_url: `code=CODE2&state=${state}`, state });
+  });
+
+  it('hides the manual callback block once the session is cancelled', async () => {
+    vi.stubGlobal('open', vi.fn());
+    server.use(
+      ...pendingHandlers,
+      http.delete(sessionUrl, () => HttpResponse.json({ status: 'ok', cancelled: true })),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'codex');
+    await user.click(screen.getByTestId('subscription-start-codex'));
+    expect(await screen.findByTestId('subscription-callback-url-codex')).toBeTruthy();
+
+    await user.click(screen.getByTestId('subscription-cancel-codex'));
+    await waitFor(() => expect(screen.queryByTestId('subscription-callback-url-codex')).toBeNull());
   });
 });
 
@@ -718,6 +842,11 @@ describe('subscription i18n keys', () => {
     'settings.subscription.oauth.error.denied',
     'settings.subscription.quotaExceeded.switchProject',
     'settings.subscription.quotaExceeded.switchProject.hint',
+    'settings.subscription.dialog.login.callback.heading',
+    'settings.subscription.dialog.login.callback.hint',
+    'settings.subscription.dialog.login.callback.placeholder',
+    'settings.subscription.dialog.login.callback.submit',
+    'settings.subscription.dialog.login.callback.tunnel',
   ];
 
   it('ships every subscription string in zh and en', () => {

@@ -679,6 +679,14 @@ export const zh: Dict = {
   'settings.subscription.dialog.login.reopen': '在浏览器中打开登录页',
   'settings.subscription.dialog.login.cancel': '取消',
   'settings.subscription.dialog.login.ok': '授权成功，账号已添加',
+  'settings.subscription.dialog.login.callback.heading': '或手动粘贴回调地址',
+  'settings.subscription.dialog.login.callback.hint':
+    '远程部署时浏览器与网关不同机，授权后会跳回 http://{endpoint} 并显示「无法连接」。把浏览器地址栏里那条带 code= 的完整 URL（或授权码）粘贴到这里。',
+  'settings.subscription.dialog.login.callback.placeholder':
+    '粘贴回跳 URL，例如 http://{endpoint}?code=…',
+  'settings.subscription.dialog.login.callback.submit': '提交回调',
+  'settings.subscription.dialog.login.callback.tunnel':
+    '不想手动粘贴：在自己的电脑上建一条隧道，回调会自动送达，登录后关闭隧道即可。',
   'settings.subscription.dialog.autoRead.heading': '登录成功后自动读取',
   'settings.subscription.field.email': '邮箱',
   'settings.subscription.field.plan': '套餐',
@@ -1440,6 +1448,14 @@ export const en: Dict = {
   'settings.subscription.dialog.login.reopen': 'Open the sign-in page in the browser',
   'settings.subscription.dialog.login.cancel': 'Cancel',
   'settings.subscription.dialog.login.ok': 'Signed in. The account has been added.',
+  'settings.subscription.dialog.login.callback.heading': 'Or paste the callback address manually',
+  'settings.subscription.dialog.login.callback.hint':
+    'With a remote deployment the browser and the gateway are on different machines, so the callback redirects to http://{endpoint} on your own machine and shows "Cannot connect". Paste the full URL from your browser address bar (the one containing code=), or the authorization code itself.',
+  'settings.subscription.dialog.login.callback.placeholder':
+    'Paste the callback URL, e.g. http://{endpoint}?code=…',
+  'settings.subscription.dialog.login.callback.submit': 'Submit callback',
+  'settings.subscription.dialog.login.callback.tunnel':
+    'Prefer not to paste manually: open a tunnel from your own machine and the callback arrives automatically. Close the tunnel once sign-in is done.',
   'settings.subscription.dialog.autoRead.heading': 'Read automatically after sign-in',
   'settings.subscription.field.email': 'Email',
   'settings.subscription.field.plan': 'Plan',

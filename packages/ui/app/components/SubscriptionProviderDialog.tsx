@@ -16,6 +16,7 @@ const credentialsUrl = `${GATEWAY}/api/subscription/credentials`;
 const authUrl = `${GATEWAY}/api/subscription/oauth/auth-url`;
 const statusUrl = `${GATEWAY}/api/subscription/oauth/status`;
 const sessionUrl = `${GATEWAY}/api/subscription/oauth/session`;
+const callbackUrl = `${GATEWAY}/api/subscription/oauth/callback`;
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
@@ -87,6 +88,10 @@ export function SubscriptionProviderDialog({
   const [importError, setImportError] = useState('');
   const [importBusy, setImportBusy] = useState(false);
   const [pendingUrl, setPendingUrl] = useState('');
+  /** 「手动粘贴回调」区块的输入值与提交状态。 */
+  const [callbackInput, setCallbackInput] = useState('');
+  const [callbackBusy, setCallbackBusy] = useState(false);
+  const [callbackError, setCallbackError] = useState('');
 
   const aliveRef = useRef(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -158,6 +163,8 @@ export function SubscriptionProviderDialog({
     setError('');
     setNotice('');
     setPendingUrl('');
+    setCallbackInput('');
+    setCallbackError('');
     // 必须在点击的同一个 tick 里先开一个空窗：await 之后再 window.open 会被弹窗拦截器
     // 当成非用户手势而拦掉。拿到 URL 后再把它的 location 指过去。
     const opened = typeof window === 'undefined' ? null : window.open('', '_blank');
@@ -188,6 +195,8 @@ export function SubscriptionProviderDialog({
     stopPolling();
     pendingStateRef.current = '';
     setPendingUrl('');
+    setCallbackInput('');
+    setCallbackError('');
     setPhase('idle');
     setNotice('');
     if (!authState) return;
@@ -198,6 +207,47 @@ export function SubscriptionProviderDialog({
       );
     } catch {
       // 取消失败不阻断用户：本地已经当成取消，服务端那份最多挂到超时。
+    }
+  }
+
+  /**
+   * 「手动回调」提交：远程部署下浏览器与网关不同机，用户把跳回的 URL 粘回来。
+   * 只走这一条时，服务端把 URL 里能拿到的 code 送去 exchange；state 必须来自 UI 手里
+   * 那份（pendingStateRef.current），不能从粘进来的 URL 里抠（设计 §3.4）。
+   */
+  async function submitCallback(): Promise<void> {
+    const authState = pendingStateRef.current;
+    const url = callbackInput.trim();
+    if (!authState || !url || callbackBusy) return;
+    setCallbackBusy(true);
+    setCallbackError('');
+    try {
+      const response = await fetch(
+        callbackUrl,
+        withUiHeaders({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ redirect_url: url, state: authState }),
+        }),
+      );
+      if (!aliveRef.current || pendingStateRef.current !== authState) return;
+      if (response.ok) {
+        // 成功响应是给浏览器看的 HTML，不能 response.json()；
+        // 会话真正收尾仍靠 /status，所以这里只是补一次轮询。
+        setCallbackInput('');
+        setCallbackError('');
+        void poll(pendingStateRef.current);
+        return;
+      }
+      const data = (await response.json().catch(() => null)) as AuthPayload | null;
+      // 保持 waiting、保留输入值：用户改一个字符就能重贴。
+      setCallbackError(describeOAuthError(data?.error ?? `HTTP ${response.status}`, t));
+    } catch (caught) {
+      if (aliveRef.current && pendingStateRef.current === authState) {
+        setCallbackError(describeOAuthError(messageOf(caught), t));
+      }
+    } finally {
+      if (aliveRef.current) setCallbackBusy(false);
     }
   }
 
@@ -320,6 +370,53 @@ export function SubscriptionProviderDialog({
               >
                 {t('settings.subscription.dialog.login.cancel')}
               </button>
+            </div>
+
+            <div className="space-y-1 pt-1">
+              <h5 className="text-xs font-medium text-foreground">
+                {t('settings.subscription.dialog.login.callback.heading')}
+              </h5>
+              <p className="text-[11px] text-muted-foreground">
+                {t('settings.subscription.dialog.login.callback.hint', { endpoint })}
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <input
+                  type="text"
+                  data-testid={`subscription-callback-url-${provider}`}
+                  value={callbackInput}
+                  disabled={callbackBusy}
+                  placeholder={t('settings.subscription.dialog.login.callback.placeholder', {
+                    endpoint,
+                  })}
+                  onChange={(event) => setCallbackInput(event.target.value)}
+                  className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  data-testid={`subscription-callback-submit-${provider}`}
+                  disabled={callbackBusy || !callbackInput.trim()}
+                  onClick={() => void submitCallback()}
+                  className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {callbackBusy && (
+                    <Loader2 size={12} strokeWidth={1.75} className="animate-spin" />
+                  )}
+                  {t('settings.subscription.dialog.login.callback.submit')}
+                </button>
+              </div>
+              {callbackError && (
+                <p className="text-xs text-destructive">
+                  {t('settings.subscription.dialog.error', { err: callbackError })}
+                </p>
+              )}
+              <details className="text-[11px] text-muted-foreground">
+                <summary className="cursor-pointer select-none">
+                  {t('settings.subscription.dialog.login.callback.tunnel')}
+                </summary>
+                <pre className="mt-1 overflow-x-auto rounded-md border border-border bg-surface-muted p-1.5 font-mono text-[11px] text-foreground">
+                  {`ssh -L 1455:127.0.0.1:1455 -L 54545:127.0.0.1:54545 -L 51121:127.0.0.1:51121 <user>@<server>`}
+                </pre>
+              </details>
             </div>
           </div>
         )}
