@@ -55,6 +55,7 @@ import { catalogSignature } from './catalog-signature.js';
 import { recordRemovalCleanup, loadRemovalCleanupLog } from './removal-cleanup-log.js';
 import { registerOnboardingRoutes } from './onboarding.js';
 import { registerSubscriptionRoutes } from './routes/subscription.js';
+import { registerSubscriptionOAuthRoutes } from './routes/subscription-oauth.js';
 import {
   createRuntimeIdentity,
   DESKTOP_CONTROL_PROTOCOL,
@@ -1285,6 +1286,7 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
     });
 
     registerSubscriptionRoutes(app, getRegistry);
+    registerSubscriptionOAuthRoutes(app, getRegistry);
 
     app.get('/api/model-cleanup-log', async () => {
       const log = await loadRemovalCleanupLog();

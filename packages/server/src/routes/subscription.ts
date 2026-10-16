@@ -1,7 +1,7 @@
 ﻿import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve, sep } from 'node:path';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   SUBSCRIPTION_ADAPTERS,
   SubscriptionRefreshError,
@@ -61,6 +61,47 @@ function profileFields(
     ...(email ? { email } : {}),
     ...(plan ? { plan } : {}),
   };
+}
+
+/**
+ * 把一份解析好的订阅凭据落库，并让它在**当前进程内**立刻可用。
+ *
+ * 这是订阅账号唯一的落地路径：文件导入（`POST /credentials`）与 OAuth 交互登录
+ * （`POST /oauth/status` 完成换 token 后）都必须走这里，否则两条路会出现
+ * "导入的账号能用、OAuth 登的账号不能用"这类分叉。
+ */
+export async function landSubscriptionAccount(
+  provider: SubscriptionProvider,
+  parsed: ParsedSubscription,
+  getRegistry: () => ProviderRegistry,
+): Promise<{ id: string; label: string; fields: { email?: string; plan?: string } }> {
+  const fields = profileFields(parsed.profile, parsed.payload);
+  const id = SUBSCRIPTION_ADAPTERS[provider].accountIdOf(parsed.profile, parsed.payload);
+  const label = fields.email ?? id;
+  // getProvider 的第一道闸门是 config.providers.<id>.enabled，而三家订阅 provider 在
+  // store.ts 里默认关闭、设置页也不含它们的开关。不在这儿启用的话，"导入成功"之后
+  // /v1/models 不列出订阅模型、auto 选不到、显式 codex:… 一律抛 "provider codex is not
+  // enabled" —— 整个功能等于没接上。
+  // 先启用再落账号：listEnabledProviders 会用 hasCredentials() 过滤，尚无账号的 provider
+  // 不会往 /v1/models 里塞用不了的模型，所以这个顺序没有副作用窗口。
+  const next = await updateConfig((cfg) => {
+    const current = cfg.providers[provider] ?? { enabled: false };
+    cfg.providers[provider] = { ...current, enabled: true };
+    return cfg;
+  });
+  // 磁盘写入只是必要条件：/v1/models、auto 与显式 codex:… 全部经由 registry.getProvider，
+  // 而它读的是内存 this.config。不同步的话，导入后仍要等 1 小时的配置 watcher 或重启才
+  // 真正可用 —— 正是上面启用 provider 想消除的症状。这里不 preserveModels：改动的正是
+  // provider 拓扑，需要让新 provider 的模型目录在下一次刷新时被纳入。
+  getRegistry().updateConfig(next);
+  await getCredentialRuntime().upsertAccount(provider, {
+    id,
+    status: 'active',
+    addedAt: Date.now(),
+    label,
+    payload: parsed.payload,
+  });
+  return { id, label, fields };
 }
 
 /**
@@ -138,6 +179,11 @@ async function refreshAccount(provider: SubscriptionProvider, id: string): Promi
   }
 }
 
+type SubscriptionImportRequest = {
+  Querystring: { provider?: string };
+  Body: { raw?: string; path?: string };
+};
+
 export function registerSubscriptionRoutes(
   app: FastifyInstance,
   getRegistry: () => ProviderRegistry,
@@ -176,87 +222,67 @@ export function registerSubscriptionRoutes(
     return { accounts };
   });
 
-  app.post<{ Querystring: { provider?: string }; Body: { raw?: string; path?: string } }>(
-    '/api/subscription/credentials',
-    async (req, reply) => {
-      const body = req.body ?? {};
-      const rawPresent = typeof body.raw === 'string' && body.raw.length > 0;
-      const pathPresent = typeof body.path === 'string' && body.path.trim().length > 0;
-      if (rawPresent === pathPresent) {
-        return reply.code(400).send({ error: 'exactly one of raw or path is required' });
-      }
+  // 参考项目 v8 的同一段路由里既有 POST /credentials 也有 POST /oauth/import，
+  // 两者语义完全一致（"把一份凭据导入成账号"），所以共用同一个处理器。
+  const importCredential = async (
+    req: FastifyRequest<SubscriptionImportRequest>,
+    reply: FastifyReply,
+  ): Promise<unknown> => {
+    const body = req.body ?? {};
+    const rawPresent = typeof body.raw === 'string' && body.raw.length > 0;
+    const pathPresent = typeof body.path === 'string' && body.path.trim().length > 0;
+    if (rawPresent === pathPresent) {
+      return reply.code(400).send({ error: 'exactly one of raw or path is required' });
+    }
 
-      const providerParam = req.query.provider;
-      if (providerParam !== undefined && !isSubscriptionProvider(providerParam)) {
-        return reply.code(400).send({ error: `unknown provider: ${providerParam}` });
-      }
+    const providerParam = req.query.provider;
+    if (providerParam !== undefined && !isSubscriptionProvider(providerParam)) {
+      return reply.code(400).send({ error: `unknown provider: ${providerParam}` });
+    }
 
-      let content: string;
-      if (rawPresent) {
-        content = body.raw as string;
-      } else {
-        const resolved = resolveImportPath(body.path as string);
-        if (!resolved) {
-          return reply
-            .code(400)
-            .send({ error: 'path must point inside ~/.codex, ~/.claude or ~/.gemini' });
-        }
-        try {
-          content = await readFile(resolved, 'utf8');
-        } catch (error) {
-          return reply.code(400).send({ error: redactMessage(error) });
-        }
+    let content: string;
+    if (rawPresent) {
+      content = body.raw as string;
+    } else {
+      const resolved = resolveImportPath(body.path as string);
+      if (!resolved) {
+        return reply
+          .code(400)
+          .send({ error: 'path must point inside ~/.codex, ~/.claude or ~/.gemini' });
       }
-
-      let provider: SubscriptionProvider;
-      let parsed: ParsedSubscription;
-      if (providerParam !== undefined) {
-        provider = providerParam;
-        try {
-          parsed = SUBSCRIPTION_ADAPTERS[provider].parseImport(content);
-        } catch (error) {
-          return reply.code(400).send({ error: redactMessage(error) });
-        }
-      } else {
-        const detected = detectProvider(content);
-        if (!detected) {
-          return reply
-            .code(400)
-            .send({ error: 'could not detect the provider from the supplied credential' });
-        }
-        provider = detected.provider;
-        parsed = detected.parsed;
+      try {
+        content = await readFile(resolved, 'utf8');
+      } catch (error) {
+        return reply.code(400).send({ error: redactMessage(error) });
       }
+    }
 
-      const fields = profileFields(parsed.profile, parsed.payload);
-      const id = SUBSCRIPTION_ADAPTERS[provider].accountIdOf(parsed.profile, parsed.payload);
-      const label = fields.email ?? id;
-      // getProvider 的第一道闸门是 config.providers.<id>.enabled，而三家订阅 provider 在
-      // store.ts 里默认关闭、设置页也不含它们的开关。不在这儿启用的话，"导入成功"之后
-      // /v1/models 不列出订阅模型、auto 选不到、显式 codex:… 一律抛 "provider codex is not
-      // enabled" —— 整个功能等于没接上。
-      // 先启用再落账号：listEnabledProviders 会用 hasCredentials() 过滤，尚无账号的 provider
-      // 不会往 /v1/models 里塞用不了的模型，所以这个顺序没有副作用窗口。
-      const next = await updateConfig((cfg) => {
-        const current = cfg.providers[provider] ?? { enabled: false };
-        cfg.providers[provider] = { ...current, enabled: true };
-        return cfg;
-      });
-      // 磁盘写入只是必要条件：/v1/models、auto 与显式 codex:… 全部经由 registry.getProvider，
-      // 而它读的是内存 this.config。不同步的话，导入后仍要等 1 小时的配置 watcher 或重启才
-      // 真正可用 —— 正是上面启用 provider 想消除的症状。这里不 preserveModels：改动的正是
-      // provider 拓扑，需要让新 provider 的模型目录在下一次刷新时被纳入。
-      getRegistry().updateConfig(next);
-      await getCredentialRuntime().upsertAccount(provider, {
-        id,
-        status: 'active',
-        addedAt: Date.now(),
-        label,
-        payload: parsed.payload,
-      });
-      return reply.send({ ok: true, account: { provider, id, ...fields } });
-    },
-  );
+    let provider: SubscriptionProvider;
+    let parsed: ParsedSubscription;
+    if (providerParam !== undefined) {
+      provider = providerParam;
+      try {
+        parsed = SUBSCRIPTION_ADAPTERS[provider].parseImport(content);
+      } catch (error) {
+        return reply.code(400).send({ error: redactMessage(error) });
+      }
+    } else {
+      const detected = detectProvider(content);
+      if (!detected) {
+        return reply
+          .code(400)
+          .send({ error: 'could not detect the provider from the supplied credential' });
+      }
+      provider = detected.provider;
+      parsed = detected.parsed;
+    }
+
+    const { id, fields } = await landSubscriptionAccount(provider, parsed, getRegistry);
+    return reply.send({ ok: true, account: { provider, id, ...fields } });
+  };
+
+  app.post<SubscriptionImportRequest>('/api/subscription/credentials', importCredential);
+  app.post<SubscriptionImportRequest>('/api/subscription/oauth/import', importCredential);
 
   app.delete<{ Querystring: { provider?: string; id?: string } }>(
     '/api/subscription/credentials',

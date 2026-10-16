@@ -114,4 +114,29 @@ describe('loopback OAuth callback listener', () => {
       first.close();
     }
   });
+
+  // 回调端口是固定复用的（1455/54545/51121）。若第一次回调留下的 keep-alive 连接
+  // 还在客户端的连接池里，用户取消后重试时，新请求会被这条连到**旧 server 实例**的
+  // 连接接走，新会话就永远等不到回调 —— 表现在界面上就是一直转圈。
+  it('does not leave a reusable keep-alive socket behind', async () => {
+    const state = generateState();
+    const first = await startLoopbackListener({ port: 0, path: '/auth/callback' });
+    const port = portOf(first.redirectUri);
+    const firstWait = first.waitForCode();
+    const firstResponse = await fetch(`${first.redirectUri}?code=C1&state=${state}`);
+    assert.equal(firstResponse.status, 200);
+    assert.equal(firstResponse.headers.get('connection'), 'close');
+    assert.deepEqual(await firstWait, { code: 'C1', state });
+
+    // 同一个端口马上再起一个：随后这次请求必须打到新的 server 上。
+    const second = await startLoopbackListener({ port, path: '/auth/callback' });
+    try {
+      const secondWait = second.waitForCode();
+      const secondResponse = await fetch(`${second.redirectUri}?code=C2&state=${state}`);
+      assert.equal(secondResponse.status, 200);
+      assert.deepEqual(await secondWait, { code: 'C2', state });
+    } finally {
+      second.close();
+    }
+  });
 });

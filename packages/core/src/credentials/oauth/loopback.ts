@@ -40,6 +40,16 @@ const SUCCESS_BODY =
 
 const PLAIN_TEXT = { 'content-type': 'text/plain; charset=utf-8' } as const;
 
+/**
+ * 一次性回调服务器绝不能留 keep-alive 连接。
+ *
+ * 回调端口是固定复用的（1455/54545/51121）：上一条连接若留在客户端连接池里，
+ * 用户取消后重试时，新的请求会被这条连到**旧 server 实例**的连接接走，
+ * 新会话就永远等不到回调（表现为一直转圈）。`Connection: close` 让 Node
+ * 在响应后直接关掉这条 socket。
+ */
+const NO_KEEPALIVE = { connection: 'close' } as const;
+
 interface CallbackQuery {
   code: string;
   state: string;
@@ -65,12 +75,15 @@ export function startLoopbackListener(opts: LoopbackListenerOptions): Promise<Lo
     } | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    function shutdown(): void {
+    function shutdown(force: boolean): void {
       if (timer) {
         clearTimeout(timer);
         timer = null;
       }
       if (server.listening) server.close();
+      // 只有确定没人在写响应时（超时 / 主动关闭）才强拆连接：deliver() 之后
+      // 立刻强拆会把还没 flush 的回调页截断。
+      if (force) server.closeAllConnections();
     }
 
     function deliver(value: CallbackQuery): void {
@@ -79,7 +92,7 @@ export function startLoopbackListener(opts: LoopbackListenerOptions): Promise<Lo
       result = value;
       const pending = waiter;
       waiter = null;
-      shutdown();
+      shutdown(false);
       pending?.resolve(value);
     }
 
@@ -89,14 +102,14 @@ export function startLoopbackListener(opts: LoopbackListenerOptions): Promise<Lo
       failure = error;
       const pending = waiter;
       waiter = null;
-      shutdown();
+      shutdown(true);
       pending?.reject(error);
     }
 
     const server = createServer((req, res) => {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1');
       if (url.pathname !== path) {
-        res.writeHead(404, PLAIN_TEXT);
+        res.writeHead(404, { ...PLAIN_TEXT, ...NO_KEEPALIVE });
         res.end('not found');
         return;
       }
@@ -104,11 +117,11 @@ export function startLoopbackListener(opts: LoopbackListenerOptions): Promise<Lo
       const state = url.searchParams.get('state') ?? '';
       // 先验形状再看会话：畸形 state 不该有机会碰到会话存储。
       if (!code || !isValidState(state)) {
-        res.writeHead(400, PLAIN_TEXT);
+        res.writeHead(400, { ...PLAIN_TEXT, ...NO_KEEPALIVE });
         res.end('invalid callback');
         return;
       }
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_KEEPALIVE });
       res.end(SUCCESS_BODY);
       deliver({ code, state });
     });

@@ -90,6 +90,19 @@ describe('OAuth session store', () => {
     assert.equal(store.cancel(state), false);
   });
 
+  // 路由层要在**申请任何本机资源之前**判断"这家是不是已有 pending 会话"：
+  // codex/claude 的回调端口被官方应用注册死（1455/54545），若先起监听再查会话，
+  // 第二次点击只会撞 EADDRINUSE（500），永远走不到 409 分支。
+  it('hasPending reports per-provider pending state without allocating a session', () => {
+    const store = createOAuthSessionStore();
+    assert.equal(store.hasPending('codex'), false);
+    const state = store.begin('codex', REDIRECT);
+    assert.equal(store.hasPending('codex'), true);
+    assert.equal(store.hasPending('claude'), false);
+    store.complete(state);
+    assert.equal(store.hasPending('codex'), false);
+  });
+
   it('get returns undefined for an unknown state', () => {
     const store = createOAuthSessionStore();
     assert.equal(store.get(generateState()), undefined);

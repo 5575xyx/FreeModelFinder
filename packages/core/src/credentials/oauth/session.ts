@@ -23,6 +23,14 @@ export class OAuthSessionBusyError extends Error {
 export interface OAuthSessionStore {
   /** 返回新会话的 state；同 provider 已有 pending 会话时抛 OAuthSessionBusyError。 */
   begin(provider: SubscriptionProviderId, redirectUri: string, verifier?: string): string;
+  /**
+   * 这家是否已有 pending 会话。
+   *
+   * 路由层必须先问这个再申请本机端口：codex/claude 的回调端口被官方应用注册死
+   * （1455/54545），先起监听的话，第二次点击只会撞 EADDRINUSE（500），
+   * 永远走不到"同家已有会话"的 409 分支。
+   */
+  hasPending(provider: SubscriptionProviderId): boolean;
   get(state: string): OAuthSessionRecord | undefined;
   isPending(state: string): boolean;
   complete(state: string): void;
@@ -65,6 +73,7 @@ export function createOAuthSessionStore(): OAuthSessionStore {
       return state;
     },
     get: (state) => sessions.get(state),
+    hasPending: (provider) => findPending(provider) !== undefined,
     isPending: (state) => sessions.get(state)?.status === 'wait',
     complete: (state) => setStatus(state, 'ok'),
     fail: (state, error) => setStatus(state, 'error', error),
