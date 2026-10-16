@@ -35,9 +35,9 @@ export interface OAuthSessionStore {
   isPending(state: string): boolean;
   complete(state: string): void;
   fail(state: string, error: string): void;
-  /** 删除会话；返回是否真的存在过。 */
+  /** 取消还 pending 的会话；已完成/已失败/未知的返回 false（记录保留，UI 仍能读最终结果）。 */
   cancel(state: string): boolean;
-  /** 由调用方驱动（模块内不起定时器，避免测试期悬挂句柄）。 */
+  /** 由调用方驱动（模块内不起定时器，避免测试期悬挂句柄）：超时的标错、结束的回收。 */
   sweep(now?: number): void;
 }
 
@@ -77,15 +77,21 @@ export function createOAuthSessionStore(): OAuthSessionStore {
     isPending: (state) => sessions.get(state)?.status === 'wait',
     complete: (state) => setStatus(state, 'ok'),
     fail: (state, error) => setStatus(state, 'error', error),
-    // 取消即删除：迟到的回调查不到 pending 会话，自然不落账号
-    //（对齐参考项目 CancelAuthSession 的语义）。
-    cancel: (state) => sessions.delete(state),
+    // 只有还 pending 的才谈得上"取消"：对齐参考项目 CancelAuthSession
+    //（对已完成/已失败的会话返回 false 且保留记录，UI 才能继续读到最终结果）。
+    cancel(state) {
+      const record = sessions.get(state);
+      if (!record || record.status !== 'wait') return false;
+      sessions.delete(state);
+      return true;
+    },
     sweep(now = Date.now()) {
       for (const [state, record] of sessions) {
-        if (record.status !== 'wait') continue;
-        if (now - record.createdAt > OAUTH_SESSION_TTL_MS) {
-          setStatus(state, 'error', 'timeout');
-        }
+        if (now - record.createdAt <= OAUTH_SESSION_TTL_MS) continue;
+        // 还在等的标记超时（UI 靠这个 `timeout` 记号显示本地化文案）；
+        // 已经结束的则直接回收，避免 Map 随每次登录单调增长。
+        if (record.status === 'wait') setStatus(state, 'error', 'timeout');
+        else sessions.delete(state);
       }
     },
   };

@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { redact } from '../redact.js';
 import { OAUTH_SESSION_TTL_MS } from './session.js';
 import { isValidState } from './state.js';
 
@@ -14,8 +15,24 @@ export interface LoopbackListenerOptions {
 export interface LoopbackCallback {
   /** 'http://localhost:<port><path>'，即要写进 OAuth authorize 请求的 redirect_uri。 */
   redirectUri: string;
-  waitForCode(): Promise<{ code: string; state: string }>;
+  /**
+   * 只接受这个 `state` 的回调。
+   *
+   * 不设的话，本机**任何进程**（以及局域网，见下）都能往这个端口投一个形状合法
+   * 但 state 不对的回调，把正在等待的会话直接打挂 —— 而它本来只是在等真实回调。
+   * 设好之后不匹配的投递回 400，**不消耗**本次监听，真实回调仍能进来。
+   */
+  expectCallbackFor(state: string): void;
+  waitForCode(): Promise<CallbackQuery>;
   close(): void;
+}
+
+/** 回调里携带的信息。provider 明确拒绝时没有 code，只有 error。 */
+export interface CallbackQuery {
+  code: string;
+  state: string;
+  /** provider 回的失败原因（`access_denied` 等）；成功时为 undefined。 */
+  error?: string;
 }
 
 /**
@@ -34,6 +51,34 @@ export class LoopbackPortBusyError extends Error {
   }
 }
 
+/**
+ * 回调没等到就超时了。
+ *
+ * 单独一个类型是为了让路由层能把原因归一成固定的 `timeout` 记号 —— UI 靠它显示
+ * 本地化文案，而不是把这句英文原文糊到屏幕上。
+ */
+export class OAuthCallbackTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super(`OAuth callback timed out after ${timeoutMs}ms`);
+    this.name = 'OAuthCallbackTimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+/**
+ * 把会话失败原因归一成 UI 的固定词汇。
+ *
+ * UI（`describeOAuthError`）只认识 `timeout` / `session already pending` / `access_denied`
+ * 这几个记号，其余一律原样展示（已 redact）。所以这里必须把可归一的先归一，
+ * 否则用户看到的是 `OAuth callback timed out after 600000ms` 这种没法读的东西。
+ */
+export function normalizeOAuthFailure(error: unknown): string {
+  if (error instanceof OAuthCallbackTimeoutError) return 'timeout';
+  return redact(error instanceof Error ? error.message : String(error));
+}
+
 const SUCCESS_BODY =
   '<!doctype html><meta charset="utf-8"><title>FreeModelFinder</title>' +
   '<p>授权完成，可以关闭此页。</p>';
@@ -50,10 +95,10 @@ const PLAIN_TEXT = { 'content-type': 'text/plain; charset=utf-8' } as const;
  */
 const NO_KEEPALIVE = { connection: 'close' } as const;
 
-interface CallbackQuery {
-  code: string;
-  state: string;
-}
+/** provider 明确拒绝时，跳回来的页面要说明"没有授权成功"，而不是复用成功页。 */
+const DENIED_BODY =
+  '<!doctype html><meta charset="utf-8"><title>FreeModelFinder</title>' +
+  '<p>授权未完成，可以关闭此页并回到 FreeModelFinder 重试。</p>';
 
 /**
  * 起一个只服务一次回调的本机监听器。
@@ -69,6 +114,7 @@ export function startLoopbackListener(opts: LoopbackListenerOptions): Promise<Lo
     let delivered = false;
     let result: CallbackQuery | null = null;
     let failure: unknown = null;
+    let expectedState: string | null = null;
     let waiter: {
       resolve: (value: CallbackQuery) => void;
       reject: (reason: unknown) => void;
@@ -115,10 +161,34 @@ export function startLoopbackListener(opts: LoopbackListenerOptions): Promise<Lo
       }
       const code = url.searchParams.get('code') ?? '';
       const state = url.searchParams.get('state') ?? '';
+      const providerError = (
+        url.searchParams.get('error') ??
+        url.searchParams.get('error_description') ??
+        ''
+      ).trim();
       // 先验形状再看会话：畸形 state 不该有机会碰到会话存储。
-      if (!code || !isValidState(state)) {
+      if (!code && !providerError) {
         res.writeHead(400, { ...PLAIN_TEXT, ...NO_KEEPALIVE });
         res.end('invalid callback');
+        return;
+      }
+      if (!isValidState(state)) {
+        res.writeHead(400, { ...PLAIN_TEXT, ...NO_KEEPALIVE });
+        res.end('invalid callback');
+        return;
+      }
+      // 不是本会话的 state：回 400 但**不收下、不关监听**。
+      // 收下会把受害者会话打挂（本机任何进程都能投递，局域网也能，见 listen 处注释）；
+      // 关监听则会让真实回调再也进不来。
+      if (expectedState !== null && state !== expectedState) {
+        res.writeHead(400, { ...PLAIN_TEXT, ...NO_KEEPALIVE });
+        res.end('state does not match this session');
+        return;
+      }
+      if (providerError) {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_KEEPALIVE });
+        res.end(DENIED_BODY);
+        deliver({ code: '', state, error: providerError });
         return;
       }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_KEEPALIVE });
@@ -137,14 +207,22 @@ export function startLoopbackListener(opts: LoopbackListenerOptions): Promise<Lo
     // 不指定 host：Node 会绑到 IPv6 通配 `::`（双栈），localhost 解析到 ::1 还是 127.0.0.1 都能连上。
     // 参考项目也是绑 `:port`（Go 的 Addr: ":port"），但对外宣告的 redirect_uri 主机名固定是 localhost
     // —— 上游对 redirect_uri 做精确匹配，写成 127.0.0.1 会被直接拒绝。
+    // ⚠️ 因此这个端口**不是仅本机可达**：局域网（乃至公网上没被防火墙挡住的机器）都能连到它。
+    // 危害被两道门挡住：① 一次性、只活 10 分钟；② 内容必须带对 state 才会被收下。
+    // 部署文档（docs/SERVER_MODE.md）要求端口映射只能绑宿主 127.0.0.1，绝不暴露到公网。
     server.listen(opts.port, () => {
       const address = server.address();
       const actualPort = typeof address === 'object' && address !== null ? address.port : opts.port;
       timer = setTimeout(() => {
-        abort(new Error(`OAuth callback timed out after ${timeoutMs}ms`));
+        abort(new OAuthCallbackTimeoutError(timeoutMs));
       }, timeoutMs);
+      // 服务关停时不能被这个 10 分钟定时器吊着不退出（测试里尤其明显）。
+      timer.unref?.();
       resolve({
         redirectUri: `http://localhost:${actualPort}${path}`,
+        expectCallbackFor(state) {
+          expectedState = state;
+        },
         waitForCode() {
           if (result !== null) return Promise.resolve(result);
           if (failure !== null) return Promise.reject(failure);

@@ -90,6 +90,21 @@ describe('OAuth session store', () => {
     assert.equal(store.cancel(state), false);
   });
 
+  // 参考项目 CancelAuthSession 对"已完成 / 已失败"的会话明确返回 false，
+  // 因为那时已经没有可以取消的东西了。返回 true 会让 UI 提示"已取消"，但实际早已结束。
+  it('cancel of a finished session returns false and keeps the outcome readable', () => {
+    const store = createOAuthSessionStore();
+    const state = store.begin('codex', REDIRECT);
+    store.complete(state);
+    assert.equal(store.cancel(state), false);
+    assert.equal(store.get(state)?.status, 'ok', 'the outcome must stay readable');
+
+    const failed = store.begin('claude', REDIRECT);
+    store.fail(failed, 'access_denied');
+    assert.equal(store.cancel(failed), false);
+    assert.equal(store.get(failed)?.error, 'access_denied');
+  });
+
   // 路由层要在**申请任何本机资源之前**判断"这家是不是已有 pending 会话"：
   // codex/claude 的回调端口被官方应用注册死（1455/54545），若先起监听再查会话，
   // 第二次点击只会撞 EADDRINUSE（500），永远走不到 409 分支。
@@ -115,5 +130,21 @@ describe('OAuth session store', () => {
     store.sweep(createdAt + OAUTH_SESSION_TTL_MS + 1);
     assert.equal(store.get(state)?.status, 'error');
     assert.equal(store.get(state)?.error, 'timeout');
+  });
+
+  // sweep 也负责回收已经结束的会话：complete/fail 只是改状态、不删记录，
+  // 长期运行的服务若从不回收，Map 会随着每次登录单调增长。
+  it('sweep drops finished sessions older than the TTL so the map stays bounded', () => {
+    const store = createOAuthSessionStore();
+    const done = store.begin('codex', REDIRECT);
+    store.complete(done);
+    const finishedAt = store.get(done)?.createdAt ?? 0;
+
+    // 同代还没过期的结束会话要留着：UI 可能正靠它读最终状态。
+    store.sweep(finishedAt + 1);
+    assert.ok(store.get(done), 'a fresh finished session must stay readable');
+
+    store.sweep(finishedAt + OAUTH_SESSION_TTL_MS + 1);
+    assert.equal(store.get(done), undefined);
   });
 });

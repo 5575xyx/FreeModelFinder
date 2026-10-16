@@ -60,7 +60,10 @@ export {
 export { generatePkce } from './credentials/oauth/pkce.js';
 export {
   LoopbackPortBusyError,
+  OAuthCallbackTimeoutError,
+  normalizeOAuthFailure,
   startLoopbackListener,
+  type CallbackQuery,
   type LoopbackCallback,
   type LoopbackListenerOptions,
 } from './credentials/oauth/loopback.js';

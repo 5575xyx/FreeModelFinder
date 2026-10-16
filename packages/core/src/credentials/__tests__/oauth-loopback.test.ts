@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { LoopbackPortBusyError, startLoopbackListener } from '../oauth/loopback.js';
+import {
+  LoopbackPortBusyError,
+  OAuthCallbackTimeoutError,
+  normalizeOAuthFailure,
+  startLoopbackListener,
+} from '../oauth/loopback.js';
 import { generateState } from '../oauth/state.js';
 
 /** 'pending' 表示 promise 在给定窗口内仍未 settle。 */
@@ -60,6 +65,37 @@ describe('loopback OAuth callback listener', () => {
     await assert.rejects(wait);
   });
 
+  // 用户在授权页点「拒绝」时，provider 跳回来的是 `?error=access_denied&state=…`，**没有 code**。
+  // 监听器必须把这个失败原样投递出去，否则会话只能挂到 10 分钟超时，
+  // 用户看到的是"什么都没发生"，而不是"你拒绝了授权"。
+  it('resolves waitForCode with the provider error when the callback carries no code', async () => {
+    const listener = await startLoopbackListener({ port: 0, path: '/auth/callback' });
+    try {
+      const state = generateState();
+      const wait = listener.waitForCode();
+      const response = await fetch(
+        `${listener.redirectUri}?error=access_denied&error_description=user+denied&state=${state}`,
+      );
+      assert.equal(response.status, 200);
+      assert.deepEqual(await wait, { code: '', state, error: 'access_denied' });
+    } finally {
+      listener.close();
+    }
+  });
+
+  // 拒绝时 provider 有时只回 error_description（不带 error）。两者都要认。
+  it('falls back to error_description when error is absent', async () => {
+    const listener = await startLoopbackListener({ port: 0, path: '/auth/callback' });
+    try {
+      const state = generateState();
+      const wait = listener.waitForCode();
+      await fetch(`${listener.redirectUri}?error_description=access_denied&state=${state}`);
+      assert.deepEqual(await wait, { code: '', state, error: 'access_denied' });
+    } finally {
+      listener.close();
+    }
+  });
+
   it('a callback missing code or state returns 400 and does not resolve', async () => {
     const listener = await startLoopbackListener({ port: 0, path: '/auth/callback' });
     const wait = listener.waitForCode();
@@ -96,7 +132,8 @@ describe('loopback OAuth callback listener', () => {
       timeoutMs: 40,
     });
     const port = portOf(listener.redirectUri);
-    await assert.rejects(listener.waitForCode());
+    // 超时必须是可识别的类型，路由层才能把它归一成 UI 认识的 `timeout` 记号。
+    await assert.rejects(listener.waitForCode(), OAuthCallbackTimeoutError);
     // 超时后必须释放监听，否则用户重新点"登录"会永远撞 EADDRINUSE。
     const again = await startLoopbackListener({ port, path: '/auth/callback' });
     again.close();
@@ -138,5 +175,36 @@ describe('loopback OAuth callback listener', () => {
     } finally {
       second.close();
     }
+  });
+
+  // 本机任何进程（局域网也对，因为绑的是 `::`）都能往回调端口投递。
+  // 若把不匹配的投递收下并关掉监听，受害者会话就被第三方打挂了 —— 而它本该继续等真实回调。
+  it('rejects a callback for a foreign state without consuming the listener', async () => {
+    const mine = generateState();
+    const foreign = generateState();
+    const listener = await startLoopbackListener({ port: 0, path: '/auth/callback' });
+    try {
+      listener.expectCallbackFor(mine);
+      const wait = listener.waitForCode();
+
+      const intruder = await fetch(`${listener.redirectUri}?code=STOLEN&state=${foreign}`);
+      assert.equal(intruder.status, 400);
+      // 监听还得活着，真实回调随后仍要能进来并完成会话。
+      assert.equal(await settledWithin(wait, 50), 'pending');
+
+      const real = await fetch(`${listener.redirectUri}?code=REAL&state=${mine}`);
+      assert.equal(real.status, 200);
+      assert.deepEqual(await wait, { code: 'REAL', state: mine });
+    } finally {
+      listener.close();
+    }
+  });
+
+  it('normalizeOAuthFailure turns a timeout into the UI sentinel and redacts the rest', () => {
+    assert.equal(normalizeOAuthFailure(new OAuthCallbackTimeoutError(600000)), 'timeout');
+    assert.equal(
+      normalizeOAuthFailure(new Error('exchange failed: {"refresh_token":"1//0abcDEF"}')),
+      'exchange failed: {"refresh_token":"[REDACTED]"}',
+    );
   });
 });

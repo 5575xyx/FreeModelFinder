@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createConnection } from 'node:net';
 import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import {
   ProviderRegistry,
@@ -246,6 +247,18 @@ describe('subscription OAuth endpoints', () => {
     assert.equal(response.json().error, 'unknown or expired state');
   });
 
+  // 对齐参考项目 GetAuthStatus：无 state 参数时 `200 {"status":"ok"}`，
+  // 而不是把"没给 state"当成非法输入报 400。这是探活语义（UI 用来判断端点是否活着）。
+  it('status without a state answers 200 status ok like the reference', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/subscription/oauth/status',
+      headers: localUiHeaders,
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.deepEqual(response.json(), { status: 'ok' });
+  });
+
   // 真实链路：auth-url 起监听 → 浏览器跳到回环地址 → 监听器交货 → 换 token → 落库。
   it('status returns ok once the loopback callback carried a matching state', async () => {
     SUBSCRIPTION_ADAPTERS.codex.exchangeCode = async ({ code, verifier }) => {
@@ -312,14 +325,69 @@ describe('subscription OAuth endpoints', () => {
     assert.equal((await getCredentialRuntime().getPool('codex')).accounts.length, 0);
   });
 
-  it('status returns error when the callback carries a mismatched state, and saves nothing', async () => {
+  // 本机任何进程都能往回调端口投递。投一个形状合法但不是本会话的 state，
+  // **不能**把受害者会话打挂（参考项目对不匹配的投递是忽略），也不能消耗掉监听。
+  it('ignores a callback carrying a foreign state and still completes on the real one', async () => {
+    SUBSCRIPTION_ADAPTERS.codex.exchangeCode = async () => {
+      exchangeCalls += 1;
+      return {
+        payload: {
+          accessToken: 'AT',
+          refreshToken: 'RT',
+          accountId: 'oauth-codex-after-csrf',
+          email: 'csrf@example.com',
+        },
+        profile: { id: 'oauth-codex-after-csrf', email: 'csrf@example.com' },
+      };
+    };
+
     const { state, redirectUri } = await beginOAuth('codex');
-    // 形状合法但不是本会话的 state：回环监听器会收下，路由层必须拒绝
-    await fetch(`${redirectUri}?code=CODE_CSRF&state=${'b'.repeat(43)}`);
+    const intruder = await fetch(`${redirectUri}?code=STOLEN&state=${'b'.repeat(43)}`);
+    assert.equal(intruder.status, 400);
+    assert.equal((await statusOf(state)).status, 'wait', 'the session must keep waiting');
+    assert.equal(exchangeCalls, 0, 'a foreign state must never reach the token endpoint');
+
+    // 真实回调随后仍要能完成这个会话 —— 监听不能被外来投递消耗掉。
+    const real = await fetch(`${redirectUri}?code=CODE_AFTER_CSRF&state=${state}`);
+    assert.equal(real.status, 200);
+    const record = await waitForStatus(state, 'ok');
+    assert.equal(record.status, 'ok');
+    assert.equal(exchangeCalls, 1);
+    assert.equal((await getCredentialRuntime().getPool('codex')).accounts.length, 1);
+  });
+
+  // 用户在授权页点「拒绝」时，provider 跳回来的是 `?error=access_denied&state=…`。
+  // 会话必须带着"你拒绝了"的结论立刻收尾，而不是挂到 10 分钟超时。
+  it('records the denial when the provider redirects back with access_denied', async () => {
+    const { state, redirectUri } = await beginOAuth('codex');
+
+    const response = await fetch(
+      `${redirectUri}?error=access_denied&error_description=user+denied&state=${state}`,
+    );
+    assert.equal(response.status, 200);
 
     const record = await waitForStatus(state, 'error');
-    assert.match(record.error ?? '', /state/);
-    assert.equal(exchangeCalls, 0, 'a mismatched state must never reach the token endpoint');
+    assert.equal(record.error, 'access_denied');
+    assert.equal(exchangeCalls, 0, 'a denial must never reach the token endpoint');
+    assert.equal((await getCredentialRuntime().getPool('codex')).accounts.length, 0);
+  });
+
+  // 走 /oauth/callback 的拒绝：先把原因记下，再关监听。
+  // 若先关监听，abort 会把失败原因覆盖成 "OAuth callback listener closed"，
+  // 用户看到的就不是"你拒绝了授权"，而是一句莫名其妙的监听器错误。
+  it('keeps the denial reason when it arrives through /oauth/callback', async () => {
+    const { state } = await beginOAuth('codex');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/oauth/callback',
+      headers: { ...localUiHeaders, 'content-type': 'application/json' },
+      payload: { state, error: 'access_denied' },
+    });
+    assert.equal(response.statusCode, 400, response.body);
+
+    const record = await waitForStatus(state, 'error');
+    assert.equal(record.error, 'access_denied');
     assert.equal((await getCredentialRuntime().getPool('codex')).accounts.length, 0);
   });
 
@@ -372,6 +440,27 @@ describe('subscription OAuth endpoints', () => {
     });
     assert.equal(response.statusCode, 200, response.body);
     assert.equal(response.json().cancelled, false);
+  });
+
+  // 参考项目 CancelAuthSession 对已结束的会话返回 false（没有可取消的东西了），
+  // 且保留记录，UI 才读得到最终结果；返回 true 会让用户以为是自己取消掉的。
+  it('cancel of a finished session reports cancelled:false and keeps the outcome', async () => {
+    SUBSCRIPTION_ADAPTERS.codex.exchangeCode = async () => {
+      throw new Error('nope');
+    };
+    const { state, redirectUri } = await beginOAuth('codex');
+    await fetch(`${redirectUri}?code=CODE_X&state=${state}`);
+    const finished = await waitForStatus(state, 'error');
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/subscription/oauth/session?state=${state}`,
+      headers: localUiHeaders,
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json().cancelled, false);
+    // 结果仍可读（不会被"取消"抹掉）
+    assert.equal((await statusOf(state)).error, finished.error);
   });
 
   // 官方 CLI 常常也在监听 1455；用户最容易撞上的失败就是端口被占。
@@ -462,5 +551,43 @@ describe('subscription OAuth endpoints', () => {
     });
     assert.equal(response.statusCode, 200, response.body);
     assert.equal(response.json().account.provider, 'codex');
+  });
+});
+
+/** 端口是否有人监听（真实 TCP 连一次，不靠内部状态猜）。 */
+function portState(port: number): Promise<'accepting' | 'refused'> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host: '127.0.0.1', port });
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve('accepting');
+    });
+    socket.once('error', () => {
+      socket.destroy();
+      resolve('refused');
+    });
+  });
+}
+
+// 服务关停必须把回环监听一起关掉。
+//
+// 否则：端口留在监听状态（用户以为"登录中"，其实服务已经没了），
+// 且那个 10 分钟的会话定时器会把进程吊着不退出 —— 在测试里表现为整个 job 挂死。
+describe('subscription OAuth server shutdown', () => {
+  it('releases the fixed loopback port when the server closes with a pending session', async () => {
+    const registry = new ProviderRegistry(testConfig());
+    const { app: local } = await createServer({ registry, watchIntervalMs: 60 * 60 * 1000 });
+
+    const started = await local.inject({
+      method: 'GET',
+      url: '/api/subscription/oauth/auth-url?provider=codex',
+      headers: localUiHeaders,
+    });
+    assert.equal(started.statusCode, 200, started.body);
+    assert.equal(await portState(1455), 'accepting', 'precondition: the listener is up');
+
+    await local.close();
+
+    assert.equal(await portState(1455), 'refused', 'app.close() must release the callback port');
   });
 });
