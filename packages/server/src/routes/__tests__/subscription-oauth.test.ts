@@ -160,6 +160,17 @@ describe('subscription OAuth endpoints', () => {
     throw new Error(`session ${state} never reached ${expected}`);
   }
 
+  /** 装一个成功落账号的 exchangeCode stub，并让 exchangeCalls 计数。 */
+  function stubCodexExchange(accountId: string, email: string): void {
+    SUBSCRIPTION_ADAPTERS.codex.exchangeCode = async () => {
+      exchangeCalls += 1;
+      return {
+        payload: { accessToken: 'AT', refreshToken: 'RT', accountId, email },
+        profile: { id: accountId, email },
+      };
+    };
+  }
+
   it('auth-url returns a url and state and marks the session waiting', async () => {
     const { state, url, redirectUri } = await beginOAuth('codex');
     assert.match(state, /^[A-Za-z0-9_-]{43}$/);
@@ -515,6 +526,167 @@ describe('subscription OAuth endpoints', () => {
     });
     assert.equal(response.statusCode, 400, response.body);
     assert.equal(exchangeCalls, 0);
+  });
+
+  // 第三波：用户粘进来的内容形态远比"完整 URL"花哨。参考项目 misc/oauth.go:53-126
+  // 为这些形态准备了前缀补全，这里逐条断言服务端真的按它做。
+  it('completes the session from a bare query string pasted by the user', async () => {
+    stubCodexExchange('oauth-codex-bareq', 'bareq@example.com');
+    const { state } = await beginOAuth('codex');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/oauth/callback',
+      headers: { ...localUiHeaders, 'content-type': 'application/json' },
+      payload: { redirect_url: `?code=CODE_BAREQ&state=${state}` },
+    });
+    assert.equal(response.statusCode, 200, response.body);
+
+    assert.equal((await waitForStatus(state, 'ok')).status, 'ok');
+    assert.equal(exchangeCalls, 1);
+  });
+
+  it('completes the session from a bare path pasted by the user', async () => {
+    stubCodexExchange('oauth-codex-path', 'path@example.com');
+    const { state, redirectUri } = await beginOAuth('codex');
+
+    // 用户可能只截到路径那一段（复制时把 http://localhost:1455 漏掉）
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/oauth/callback',
+      headers: { ...localUiHeaders, 'content-type': 'application/json' },
+      payload: { redirect_url: `/auth/callback?code=CODE_PATH&state=${state}` },
+    });
+    assert.equal(response.statusCode, 200, response.body);
+
+    assert.equal((await waitForStatus(state, 'ok')).status, 'ok');
+    // 换 token 用的是监听器自己的 redirectUri，不是用户粘的残缺串
+    assert.match(redirectUri, /^http:\/\/localhost:1455\/auth\/callback$/);
+  });
+
+  it('completes the session from a bare k=v string pasted by the user', async () => {
+    stubCodexExchange('oauth-codex-kv', 'kv@example.com');
+    const { state } = await beginOAuth('codex');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/oauth/callback',
+      headers: { ...localUiHeaders, 'content-type': 'application/json' },
+      payload: { redirect_url: `code=CODE_KV&state=${state}` },
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal((await waitForStatus(state, 'ok')).status, 'ok');
+  });
+
+  it('completes a Claude session from the code#state form', async () => {
+    SUBSCRIPTION_ADAPTERS.claude.exchangeCode = async () => {
+      exchangeCalls += 1;
+      return {
+        payload: { accessToken: 'AT', refreshToken: 'RT', accountUuid: 'oauth-claude-hash' },
+        profile: { id: 'oauth-claude-hash', email: 'hash@example.com' },
+      };
+    };
+    const { state } = await beginOAuth('claude');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/oauth/callback',
+      headers: { ...localUiHeaders, 'content-type': 'application/json' },
+      payload: { redirect_url: `CODE_HASH#${state}` },
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal((await waitForStatus(state, 'ok')).status, 'ok');
+    assert.equal(exchangeCalls, 1);
+  });
+
+  it('records a provider denial submitted as a redirect_url carrying only error', async () => {
+    const { state } = await beginOAuth('codex');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/oauth/callback',
+      headers: { ...localUiHeaders, 'content-type': 'application/json' },
+      payload: {
+        redirect_url: `http://localhost:1455/auth/callback?error=access_denied&state=${state}`,
+      },
+    });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.equal(response.json().error, 'access_denied');
+
+    const record = await waitForStatus(state, 'error');
+    assert.equal(record.error, 'access_denied');
+    assert.equal(exchangeCalls, 0, 'a denial must never reach the token endpoint');
+    assert.equal((await getCredentialRuntime().getPool('codex')).accounts.length, 0);
+  });
+
+  it('redacts a token inside the submitted error before storing it', async () => {
+    const { state } = await beginOAuth('codex');
+
+    // 用户把整段 auth 响应粘进来，secret 落在 error_description 里
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/oauth/callback',
+      headers: { ...localUiHeaders, 'content-type': 'application/json' },
+      payload: {
+        redirect_url: `http://localhost:1455/auth/callback?error_description=refresh_token=SECRET&state=${state}`,
+      },
+    });
+    assert.equal(response.statusCode, 400, response.body);
+
+    const record = await waitForStatus(state, 'error');
+    assert.equal(record.error, 'refresh_token=[REDACTED]');
+    assert.ok(!record.error!.includes('SECRET'), 'the raw secret must never reach the session');
+  });
+
+  it('rejects a redirect_url with no code and no error without consuming the session', async () => {
+    const { state } = await beginOAuth('codex');
+
+    // 最常见的误粘：用户粘的是授权页地址，不含 code
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/oauth/callback',
+      headers: { ...localUiHeaders, 'content-type': 'application/json' },
+      payload: { redirect_url: `https://auth.openai.com/oauth/authorize?state=${state}` },
+    });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.equal(response.json().error, 'invalid redirect_url');
+
+    // 关键：会话不能被打挂，用户改粘正确的串还能继续
+    assert.equal((await statusOf(state)).status, 'wait');
+
+    stubCodexExchange('oauth-codex-recover', 'recover@example.com');
+    const retry = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/oauth/callback',
+      headers: { ...localUiHeaders, 'content-type': 'application/json' },
+      payload: { code: 'CODE_RETRY', state },
+    });
+    assert.equal(retry.statusCode, 200, retry.body);
+    assert.equal((await waitForStatus(state, 'ok')).status, 'ok');
+  });
+
+  it('rejects a redirect_url for a cancelled state and stores no account', async () => {
+    stubCodexExchange('oauth-codex-canceled', 'canceled@example.com');
+    const { state } = await beginOAuth('codex');
+
+    const cancel = await app.inject({
+      method: 'DELETE',
+      url: `/api/subscription/oauth/session?state=${state}`,
+      headers: localUiHeaders,
+    });
+    assert.equal(cancel.json().cancelled, true);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/oauth/callback',
+      headers: { ...localUiHeaders, 'content-type': 'application/json' },
+      payload: { redirect_url: `?code=CODE_CANCELED&state=${state}` },
+    });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.equal(response.json().error, 'unknown or expired state');
+
+    assert.equal(exchangeCalls, 0, 'a cancelled session must never reach the token endpoint');
+    assert.equal((await getCredentialRuntime().getPool('codex')).accounts.length, 0);
   });
 
   it('oauth/import behaves exactly like credentials import', async () => {

@@ -9,6 +9,7 @@ import {
   isValidState,
   normalizeOAuthFailure,
   normalizeSubscriptionProvider,
+  parseCallbackUrl,
   redact,
   startLoopbackListener,
   type CallbackQuery,
@@ -43,8 +44,13 @@ function html(reply: FastifyReply, status: number): FastifyReply {
  * 从查询/表单里取出 code + state。
  *
  * 除了直接给 `code`/`state`，也支持参考项目那条 `redirect_url` 路径：用户把浏览器地址栏
- * 里那条"打不开"的回调整条粘进来，由服务端自己拆参数。provider 若回了 `error`，
- * 优先当作失败处理。
+ * 里那条"打不开"的回跳整条粘进来，由服务端自己拆参数。
+ *
+ * `redirect_url` 用 `parseCallbackUrl` 做**宽容解析**（完整 URL / 裸 query / 裸 path /
+ * 裸 k=v / 裸 code#state / fragment 兜底），而不是 `new URL()` 直接解析 —— 用户复制时
+ * 漏掉 `http://localhost:1455` 前缀是常态，那种输入必须能救回来。
+ *
+ * 解析失败**不消耗会话**：只回 400，pending 会话继续等，用户改粘正确的串还能完成。
  */
 function readCallback(input: CallbackInput): CallbackQuery & { invalidRedirect?: string } {
   let code = (input.code ?? '').trim();
@@ -52,19 +58,16 @@ function readCallback(input: CallbackInput): CallbackQuery & { invalidRedirect?:
   let error = (input.error ?? input.error_description ?? '').trim();
   const redirect = (input.redirect_url ?? '').trim();
   if (redirect) {
+    let parsed: CallbackQuery | null;
     try {
-      const parsed = new URL(redirect);
-      if (!state) state = (parsed.searchParams.get('state') ?? '').trim();
-      if (!code) code = (parsed.searchParams.get('code') ?? '').trim();
-      if (!error) {
-        error = (
-          parsed.searchParams.get('error') ??
-          parsed.searchParams.get('error_description') ??
-          ''
-        ).trim();
-      }
+      parsed = parseCallbackUrl(redirect);
     } catch {
       return { code, state, error: '', invalidRedirect: 'invalid redirect_url' };
+    }
+    if (parsed) {
+      if (!code) code = parsed.code;
+      if (!state) state = parsed.state;
+      if (!error && parsed.error) error = parsed.error;
     }
   }
   return error ? { code, state, error } : { code, state };
@@ -269,9 +272,11 @@ export function registerSubscriptionOAuthRoutes(
       // 把失败原因交给 finishSession 统一收尾（它会自己关监听）。
       // 这里若先 store.fail 再 close 监听，abort 会把原因覆盖成
       // "OAuth callback listener closed" —— 用户看到的就不是"你拒绝了授权"。
+      // error 可能来自用户粘贴的内容，落库前必须脱敏（与 loopback 路径同一道防线）。
+      const masked = redact(error);
       waiters.delete(state);
-      waiter({ code: '', state, error });
-      return { ok: false, error };
+      waiter({ code: '', state, error: masked });
+      return { ok: false, error: masked };
     }
     waiter({ code, state });
     return { ok: true };
