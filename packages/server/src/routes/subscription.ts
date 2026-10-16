@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+﻿import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -7,6 +7,9 @@ import {
   SubscriptionRefreshError,
   getCredentialRuntime,
   redact,
+  runSharedFlight,
+  subscriptionFlightKey,
+  updateConfig,
   type ParsedSubscription,
   type SubscriptionAccountProfile,
 } from '@freemodelfinder/core';
@@ -14,7 +17,7 @@ import {
 export const SUBSCRIPTION_PROVIDERS = ['codex', 'claude', 'google'] as const;
 export type SubscriptionProvider = (typeof SUBSCRIPTION_PROVIDERS)[number];
 
-/** 导入文件只允许落在这些 `~/.<dir>` 白名单目录内，防止任意文件读。 */
+/** 瀵煎叆鏂囦欢鍙厑璁歌惤鍦ㄨ繖浜?`~/.<dir>` 鐧藉悕鍗曠洰褰曞唴锛岄槻姝换鎰忔枃浠惰銆?*/
 const IMPORT_ROOT_DIRS = ['.codex', '.claude', '.gemini'] as const;
 
 export const IMPORT_HINTS: ReadonlyArray<{ provider: SubscriptionProvider; path: string }> = [
@@ -32,8 +35,8 @@ function isSubscriptionProvider(value: unknown): value is SubscriptionProvider {
 }
 
 /**
- * 把 `~/...` 形式解析为绝对路径，并强制其落在 `~/.codex`、`~/.claude`、`~/.gemini`
- * 三者之一内。任何穿越（`../`）或落在白名单外的路径都返回 null（调用方回 400）。
+ * 鎶?`~/...` 褰㈠紡瑙ｆ瀽涓虹粷瀵硅矾寰勶紝骞跺己鍒跺叾钀藉湪 `~/.codex`銆乣~/.claude`銆乣~/.gemini`
+ * 涓夎€呬箣涓€鍐呫€備换浣曠┛瓒婏紙`../`锛夋垨钀藉湪鐧藉悕鍗曞鐨勮矾寰勯兘杩斿洖 null锛堣皟鐢ㄦ柟鍥?400锛夈€?
  */
 export function resolveImportPath(input: string): string | null {
   const trimmed = input.trim();
@@ -140,6 +143,17 @@ export function registerSubscriptionRoutes(app: FastifyInstance): void {
       const fields = profileFields(parsed.profile, parsed.payload);
       const id = adapter.accountIdOf(parsed.profile, parsed.payload);
       const label = fields.email ?? id;
+      // getProvider 的第一道闸门是 config.providers.<id>.enabled，而三家订阅 provider 在
+      // store.ts 里默认关闭、设置页也不含它们的开关。不在这儿启用的话，"导入成功"之后
+      // /v1/models 不列出订阅模型、auto 选不到、显式 codex:… 一律抛 "provider codex is not
+      // enabled" —— 整个功能等于没接上。
+      // 先启用再落账号：listEnabledProviders 会用 hasCredentials() 过滤，尚无账号的 provider
+      // 不会往 /v1/models 里塞用不了的模型，所以这个顺序没有副作用窗口。
+      await updateConfig((cfg) => {
+        const current = cfg.providers[provider] ?? { enabled: false };
+        cfg.providers[provider] = { ...current, enabled: true };
+        return cfg;
+      });
       await getCredentialRuntime().upsertAccount(provider, {
         id,
         status: 'active',
@@ -181,28 +195,43 @@ export function registerSubscriptionRoutes(app: FastifyInstance): void {
       const provider = providerParam;
       const runtime = getCredentialRuntime();
       const pool = await runtime.getPool(provider);
-      const account = pool.accounts.find((entry) => entry.id === id);
-      if (!account) {
+      if (!pool.accounts.some((entry) => entry.id === id)) {
         return reply.code(404).send({ error: 'account not found' });
       }
       const adapter = SUBSCRIPTION_ADAPTERS[provider];
       try {
-        const result = await adapter.refresh({
-          refreshToken: account.payload.refreshToken ?? '',
-          payload: account.payload,
+        // 手动刷新必须与 provider 内部的自动刷新共用同一把单飞锁：Codex 等轮换型 OAuth 下，
+        // 用户点"刷新"的瞬间若恰有一次请求触发了后台刷新，同一个 refresh_token 会被发两次，
+        // 上游判为 refresh_token_reused / invalid_grant，账号直接报废。
+        const fields = await runSharedFlight(subscriptionFlightKey(provider, id), async () => {
+          // 单飞只对**在途**刷新去重，settled 后立即剔除；因此锁内必须重读运行时池，
+          // 否则用的是进入路由时读到的、可能已被另一次刷新消费掉的 refresh token。
+          const fresh = (await runtime.getPool(provider)).accounts.find((e) => e.id === id);
+          if (!fresh) return null;
+          const result = await adapter.refresh({
+            refreshToken: fresh.payload.refreshToken ?? '',
+            payload: fresh.payload,
+          });
+          const next = profileFields(result.profile, result.payload);
+          await runtime.upsertAccount(provider, {
+            ...fresh,
+            status: 'active',
+            payload: result.payload,
+            ...(next.email ? { label: next.email } : {}),
+          });
+          return next;
         });
-        const payload = result.payload;
-        const fields = profileFields(result.profile, payload);
-        await runtime.upsertAccount(provider, {
-          ...account,
-          status: 'active',
-          payload,
-          ...(fields.email ? { label: fields.email } : {}),
-        });
+        if (!fields) {
+          return reply.code(404).send({ error: 'account not found' });
+        }
         return reply.send({ ok: true, account: { provider, id, ...fields } });
       } catch (error) {
         if (error instanceof SubscriptionRefreshError && error.kind === 'fatal') {
-          await runtime.upsertAccount(provider, { ...account, status: 'invalid' });
+          // 同样要重读后写回：拿陈旧对象 spread 会把已轮换掉的 payload 一并写回去。
+          const fresh = (await runtime.getPool(provider)).accounts.find((e) => e.id === id);
+          if (fresh) {
+            await runtime.upsertAccount(provider, { ...fresh, status: 'invalid' });
+          }
           return reply.code(400).send({ error: redactMessage(error) });
         }
         return reply.code(502).send({ error: redactMessage(error) });

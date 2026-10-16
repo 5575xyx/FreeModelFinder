@@ -108,6 +108,11 @@ function bodyOf(init: RequestInit | undefined): Record<string, unknown> {
   return JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
 }
 
+/** Codex 的 token 端点收 form-urlencoded（`grant_type=refresh_token&…`），不是 JSON。 */
+function formBodyOf(init: RequestInit | undefined): Record<string, string> {
+  return Object.fromEntries(new URLSearchParams(String(init?.body ?? '')));
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -618,5 +623,80 @@ describe('CodexProvider error matrix', () => {
 
     runtime.reportInvalid('codex', 'acc1');
     assert.equal(provider.hasCredentials(), false);
+  });
+});
+
+function tokenOk(accessToken: string, refreshToken: string): Response {
+  return json({ access_token: accessToken, refresh_token: refreshToken, expires_in: 3600 });
+}
+
+describe('CodexProvider refresh token rotation safety', () => {
+  // 轮换型 OAuth（Codex 必轮换 refresh token）下，把一个已被消费的 refresh token 再发一次
+  // 会被上游判为 refresh_token_reused / invalid_grant —— 账号永久报废。
+  // 陈旧来源：chatAttempt 的 401 重试把 `refreshed.account` 传下去，而缓存命中路径返回的是
+  // 调用方最初拿到的对象；另一个并发请求若已完成刷新并落盘，这个对象里的 RT 已经作废。
+  it('re-reads the freshest refresh token when a stale account retries after a 401', async () => {
+    await resetHome();
+    const runtime = newRuntime();
+    // 账号带一个"本地尚未过期"的 access token：两个并发请求都会走缓存路径拿到它，
+    // 而上游已经把它吊销，于是两边都会 401 并进入强刷分支。
+    await seed(runtime, [
+      {
+        id: 'acc1',
+        accessToken: 'at-stale',
+        expiresAt: VALID_EXPIRY(),
+        refreshToken: 'rt-1',
+        accountId: 'acc_1',
+      },
+    ]);
+
+    let chatIndex = 0;
+    let tokenIndex = 0;
+    let markTokenReached!: () => void;
+    const tokenReached = new Promise<void>((resolve) => {
+      markTokenReached = resolve;
+    });
+    let releaseToken!: () => void;
+    const gateToken = new Promise<void>((resolve) => {
+      releaseToken = resolve;
+    });
+    let releaseB!: () => void;
+    const gateB = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+
+    const { calls, fetchImpl } = harness(async (call) => {
+      if (call.url.startsWith(TOKEN_URL)) {
+        tokenIndex += 1;
+        if (tokenIndex === 1) markTokenReached();
+        await gateToken;
+        return tokenOk(`at-new-${tokenIndex}`, `rt-${tokenIndex + 1}`);
+      }
+      chatIndex += 1;
+      if (chatIndex === 1) {
+        // 请求 A：立刻 401，触发强刷（其 token 请求被 gate 住，好让 B 保持陈旧）。
+        return json({ error: 'unauthorized' }, 401);
+      }
+      if (chatIndex === 2) {
+        // 请求 B：它的 401 必须晚于 A 的刷新落盘，才能暴露"持陈旧 RT"。
+        await gateB;
+        return json({ error: 'unauthorized' }, 401);
+      }
+      return responsesSse(completedStream(['ok']));
+    });
+
+    const provider = makeProvider(fetchImpl, runtime);
+    const chatA = provider.chat(req('gpt-5.5'));
+    const chatB = provider.chat(req('gpt-5.5'));
+
+    // 等 A 的强刷抵达 token 端点，再放行 B 的 401：此时 A 已把 rt-2 落盘。
+    await tokenReached;
+    releaseToken();
+    await chatA;
+    releaseB();
+    await chatB;
+
+    const sent = refreshCalls(calls).map((call) => formBodyOf(call.init).refresh_token);
+    assert.deepEqual(sent, ['rt-1', 'rt-2']);
   });
 });

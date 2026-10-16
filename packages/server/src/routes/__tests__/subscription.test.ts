@@ -136,6 +136,24 @@ describe('subscription account API', () => {
     assert.ok(!rawConfig.includes('AT_SECRET_PLAINTEXT'), 'access token leaked in plaintext');
   });
 
+  // 导入只是把账号写进凭据池，而 getProvider 的第一道闸门是 config.providers.<id>.enabled
+  // （store.ts 里三家默认都是 false）。没有任何代码路径会把它置 true —— 于是"导入成功"之后
+  // /v1/models 不列出订阅模型、auto 选不到、显式 codex:… 抛 "provider codex is not enabled"。
+  it('enables the provider on a successful import so the account is actually usable', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/subscription/import',
+      headers: localUiHeaders,
+      payload: { provider: 'codex', raw: codexAuthJson() },
+    });
+    assert.equal(response.statusCode, 200, response.body);
+
+    const config = JSON.parse(await readFile(rawConfigPath(), 'utf8')) as {
+      providers: Record<string, { enabled?: boolean } | undefined>;
+    };
+    assert.equal(config.providers.codex?.enabled, true);
+  });
+
   it('rejects malformed JSON with a provider-scoped 400', async () => {
     const response = await app.inject({
       method: 'POST',
@@ -307,6 +325,55 @@ describe('subscription account API', () => {
     const pool = await getCredentialRuntime().getPool('codex');
     const stored = pool.accounts.find((entry) => entry.id === 'acct-fatal');
     assert.equal(stored?.status, 'invalid');
+  });
+
+  // 手动刷新接口若不用单飞锁，就会与 provider 内部的自动刷新并发改发同一个 refresh token。
+  // 轮换型 OAuth（Codex 必轮换）下第二次会被上游判为 refresh_token_reused / invalid_grant，
+  // 账号直接报废 —— 而用户恰恰是在出问题、有流量时才去点"刷新"。
+  it('collapses concurrent refreshes into a single upstream token call', async () => {
+    await getCredentialRuntime().upsertAccount('codex', {
+      id: 'acct-flight',
+      status: 'active',
+      addedAt: Date.now(),
+      label: 'flight@example.com',
+      payload: { refreshToken: 'RT_OLD', accessToken: 'AT_OLD', accountId: 'acct-flight' },
+    });
+
+    let calls = 0;
+    let markFirst!: () => void;
+    const firstReached = new Promise<void>((resolve) => {
+      markFirst = resolve;
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    SUBSCRIPTION_ADAPTERS.codex.refresh = async ({ payload }) => {
+      calls += 1;
+      markFirst();
+      await gate;
+      return { payload: { ...payload, accessToken: 'AT_NEW', refreshToken: 'RT_NEW' } };
+    };
+
+    const first = app.inject({
+      method: 'POST',
+      url: '/api/subscription/accounts/codex/acct-flight/refresh',
+      headers: localUiHeaders,
+    });
+    await firstReached;
+    const second = app.inject({
+      method: 'POST',
+      url: '/api/subscription/accounts/codex/acct-flight/refresh',
+      headers: localUiHeaders,
+    });
+    // 第一个请求此刻正卡在上游往返中；给第二个请求足够时间走到单飞锁。
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    release();
+
+    const [a, b] = await Promise.all([first, second]);
+    assert.equal(a.statusCode, 200, a.body);
+    assert.equal(b.statusCode, 200, b.body);
+    assert.equal(calls, 1, 'concurrent refreshes must share one upstream token call');
   });
 
   it('returns 502 for a non-fatal refresh error', async () => {

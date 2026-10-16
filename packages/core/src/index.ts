@@ -47,6 +47,8 @@ export {
   SUBSCRIPTION_ADAPTERS,
   SubscriptionImportError,
   SubscriptionRefreshError,
+  runSharedFlight,
+  subscriptionFlightKey,
   type ParsedSubscription,
   type RefreshResult,
   type SubscriptionAccountProfile,

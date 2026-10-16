@@ -22,6 +22,34 @@ export function createFlightCache<T>(): {
 }
 
 /**
+ * 跨调用方共享的单飞缓存（模块级）。
+ *
+ * 轮换型 OAuth 下，同一个 refresh_token 被并发发送两次会被上游判为
+ * `refresh_token_reused` / `invalid_grant`，账号直接报废。provider 内部的强刷与 server 的
+ * 手动刷新接口若各用各的缓存，"用户点刷新 + 一次请求触发后台刷新"就能撞上同一次轮换，
+ * 因此两者必须共用这一把锁。
+ *
+ * 每次调用前都应重新读取运行时池里的最新账号副本：单飞只对**在途**刷新去重，settled 后
+ * key 立即剔除，若之后仍拿旧对象里的 refresh token 去刷，同样会二次消费。
+ */
+const sharedFlights = new Map<string, Promise<unknown>>();
+
+/** 单飞 key 统一为 `${provider}:${accountId}`，保证 provider 与 server 路由命中同一条目。 */
+export function subscriptionFlightKey(provider: string, accountId: string): string {
+  return `${provider}:${accountId}`;
+}
+
+export function runSharedFlight<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = sharedFlights.get(key);
+  if (existing) return existing as Promise<T>;
+  const promise = fn().finally(() => {
+    sharedFlights.delete(key);
+  });
+  sharedFlights.set(key, promise);
+  return promise as Promise<T>;
+}
+
+/**
  * 解析过期时间为毫秒时间戳。
  * 空/非法 → now（视同过期，触发刷新）；>1e12 视为毫秒原样返回；<1e12 视为秒 ×1000；ISO 字符串走 Date.parse。
  */

@@ -5,8 +5,9 @@ import {
   REFRESH_SKEW_MS,
   SUBSCRIPTION_ADAPTERS,
   SubscriptionRefreshError,
-  createFlightCache,
   parseExpiryMs,
+  runSharedFlight,
+  subscriptionFlightKey,
 } from '../credentials/adapters/subscription/index.js';
 import type {
   ChatRequest,
@@ -281,8 +282,6 @@ export class CodexProvider extends BaseProvider {
   readonly id: ProviderId = 'codex';
   readonly displayName = 'Codex';
 
-  private readonly refreshFlights = createFlightCache<RefreshedAccount>();
-
   override hasCredentials(): boolean {
     return this.runtime().hasActiveAccounts('codex');
   }
@@ -457,7 +456,9 @@ export class CodexProvider extends BaseProvider {
       const expiry = parseExpiryMs(account.payload.expiresAt);
       if (Date.now() < expiry - REFRESH_SKEW_MS) return { token: cached, account };
     }
-    return this.refreshFlights.run(account.id, () => this.refreshChain(account, model));
+    return runSharedFlight(subscriptionFlightKey('codex', account.id), () =>
+      this.refreshChain(account, model),
+    );
   }
 
   private async refreshChain(
@@ -465,6 +466,11 @@ export class CodexProvider extends BaseProvider {
     model?: string,
   ): Promise<RefreshedAccount> {
     const runtime = this.runtime();
+    // 调用方可能拿着一个已陈旧的账号对象（401 重试路径传的是本次请求最初读到的副本），
+    // 而另一个并发刷新可能已经把轮换后的 refresh token 落盘。用作废的 RT 再发一次会被上游
+    // 判为 refresh_token_reused / invalid_grant，账号直接报废 —— 一律以运行时池的最新副本为准。
+    const pooled = (await runtime.getPool('codex')).accounts.find((e) => e.id === account.id);
+    account = pooled ?? account;
     let payload: Record<string, string>;
     try {
       const result = await SUBSCRIPTION_ADAPTERS.codex.refresh({
