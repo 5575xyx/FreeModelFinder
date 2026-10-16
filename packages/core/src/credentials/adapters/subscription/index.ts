@@ -5,6 +5,7 @@ import { googleAdapter } from './google.js';
 
 export * from './types.js';
 export * from './helpers.js';
+export * from './oauth-config.js';
 export * from './claude.js';
 export * from './codex.js';
 export * from './google.js';

@@ -1,7 +1,8 @@
+import type { SubscriptionProviderId } from '../../oauth/types.js';
 import { redact } from '../../redact.js';
 
 export interface SubscriptionAdapter {
-  readonly platform: 'codex' | 'claude' | 'google';
+  readonly platform: SubscriptionProviderId;
   /** 解析用户导入的原始凭据串；失败抛 SubscriptionImportError */
   parseImport(raw: string): ParsedSubscription;
   /** 刷新令牌并返回新 payload；失败抛 SubscriptionRefreshError */
@@ -13,6 +14,15 @@ export interface SubscriptionAdapter {
   /** true = 账号永久失效（invalid_grant 等），应剔除 */
   isFatalRefreshError(error: unknown): boolean;
   accountIdOf(profile: SubscriptionAccountProfile, payload: Record<string, string>): string;
+  /** 生成授权 URL；SUBSCRIPTION_OAUTH 里 usesPkce 为 true 的 provider 必须传 verifier */
+  buildAuthUrl(opts: { state: string; redirectUri: string; verifier?: string }): string;
+  /** 用授权码换令牌；返回值形状与 parseImport 一致，好让两条路复用同一条落库路径 */
+  exchangeCode(opts: {
+    code: string;
+    redirectUri: string;
+    verifier?: string;
+    fetchImpl?: typeof fetch;
+  }): Promise<ParsedSubscription>;
 }
 
 export interface ParsedSubscription {

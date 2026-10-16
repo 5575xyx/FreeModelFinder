@@ -2,6 +2,11 @@ import { createHash, randomBytes } from 'node:crypto';
 
 const VERIFIER_BYTES = 32;
 
+/** PKCE S256：challenge = base64url(sha256(verifier))。 */
+export function pkceChallenge(verifier: string): string {
+  return createHash('sha256').update(verifier).digest('base64url');
+}
+
 /**
  * 生成 PKCE 对（RFC 7636 S256）。
  *
@@ -10,6 +15,5 @@ const VERIFIER_BYTES = 32;
  */
 export function generatePkce(): { verifier: string; challenge: string } {
   const verifier = randomBytes(VERIFIER_BYTES).toString('base64url');
-  const challenge = createHash('sha256').update(verifier).digest('base64url');
-  return { verifier, challenge };
+  return { verifier, challenge: pkceChallenge(verifier) };
 }
