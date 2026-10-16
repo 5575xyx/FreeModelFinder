@@ -183,6 +183,11 @@ export const codexAdapter: SubscriptionAdapter = {
     url.searchParams.set('redirect_uri', opts.redirectUri);
     url.searchParams.set('scope', AUTH_SCOPE);
     url.searchParams.set('state', opts.state);
+    // 参考项目原生客户端的三个附加参数：prompt=login 强制重新登录（多账号场景必需），
+    // id_token_add_organizations 让 id_token 带上组织声明，codex_cli_simplified_flow 走简化流程。
+    url.searchParams.set('prompt', 'login');
+    url.searchParams.set('id_token_add_organizations', 'true');
+    url.searchParams.set('codex_cli_simplified_flow', 'true');
     if (opts.verifier) {
       url.searchParams.set('code_challenge', pkceChallenge(opts.verifier));
       url.searchParams.set('code_challenge_method', 'S256');

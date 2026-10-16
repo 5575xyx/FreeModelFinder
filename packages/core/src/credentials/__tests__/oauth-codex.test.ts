@@ -81,6 +81,11 @@ describe('codex OAuth', () => {
     assert.equal(url.searchParams.get('state'), 'STATE');
     assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
     assert.equal(url.searchParams.get('code_challenge'), base64url('VERIFIER'));
+    // 参考项目原生客户端带的三个参数：强制重新登录（多账号场景必需）+
+    // 让 id_token 带上组织声明 + 走 simplified flow
+    assert.equal(url.searchParams.get('prompt'), 'login');
+    assert.equal(url.searchParams.get('id_token_add_organizations'), 'true');
+    assert.equal(url.searchParams.get('codex_cli_simplified_flow'), 'true');
   });
 
   it('exchangeCode posts form-urlencoded to the token endpoint and maps the response', async () => {
