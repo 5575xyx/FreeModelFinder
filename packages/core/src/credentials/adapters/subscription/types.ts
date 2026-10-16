@@ -21,6 +21,8 @@ export interface SubscriptionAdapter {
     code: string;
     redirectUri: string;
     verifier?: string;
+    /** Claude 的 token 交换 body 需要 state（参考项目 anthropic_auth.go:150-157）。 */
+    state?: string;
     fetchImpl?: typeof fetch;
   }): Promise<ParsedSubscription>;
 }

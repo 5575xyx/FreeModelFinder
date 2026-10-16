@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { pkceChallenge } from '../../oauth/pkce.js';
 import type {
   ParsedSubscription,
   RefreshResult,
@@ -8,6 +9,7 @@ import type {
 import { SubscriptionImportError, SubscriptionRefreshError } from './types.js';
 
 const PLATFORM = 'claude' as const;
+const AUTHORIZE_URL = 'https://claude.ai/oauth/authorize';
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
 const PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile';
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
@@ -91,6 +93,18 @@ function parseRetryAfterMs(headers: Headers, now: number): number {
 function parseBlockedUntil(payload: Record<string, string>): number {
   const raw = Number(payload.blockedUntil ?? '');
   return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
+/**
+ * 拆开回调 code 里可能附带的 `#state` 片段。
+ *
+ * 对齐参考项目 `(*ClaudeAuth).parseCodeAndState`（anthropic_auth.go:352-359）：Anthropic 的
+ * 回调有时把 state 拼在 code 后面而不是作为独立查询参数。
+ */
+function splitCodeAndState(raw: string): [code: string, fragmentState: string] {
+  const index = raw.indexOf('#');
+  if (index < 0) return [raw, ''];
+  return [raw.slice(0, index), raw.slice(index + 1)];
 }
 
 interface ProfileInfo {
@@ -322,5 +336,126 @@ export const claudeAdapter: SubscriptionAdapter = {
     const fromProfile = profile.id.trim();
     if (fromProfile) return fromProfile;
     return derivedId(payload.refreshToken ?? '');
+  },
+
+  buildAuthUrl(opts: { state: string; redirectUri: string; verifier?: string }): string {
+    const params = new URLSearchParams({
+      // 参考项目原生客户端的固定参数
+      code: 'true',
+      client_id: CLIENT_ID,
+      response_type: 'code',
+      redirect_uri: opts.redirectUri,
+      scope: SCOPE,
+      state: opts.state,
+    });
+    if (opts.verifier) {
+      params.set('code_challenge', pkceChallenge(opts.verifier));
+      params.set('code_challenge_method', 'S256');
+    }
+    return `${AUTHORIZE_URL}?${params.toString()}`;
+  },
+
+  async exchangeCode(opts: {
+    code: string;
+    redirectUri: string;
+    verifier?: string;
+    state?: string;
+    fetchImpl?: typeof fetch;
+  }): Promise<ParsedSubscription> {
+    const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    const [code, fragmentState] = splitCodeAndState(opts.code);
+
+    // 字段顺序有意为之：复刻原生 Claude Code 2.1.220 在线上发出的 key 顺序
+    //（参考项目 anthropic_auth.go:150-157），避免序列化出的 body 字节与官方不一致。
+    const body: Record<string, string> = {
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: opts.redirectUri,
+      client_id: CLIENT_ID,
+      code_verifier: opts.verifier ?? '',
+      // code 里 `#` 之后的片段优先于调用方传入的 state
+      state: fragmentState || opts.state || '',
+    };
+
+    let response: Response;
+    try {
+      response = await fetchImpl(TOKEN_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: ACCEPT,
+          'User-Agent': AXIOS_UA,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new SubscriptionImportError(`claude: token exchange network error: ${detail}`);
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new SubscriptionImportError(
+        `claude: token exchange failed ${response.status}: ${text.slice(0, DETAIL_LIMIT)}`,
+      );
+    }
+
+    let data: Record<string, unknown> | null;
+    try {
+      data = asRecord(await response.json());
+    } catch {
+      data = null;
+    }
+    const accessToken = data ? asNonEmptyString(data.access_token) : undefined;
+    const refreshToken = data ? asNonEmptyString(data.refresh_token) : undefined;
+    if (!data || !accessToken) {
+      throw new SubscriptionImportError('claude: token exchange returned an unexpected body');
+    }
+    if (!refreshToken) {
+      // 没有 refresh token 的账号用完就废，不能当作登录成功落库
+      throw new SubscriptionImportError('claude: token exchange returned no refresh_token');
+    }
+
+    // 身份优先取 token 响应（参考项目 tokenResponse），再让 profile 查询的非空字段覆盖
+    //（参考项目 inspectOAuthAccount：profile 是尽力而为，失败只告警）
+    const account = asRecord(data.account);
+    const organization = asRecord(data.organization);
+    let email = account ? (asNonEmptyString(account.email_address) ?? '') : '';
+    let accountUuid = account ? (asNonEmptyString(account.uuid) ?? '') : '';
+    let orgUuid = organization ? (asNonEmptyString(organization.uuid) ?? '') : '';
+    let orgName = organization ? (asNonEmptyString(organization.name) ?? '') : '';
+    const info = await fetchProfile(fetchImpl, accessToken, derivedId(refreshToken));
+    if (info) {
+      if (info.email) email = info.email;
+      if (info.accountUuid) accountUuid = info.accountUuid;
+      if (info.orgUuid) orgUuid = info.orgUuid;
+      if (info.orgName) orgName = info.orgName;
+    }
+
+    const expiresIn =
+      typeof data.expires_in === 'number' && Number.isFinite(data.expires_in)
+        ? data.expires_in
+        : undefined;
+    const expiresAt = expiresIn !== undefined ? String(Date.now() + expiresIn * 1000) : '';
+
+    return {
+      payload: {
+        accessToken,
+        refreshToken,
+        expiresAt,
+        scopes: SCOPE,
+        subscriptionType: '',
+        email,
+        accountUuid,
+        orgUuid,
+        orgName,
+        blockedUntil: '',
+      },
+      profile: {
+        id: accountUuid || derivedId(refreshToken),
+        ...(email ? { email } : {}),
+        ...(orgName ? { organization: orgName } : {}),
+      },
+    };
   },
 };
