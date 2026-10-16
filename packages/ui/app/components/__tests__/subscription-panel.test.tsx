@@ -1,19 +1,24 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SubscriptionAccountsPanel } from '../SubscriptionAccountsPanel';
 import { gateway, server } from '../../../test/server';
 import { en, zh } from '../../i18n';
 
-const accountsUrl = `${gateway}/api/subscription/credentials`;
+const credentialsUrl = `${gateway}/api/subscription/credentials`;
+const authUrl = `${gateway}/api/subscription/oauth/auth-url`;
+const statusUrl = `${gateway}/api/subscription/oauth/status`;
+const sessionUrl = `${gateway}/api/subscription/oauth/session`;
+
+const state = 'a'.repeat(43);
 
 function accountUrl(provider: string, id: string): string {
-  return `${accountsUrl}?provider=${provider}&id=${id}`;
+  return `${credentialsUrl}?provider=${provider}&id=${id}`;
 }
 
 function refreshUrl(): string {
-  return `${accountsUrl}/refresh`;
+  return `${credentialsUrl}/refresh`;
 }
 
 const codexAccount = {
@@ -35,31 +40,267 @@ const invalidAccount = {
   addedAt: 1_699_999_000_000,
 };
 
-describe('SubscriptionAccountsPanel', () => {
-  it('renders provider tiles with default paths, the raw textarea and the ToS warning', async () => {
+/** 打开某家的弹窗：每家一个独立弹窗，所以这里必须指定 provider。 */
+async function openDialog(
+  user: ReturnType<typeof userEvent.setup>,
+  provider: 'codex' | 'claude' | 'google',
+): Promise<HTMLElement> {
+  await user.click(screen.getByTestId(`subscription-connect-${provider}`));
+  return await screen.findByRole('dialog');
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('SubscriptionAccountsPanel tiles', () => {
+  it('renders one tile per provider with an add button and no shared paste box', async () => {
     render(<SubscriptionAccountsPanel />);
 
     for (const provider of ['codex', 'claude', 'google'] as const) {
       const tile = screen.getByTestId(`subscription-tile-${provider}`);
-      expect(tile).toBeTruthy();
-      expect(tile.querySelector('input')?.value).toBeTruthy();
-      expect(tile.querySelector('button')?.textContent).toContain('导入');
+      expect(within(tile).getByTestId(`subscription-connect-${provider}`).textContent).toContain(
+        '连接账号',
+      );
     }
-    expect((screen.getByLabelText('Codex 凭据文件路径') as HTMLInputElement).value).toBe(
-      '~/.codex/auth.json',
-    );
-    expect(screen.getByLabelText('或粘贴凭据内容')).toBeTruthy();
-    expect(screen.getByText(/风险提示/)).toBeTruthy();
-    expect(await screen.findByText(/暂无订阅账号/)).toBeTruthy();
+    // 共用粘贴框已移除：凭据只在各家的弹窗里进
+    expect(screen.queryByLabelText('或粘贴凭据内容')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('imports an account by path and shows the managed-by-FMF notice', async () => {
+  it('shows the per-provider connection count on each tile', async () => {
+    server.use(http.get(credentialsUrl, () => HttpResponse.json({ accounts: [codexAccount] })));
+    render(<SubscriptionAccountsPanel />);
+
+    const codexTile = await screen.findByTestId('subscription-tile-codex');
+    await waitFor(() => expect(codexTile.textContent).toContain('已连接 1 个账号'));
+    expect(screen.getByTestId('subscription-tile-claude').textContent).toContain('未连接');
+  });
+
+  it('opens exactly one dialog and closes it again', async () => {
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'claude');
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByRole('dialog').textContent).toContain('Claude 订阅账号');
+
+    await user.click(screen.getByTestId('subscription-close-claude'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('SubscriptionProviderDialog per-provider differences', () => {
+  it('opens the Codex dialog with its own port, mechanism badge and auto-read fields', async () => {
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    const dialog = await openDialog(user, 'codex');
+    expect(dialog.textContent).toContain('Codex 订阅账号');
+    // 授权机制：Codex 走 PKCE S256
+    expect(dialog.textContent).toContain('OAuth + PKCE S256');
+    // 本机回调端口是逐家的（参考项目三家各不相同）
+    expect(dialog.textContent).toContain('localhost:1455/auth/callback');
+    // 登录后自动读取的字段：邮箱 / 套餐 / 账号 ID
+    expect(dialog.textContent).toContain('邮箱');
+    expect(dialog.textContent).toContain('套餐');
+    expect(dialog.textContent).toContain('账号 ID');
+    expect(dialog.querySelector('input[type="file"]')).not.toBeNull();
+  });
+
+  it('opens the Claude dialog with the organization field and the 54545 callback', async () => {
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    const dialog = await openDialog(user, 'claude');
+    expect(dialog.textContent).toContain('Claude 订阅账号');
+    expect(dialog.textContent).toContain('localhost:54545/callback');
+    expect(dialog.textContent).toContain('组织');
+    expect(dialog.textContent).toContain('账号 UUID');
+    // 这三家的字段集合必须真的不同 —— Claude 不该出现 Codex 的套餐
+    expect(dialog.textContent).not.toContain('套餐');
+  });
+
+  it('opens the Google dialog with the GCP project field and no PKCE', async () => {
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    const dialog = await openDialog(user, 'google');
+    expect(dialog.textContent).toContain('Gemini 订阅账号');
+    expect(dialog.textContent).toContain('localhost:51121/oauth-callback');
+    expect(dialog.textContent).toContain('GCP 项目');
+    expect(dialog.textContent).toContain('OAuth（无 PKCE）');
+    expect(dialog.textContent).not.toContain('PKCE S256');
+  });
+});
+
+describe('SubscriptionProviderDialog OAuth flow', () => {
+  it('opens the browser with the returned url and polls until the provider reports ok', async () => {
+    // window.open 必须在点击的同一个 tick 里被调用（否则会被弹窗拦截器拦掉），
+    // 拿到 URL 之后再写它的 location。
+    const fakeWindow = { location: { href: '' }, close: vi.fn() };
+    const openSpy = vi.fn(() => fakeWindow);
+    vi.stubGlobal('open', openSpy);
+    const polled: string[] = [];
+    server.use(
+      http.get(authUrl, ({ request }) => {
+        const provider = new URL(request.url).searchParams.get('provider');
+        return HttpResponse.json({
+          status: 'ok',
+          url: `https://auth.example.com/${provider}?state=${state}`,
+          state,
+        });
+      }),
+      http.get(statusUrl, ({ request }) => {
+        polled.push(new URL(request.url).searchParams.get('state') ?? '');
+        return HttpResponse.json({ status: 'ok' });
+      }),
+    );
+    const onChanged = vi.fn();
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel onChanged={onChanged} />);
+
+    await openDialog(user, 'codex');
+    await user.click(screen.getByTestId('subscription-start-codex'));
+
+    const expectedUrl = `https://auth.example.com/codex?state=${state}`;
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith('', '_blank'));
+    await waitFor(() => expect(fakeWindow.location.href).toBe(expectedUrl));
+    await waitFor(() => expect(polled).toEqual([state]));
+    expect(await screen.findByText('授权成功，账号已添加')).toBeTruthy();
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('keeps polling while the session is pending, then stops once it is ok', async () => {
+    vi.stubGlobal('open', vi.fn());
+    let polls = 0;
+    server.use(
+      http.get(authUrl, () => HttpResponse.json({ status: 'ok', url: 'https://x/y', state })),
+      http.get(statusUrl, () => {
+        polls += 1;
+        return HttpResponse.json({ status: polls < 2 ? 'wait' : 'ok' });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'google');
+    await user.click(screen.getByTestId('subscription-start-google'));
+
+    expect(await screen.findByText(/等待授权中/)).toBeTruthy();
+    // 弹窗被拦下来时用户还有一条路：等待行里的链接指向同一个地址
+    expect(screen.getByTestId('subscription-reopen-google').getAttribute('href')).toBe(
+      'https://x/y',
+    );
+    expect(await screen.findByText('授权成功，账号已添加', {}, { timeout: 8000 })).toBeTruthy();
+    expect(polls).toBe(2);
+
+    // ok 之后必须停表：再等一个轮询周期，不应再有新的状态查询
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    expect(polls).toBe(2);
+  });
+
+  it('cancels the pending session with DELETE and returns to idle', async () => {
+    vi.stubGlobal('open', vi.fn());
+    const deleted: string[] = [];
+    let polls = 0;
+    server.use(
+      http.get(authUrl, () => HttpResponse.json({ status: 'ok', url: 'https://x/y', state })),
+      http.get(statusUrl, () => {
+        polls += 1;
+        return HttpResponse.json({ status: 'wait' });
+      }),
+      http.delete(sessionUrl, ({ request }) => {
+        deleted.push(new URL(request.url).searchParams.get('state') ?? '');
+        return HttpResponse.json({ status: 'ok', cancelled: true });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'claude');
+    await user.click(screen.getByTestId('subscription-start-claude'));
+    expect(await screen.findByText(/等待授权中/)).toBeTruthy();
+
+    await user.click(screen.getByTestId('subscription-cancel-claude'));
+    await waitFor(() => expect(deleted).toEqual([state]));
+    await waitFor(() => expect(screen.queryByText(/等待授权中/)).toBeNull());
+
+    // 取消后必须停表，否则会一直打状态接口
+    const after = polls;
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    expect(polls).toBe(after);
+  });
+
+  it('renders a localized timeout error from the status endpoint', async () => {
+    vi.stubGlobal('open', vi.fn());
+    server.use(
+      http.get(authUrl, () => HttpResponse.json({ status: 'ok', url: 'https://x/y', state })),
+      http.get(statusUrl, () => HttpResponse.json({ status: 'error', error: 'timeout' })),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'codex');
+    await user.click(screen.getByTestId('subscription-start-codex'));
+
+    expect(await screen.findByText(/授权超时/)).toBeTruthy();
+    expect(screen.queryByText(/等待授权中/)).toBeNull();
+  });
+
+  it('turns a busy callback port into a provider-scoped, actionable error', async () => {
+    vi.stubGlobal('open', vi.fn());
+    server.use(
+      http.get(authUrl, () =>
+        HttpResponse.json(
+          {
+            status: 'error',
+            error:
+              'port 1455 is already in use; close whatever is listening on it (usually the official CLI) and retry',
+          },
+          { status: 500 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'codex');
+    await user.click(screen.getByTestId('subscription-start-codex'));
+
+    const error = await screen.findByText(/登录失败/);
+    expect(error.textContent).toContain('1455');
+    expect(error.textContent).toContain('端口');
+    expect(screen.getByRole('dialog').textContent).toContain('1455');
+  });
+
+  it('surfaces an unknown provider failure without leaking the payload', async () => {
+    vi.stubGlobal('open', vi.fn());
+    server.use(
+      http.get(authUrl, () =>
+        HttpResponse.json({ status: 'error', error: 'provider_not_found' }, { status: 400 }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'claude');
+    await user.click(screen.getByTestId('subscription-start-claude'));
+
+    expect(await screen.findByText(/provider_not_found/)).toBeTruthy();
+  });
+});
+
+describe('SubscriptionProviderDialog file import', () => {
+  it('posts the selected file content to the credentials route with the provider', async () => {
     const bodies: Array<Record<string, unknown>> = [];
     const providers: Array<string | null> = [];
     let imported = false;
     server.use(
-      http.get(accountsUrl, () => HttpResponse.json({ accounts: imported ? [codexAccount] : [] })),
-      http.post(accountsUrl, async ({ request }) => {
+      http.get(credentialsUrl, () =>
+        HttpResponse.json({ accounts: imported ? [codexAccount] : [] }),
+      ),
+      http.post(credentialsUrl, async ({ request }) => {
         bodies.push((await request.json()) as Record<string, unknown>);
         providers.push(new URL(request.url).searchParams.get('provider'));
         imported = true;
@@ -73,60 +314,118 @@ describe('SubscriptionAccountsPanel', () => {
     const user = userEvent.setup();
     render(<SubscriptionAccountsPanel onChanged={onChanged} />);
 
-    await user.click(screen.getByTestId('subscription-tile-codex').querySelector('button')!);
+    const dialog = await openDialog(user, 'codex');
+    const file = new File(['{"tokens":{"access_token":"AT_SECRET"}}'], 'auth.json', {
+      type: 'application/json',
+    });
+    await user.upload(dialog.querySelector('input[type="file"]') as HTMLInputElement, file);
 
-    expect(await screen.findByText(/已导入 ada@example.com，该账号已由 FMF 接管/)).toBeTruthy();
-    // provider 走查询参数、凭据走 body（对齐参考项目 v8 的路由形状）
-    await waitFor(() => expect(providers).toEqual(['codex']));
     await waitFor(() =>
-      expect(bodies).toEqual([
-        {
-          path: '~/.codex/auth.json',
-        },
-      ]),
+      expect(bodies).toEqual([{ raw: '{"tokens":{"access_token":"AT_SECRET"}}' }]),
     );
-    expect(await screen.findByText('ada@example.com')).toBeTruthy();
+    expect(providers).toEqual(['codex']);
+    expect(await screen.findByText(/已导入 ada@example.com/)).toBeTruthy();
+    // 导入成功后面板自己的列表也要立刻反映出来
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(await screen.findByText('ada@example.com')).toBeTruthy();
   });
 
-  it('prefers the raw textarea content over the path when both are present', async () => {
+  it('imports through the auto-detected default path of that provider', async () => {
     const bodies: Array<Record<string, unknown>> = [];
+    const providers: Array<string | null> = [];
     server.use(
-      http.post(accountsUrl, async ({ request }) => {
+      http.post(credentialsUrl, async ({ request }) => {
         bodies.push((await request.json()) as Record<string, unknown>);
-        return HttpResponse.json({ ok: true, account: { provider: 'codex', id: 'acc-codex' } });
+        providers.push(new URL(request.url).searchParams.get('provider'));
+        return HttpResponse.json({ ok: true, account: { provider: 'google', id: 'acc-g' } });
       }),
     );
     const user = userEvent.setup();
     render(<SubscriptionAccountsPanel />);
 
-    await user.type(screen.getByLabelText('或粘贴凭据内容'), 'raw-credential-json');
-    await user.click(screen.getByTestId('subscription-tile-codex').querySelector('button')!);
+    await openDialog(user, 'google');
+    await user.click(screen.getByTestId('subscription-detect-google'));
 
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ raw: 'raw-credential-json' });
+    await waitFor(() => expect(bodies).toEqual([{ path: '~/.gemini/oauth_creds.json' }]));
+    expect(providers).toEqual(['google']);
   });
 
-  it('surfaces the import failure and keeps the panel usable', async () => {
+  it('shows an import failure inside the dialog and stays usable', async () => {
     server.use(
-      http.post(accountsUrl, () =>
+      http.post(credentialsUrl, () =>
         HttpResponse.json({ error: 'invalid credential file' }, { status: 400 }),
       ),
     );
     const user = userEvent.setup();
     render(<SubscriptionAccountsPanel />);
 
-    await user.click(screen.getByTestId('subscription-tile-google').querySelector('button')!);
+    const dialog = await openDialog(user, 'google');
+    const file = new File(['nope'], 'oauth_creds.json', { type: 'application/json' });
+    await user.upload(dialog.querySelector('input[type="file"]') as HTMLInputElement, file);
 
     expect(await screen.findByText(/导入失败：invalid credential file/)).toBeTruthy();
-    expect(screen.getByTestId('subscription-tile-google').querySelector('button')!.disabled).toBe(
-      false,
-    );
+    const input = dialog.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input.disabled).toBe(false);
   });
 
+  it('never pastes a secret into the DOM when the import response echoes one back', async () => {
+    server.use(
+      http.post(credentialsUrl, () =>
+        HttpResponse.json({ error: 'bad refresh_token=rt-secret-abcdef123456' }, { status: 400 }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    const dialog = await openDialog(user, 'codex');
+    const file = new File(['x'], 'auth.json', { type: 'application/json' });
+    await user.upload(dialog.querySelector('input[type="file"]') as HTMLInputElement, file);
+
+    const message = await screen.findByText(/导入失败/);
+    expect(message.textContent).not.toContain('rt-secret-abcdef123456');
+  });
+});
+
+describe('SubscriptionProviderDialog isolation', () => {
+  // 三家弹窗必须"不串味"：Claude 的弹窗只能发 claude 的请求。
+  it("never issues another provider's requests from one dialog", async () => {
+    vi.stubGlobal('open', vi.fn());
+    const seen: string[] = [];
+    server.use(
+      http.get(authUrl, ({ request }) => {
+        seen.push(`auth-url:${new URL(request.url).searchParams.get('provider')}`);
+        return HttpResponse.json({ status: 'ok', url: 'https://x/y', state });
+      }),
+      http.get(statusUrl, () => {
+        seen.push('status');
+        return HttpResponse.json({ status: 'ok' });
+      }),
+      http.post(credentialsUrl, async ({ request }) => {
+        seen.push(`import:${new URL(request.url).searchParams.get('provider')}`);
+        return HttpResponse.json({ ok: true, account: { provider: 'claude', id: 'acc-c' } });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    const dialog = await openDialog(user, 'claude');
+    await user.click(screen.getByTestId('subscription-start-claude'));
+    await screen.findByText('授权成功，账号已添加');
+    const file = new File(['x'], 'creds.json', { type: 'application/json' });
+    await user.upload(dialog.querySelector('input[type="file"]') as HTMLInputElement, file);
+
+    await waitFor(() => expect(seen).toEqual(['auth-url:claude', 'status', 'import:claude']));
+    expect(screen.queryByTestId('subscription-start-codex')).toBeNull();
+    expect(screen.queryByTestId('subscription-start-google')).toBeNull();
+  });
+});
+
+describe('SubscriptionAccountsPanel account list', () => {
   it('renders active and invalid badges from the account list', async () => {
     server.use(
-      http.get(accountsUrl, () => HttpResponse.json({ accounts: [codexAccount, invalidAccount] })),
+      http.get(credentialsUrl, () =>
+        HttpResponse.json({ accounts: [codexAccount, invalidAccount] }),
+      ),
     );
     render(<SubscriptionAccountsPanel />);
 
@@ -140,8 +439,10 @@ describe('SubscriptionAccountsPanel', () => {
     expect(invalidRow!.textContent).toContain('需重新登录');
   });
 
-  it('reports a failed account list without dropping the panel', async () => {
-    server.use(http.get(accountsUrl, () => HttpResponse.json({ error: 'boom' }, { status: 500 })));
+  it('reports a failed account list without dropping the tiles', async () => {
+    server.use(
+      http.get(credentialsUrl, () => HttpResponse.json({ error: 'boom' }, { status: 500 })),
+    );
     render(<SubscriptionAccountsPanel />);
 
     expect(await screen.findByText(/账号列表加载失败/)).toBeTruthy();
@@ -150,7 +451,7 @@ describe('SubscriptionAccountsPanel', () => {
 
   it('renders the plan, expiry and usage numbers on an account card', async () => {
     server.use(
-      http.get(accountsUrl, () =>
+      http.get(credentialsUrl, () =>
         HttpResponse.json({
           accounts: [
             {
@@ -175,7 +476,7 @@ describe('SubscriptionAccountsPanel', () => {
   });
 
   it('tells the user to re-import an invalid account', async () => {
-    server.use(http.get(accountsUrl, () => HttpResponse.json({ accounts: [invalidAccount] })));
+    server.use(http.get(credentialsUrl, () => HttpResponse.json({ accounts: [invalidAccount] })));
     render(<SubscriptionAccountsPanel />);
 
     const row = (await screen.findByText('stale@example.com')).closest('li');
@@ -188,7 +489,9 @@ describe('SubscriptionAccountsPanel', () => {
     const deletions: string[] = [];
     let removed = false;
     server.use(
-      http.get(accountsUrl, () => HttpResponse.json({ accounts: removed ? [] : [codexAccount] })),
+      http.get(credentialsUrl, () =>
+        HttpResponse.json({ accounts: removed ? [] : [codexAccount] }),
+      ),
       http.delete(accountUrl('codex', 'acc-codex'), () => {
         deletions.push('codex:acc-codex');
         removed = true;
@@ -218,7 +521,7 @@ describe('SubscriptionAccountsPanel', () => {
   it('refreshes an account on demand and reports success', async () => {
     let refreshed = 0;
     server.use(
-      http.get(accountsUrl, () => HttpResponse.json({ accounts: [invalidAccount] })),
+      http.get(credentialsUrl, () => HttpResponse.json({ accounts: [invalidAccount] })),
       http.post(refreshUrl(), () => {
         refreshed += 1;
         return HttpResponse.json({ ok: true, account: { email: 'stale@example.com' } });
@@ -237,7 +540,7 @@ describe('SubscriptionAccountsPanel', () => {
   // 上游报错可能回带令牌片段；面板只显示消息，且必须把明文挡掉。
   it('shows a refresh failure without leaking the token', async () => {
     server.use(
-      http.get(accountsUrl, () => HttpResponse.json({ accounts: [invalidAccount] })),
+      http.get(credentialsUrl, () => HttpResponse.json({ accounts: [invalidAccount] })),
       http.post(refreshUrl(), () =>
         HttpResponse.json(
           { error: 'refresh_token_reused for rt-secret-abcdef123456' },
@@ -264,9 +567,6 @@ describe('subscription i18n keys', () => {
     'settings.subscription.provider.codex',
     'settings.subscription.provider.claude',
     'settings.subscription.provider.google',
-    'settings.subscription.pathLabel',
-    'settings.subscription.rawLabel',
-    'settings.subscription.rawPlaceholder',
     'settings.subscription.import',
     'settings.subscription.imported',
     'settings.subscription.importFailed',
@@ -288,6 +588,38 @@ describe('subscription i18n keys', () => {
     'settings.subscription.refreshed',
     'settings.subscription.refreshFailed',
     'settings.subscription.actionFailed',
+    // 第二波：逐家磁贴 + 弹窗
+    'settings.subscription.tile.connect',
+    'settings.subscription.tile.connected',
+    'settings.subscription.tile.empty',
+    'settings.subscription.dialog.title',
+    'settings.subscription.dialog.close',
+    'settings.subscription.badge.pkce',
+    'settings.subscription.badge.nopkce',
+    'settings.subscription.dialog.login.heading',
+    'settings.subscription.dialog.login.desc.codex',
+    'settings.subscription.dialog.login.desc.claude',
+    'settings.subscription.dialog.login.desc.google',
+    'settings.subscription.dialog.login.open',
+    'settings.subscription.dialog.login.endpoint',
+    'settings.subscription.dialog.login.waiting',
+    'settings.subscription.dialog.login.cancel',
+    'settings.subscription.dialog.login.ok',
+    'settings.subscription.dialog.autoRead.heading',
+    'settings.subscription.field.email',
+    'settings.subscription.field.plan',
+    'settings.subscription.field.accountId',
+    'settings.subscription.field.organization',
+    'settings.subscription.field.accountUuid',
+    'settings.subscription.field.gcpProject',
+    'settings.subscription.dialog.gcpNote',
+    'settings.subscription.dialog.import.heading',
+    'settings.subscription.dialog.import.detect',
+    'settings.subscription.dialog.error',
+    'settings.subscription.oauth.error.timeout',
+    'settings.subscription.oauth.error.portBusy',
+    'settings.subscription.oauth.error.pending',
+    'settings.subscription.oauth.error.state',
   ];
 
   it('ships every subscription string in zh and en', () => {

@@ -631,7 +631,7 @@ export const zh: Dict = {
   'settings.section.subscription': '订阅账号',
   'settings.aria.subscription': '订阅账号',
   'settings.subscription.hint':
-    '把订阅账号的凭据文件路径填入下方，或直接粘贴凭据内容导入。仅支持 ~/.codex、~/.claude、~/.gemini 目录下的文件。',
+    '每个平台都有自己的弹窗：可以用浏览器登录，也可以导入官方 CLI 的凭据文件。导入的路径仅限 ~/.codex、~/.claude、~/.gemini 目录下。',
   'settings.subscription.provider.codex': 'Codex',
   'settings.subscription.provider.claude': 'Claude',
   'settings.subscription.provider.google': 'Gemini',
@@ -661,6 +661,46 @@ export const zh: Dict = {
   'settings.subscription.refreshed': '已刷新 {label}',
   'settings.subscription.refreshFailed': '刷新失败：{err}',
   'settings.subscription.actionFailed': '操作失败：{err}',
+
+  'settings.subscription.tile.connect': '连接账号',
+  'settings.subscription.tile.connected': '已连接 {count} 个账号',
+  'settings.subscription.tile.empty': '未连接',
+  'settings.subscription.dialog.title': '{provider} 订阅账号',
+  'settings.subscription.dialog.close': '关闭',
+  'settings.subscription.badge.pkce': 'OAuth + PKCE S256',
+  'settings.subscription.badge.nopkce': 'OAuth（无 PKCE）',
+  'settings.subscription.dialog.login.heading': '用浏览器登录',
+  'settings.subscription.dialog.login.desc.codex':
+    '在浏览器里完成 OpenAI 登录；授权完成后由本机 1455 端口接收回调，不需要手动复制任何东西。',
+  'settings.subscription.dialog.login.desc.claude':
+    '在浏览器里完成 Claude 登录；授权完成后由本机 54545 端口接收回调。',
+  'settings.subscription.dialog.login.desc.google':
+    '在浏览器里完成 Google 登录；授权完成后由本机 51121 端口接收回调。',
+  'settings.subscription.dialog.login.open': '打开浏览器登录',
+  'settings.subscription.dialog.login.endpoint': '本机回调 {endpoint}',
+  'settings.subscription.dialog.login.waiting':
+    '等待授权中… 本机监听 {endpoint}，每 2 秒查一次状态',
+  'settings.subscription.dialog.login.reopen': '在浏览器中打开登录页',
+  'settings.subscription.dialog.login.cancel': '取消',
+  'settings.subscription.dialog.login.ok': '授权成功，账号已添加',
+  'settings.subscription.dialog.autoRead.heading': '登录成功后自动读取',
+  'settings.subscription.field.email': '邮箱',
+  'settings.subscription.field.plan': '套餐',
+  'settings.subscription.field.accountId': '账号 ID',
+  'settings.subscription.field.organization': '组织',
+  'settings.subscription.field.accountUuid': '账号 UUID',
+  'settings.subscription.field.gcpProject': 'GCP 项目',
+  'settings.subscription.dialog.gcpNote':
+    'GCP 项目不在登录响应里，而是在首次调用时自动探测后写回账号。',
+  'settings.subscription.dialog.import.heading': '或导入凭据文件',
+  'settings.subscription.dialog.import.choose': '选择凭据文件',
+  'settings.subscription.dialog.import.detect': '自动探测默认路径',
+  'settings.subscription.dialog.error': '登录失败：{err}',
+  'settings.subscription.oauth.error.timeout': '授权超时，请重新发起登录',
+  'settings.subscription.oauth.error.portBusy':
+    '本机端口 {port} 被占用：先关掉占用它的程序（通常是官方 CLI）再重试',
+  'settings.subscription.oauth.error.pending': '该平台已有一个登录会话在进行中，请先完成或取消它',
+  'settings.subscription.oauth.error.state': '登录会话已失效，请重新发起',
 
   'imagegen.model': '选择图片模型',
   'imagegen.noModels': '暂无图片生成模型',
@@ -1351,7 +1391,7 @@ export const en: Dict = {
   'settings.section.subscription': 'Subscription accounts',
   'settings.aria.subscription': 'Subscription accounts',
   'settings.subscription.hint':
-    'Point at a subscription credential file below, or paste the credential content to import. Only files under ~/.codex, ~/.claude and ~/.gemini are accepted.',
+    'Each provider has its own dialog: sign in with a browser, or import the credential file written by the official CLI. Only files under ~/.codex, ~/.claude and ~/.gemini are accepted.',
   'settings.subscription.provider.codex': 'Codex',
   'settings.subscription.provider.claude': 'Claude',
   'settings.subscription.provider.google': 'Gemini',
@@ -1383,6 +1423,49 @@ export const en: Dict = {
   'settings.subscription.refreshed': 'Refreshed {label}',
   'settings.subscription.refreshFailed': 'Refresh failed: {err}',
   'settings.subscription.actionFailed': 'Action failed: {err}',
+
+  'settings.subscription.tile.connect': 'Connect account',
+  'settings.subscription.tile.connected': '{count} account(s) connected',
+  'settings.subscription.tile.empty': 'Not connected',
+  'settings.subscription.dialog.title': '{provider} subscription account',
+  'settings.subscription.dialog.close': 'Close',
+  'settings.subscription.badge.pkce': 'OAuth + PKCE S256',
+  'settings.subscription.badge.nopkce': 'OAuth (no PKCE)',
+  'settings.subscription.dialog.login.heading': 'Sign in with a browser',
+  'settings.subscription.dialog.login.desc.codex':
+    'Complete the OpenAI sign-in in your browser. The callback is received on local port 1455 — nothing to copy by hand.',
+  'settings.subscription.dialog.login.desc.claude':
+    'Complete the Claude sign-in in your browser. The callback is received on local port 54545.',
+  'settings.subscription.dialog.login.desc.google':
+    'Complete the Google sign-in in your browser. The callback is received on local port 51121.',
+  'settings.subscription.dialog.login.open': 'Open browser sign-in',
+  'settings.subscription.dialog.login.endpoint': 'Local callback {endpoint}',
+  'settings.subscription.dialog.login.waiting':
+    'Waiting for authorization… listening on {endpoint}, polling every 2 seconds',
+  'settings.subscription.dialog.login.reopen': 'Open the sign-in page in the browser',
+  'settings.subscription.dialog.login.cancel': 'Cancel',
+  'settings.subscription.dialog.login.ok': 'Signed in. The account has been added.',
+  'settings.subscription.dialog.autoRead.heading': 'Read automatically after sign-in',
+  'settings.subscription.field.email': 'Email',
+  'settings.subscription.field.plan': 'Plan',
+  'settings.subscription.field.accountId': 'Account ID',
+  'settings.subscription.field.organization': 'Organization',
+  'settings.subscription.field.accountUuid': 'Account UUID',
+  'settings.subscription.field.gcpProject': 'GCP project',
+  'settings.subscription.dialog.gcpNote':
+    'The GCP project is not part of the sign-in response; it is detected on the first request and written back to the account.',
+  'settings.subscription.dialog.import.heading': 'Or import a credential file',
+  'settings.subscription.dialog.import.choose': 'Choose credential file',
+  'settings.subscription.dialog.import.detect': 'Detect default path',
+  'settings.subscription.dialog.error': 'Sign-in failed: {err}',
+  'settings.subscription.oauth.error.timeout':
+    'Authorization timed out. Please start the sign-in again.',
+  'settings.subscription.oauth.error.portBusy':
+    'Local port {port} is already in use. Close whatever is listening on it (usually the official CLI) and retry.',
+  'settings.subscription.oauth.error.pending':
+    'A sign-in session for this provider is already pending. Finish or cancel it first.',
+  'settings.subscription.oauth.error.state':
+    'The sign-in session is no longer valid. Please start again.',
 
   'imagegen.model': 'Select image model',
   'imagegen.noModels': 'No image models available',
