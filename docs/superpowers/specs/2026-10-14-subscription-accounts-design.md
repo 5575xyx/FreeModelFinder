@@ -57,11 +57,11 @@ FreeModelFinder 目前聚合的几乎全是"免费 API key"渠道（OpenRouter�
 
 ### 4.1 Provider 命名与注册
 
-| 新 ProviderId | 含义                       | 上游协议                                                    |
-| ------------- | -------------------------- | ----------------------------------------------------------- |
-| `codex`       | ChatGPT Plus/Pro 订阅账号  | `chatgpt.com/backend-api/codex`（Responses 协议）           |
-| `claude`      | Claude Pro/Max 订阅账号    | `api.anthropic.com/v1/messages`（OAuth Bearer）             |
-| `google`      | Google 账号（Gemini 订阅） | `cloudcode-pa.googleapis.com/v1internal`（Gemini CLI 同族） |
+| 新 ProviderId | 含义                       | 上游协议                                                       |
+| ------------- | -------------------------- | -------------------------------------------------------------- |
+| `codex`       | ChatGPT Plus/Pro 订阅账号  | `chatgpt.com/backend-api/codex`（Responses 协议）              |
+| `claude`      | Claude Pro/Max 订阅账号    | `api.anthropic.com/v1/messages`（OAuth Bearer）                |
+| `google`      | Google 账号（Gemini 订阅） | 初始化 `cloudcode-pa…/v1internal` + 生成 `daily-cloudcode-pa…` |
 
 - `gemini`（API key）与 `google`（账号 OAuth）并存，模型 ID 前缀区分：`codex:gpt-5.1-codex-max`、`claude:claude-sonnet-4-5`、`google:gemini-3-pro`。
 - 注册方式照抄现有模式：`types.ts` 加枚举、`providers/index.ts` 导出、`registry.ts` `PROVIDER_CTORS` 注册、`resolveModelWithAlias` 启发式补充（`claude-*` → claude 订阅账号或现有渠道按可用性、`gpt-5*codex*` → codex）。
@@ -96,7 +96,7 @@ interface SubscriptionAdapter {
 
 - **codex**：请求体从 OpenAI ChatRequest 翻译到 Responses 协议（`{"model", "instructions?", "input": [...], "stream": true}`），SSE chunk 翻回 `StreamChunk`。鉴权 `Authorization: Bearer <access_token>` + `chatgpt-account-id: <account_id>` 头。模型目录：静态清单（gpt-5-codex、gpt-5.1-codex-max 等）+ 尝试上游 models 端点刷新。
 - **claude**：内部 ChatRequest 本就与 Anthropic messages 高度同构（现有 `routes/anthropic.ts` 是入站方向），出站翻译量小。鉴权 `Authorization: Bearer <oauth access token>` + `anthropic-beta: oauth-2025-04-20` 头。模型目录静态清单（sonnet/opus 线）。
-- **google**：走 cloudcode-pa `v1internal` 通道（`loadCodeAssist` 初始化 → `streamGenerateContent`），请求/响应形状是 Gemini generateContent 的变体，翻译直白。access token 直接用 Google OAuth Bearer。
+- **google**：走 cloudcode-pa `v1internal` 通道，**初始化与生成分属两个 host** —— `loadCodeAssist` 初始化打 `cloudcode-pa.googleapis.com`（prod），随后 `streamGenerateContent` 打 `daily-cloudcode-pa.googleapis.com`（daily，参考 `resolveAntigravityRequestBaseURL` 的默认值）。请求/响应形状是 Gemini generateContent 的变体，翻译直白。access token 直接用 Google OAuth Bearer。
 
 流式统一：`AsyncIterable<StreamChunk>`；错误统一抛 `UpstreamError`（保留状态码与 Retry-After），让 auto-router 的 `parseRateLimitError`/冷却表直接生效。
 
@@ -148,9 +148,14 @@ UI（Next.js 设置页）：
 
 ### 5.3 Google 账号 / Gemini CLI 凭证（`internal/auth/antigravity/constants.go`）
 
-- Google OAuth：`https://accounts.google.com/o/oauth2/v2/auth` → `https://oauth2.googleapis.com/token`，userinfo `https://www.googleapis.com/oauth2/v2/userinfo?alt=json`
+- Google OAuth：`https://accounts.google.com/o/oauth2/v2/auth` → `https://oauth2.googleapis.com/token`（实现 `TOKEN_URL` 与参考 `constants.go:22` 一致）
+  - userinfo `https://www.googleapis.com/oauth2/v2/userinfo?alt=json`（`constants.go:24`）：参考用它取 email（`auth.go:243`）；**实现未调用**——改用 `id_token` claims + refresh_token 派生 id 作账号标识（见 §10 偏差 ②）
+  - 授权端点 / PKCE 属二期（OAuth 交互登录），一期只做文件导入
 - 参考项目的 client_id：`1071006060591-...apps.googleusercontent.com`（Antigravity 专用）；**导入 Gemini CLI 的 `oauth_creds.json` 时用文件内嵌的 client_id/client_secret**，无需内置 secret
-- API 通道：`https://cloudcode-pa.googleapis.com/v1internal`（`loadCodeAssist` → generateContent 变体；Gemini CLI 同族协议）
+- API 通道：**两个 host，职责不同**（实现与参考一致）
+  - 初始化：`https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`（**prod**）
+  - 生成：`https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse`（**daily**）
+  - 依据（参考源码）：`constants.go:30` `DailyAPIEndpoint = "https://daily-cloudcode-pa.googleapis.com"`；`antigravity_executor.go:35` 同名常量；`antigravity_executor_request.go:445` `resolveAntigravityRequestBaseURL` 默认返回 `antigravityBaseURLDaily`（`antigravity_executor_buildrequest_test.go:18` 断言消费级凭据走 daily）。Gemini CLI 同族协议。
 - `~/.gemini/oauth_creds.json` 格式：`{access_token, refresh_token, scope, token_type, id_token, expiry_date(ms), client_id, client_secret?}`
 - 实测（2026-10-14，用户授权检查）：本机（Windows）当前不存在该文件，无法核实 client_secret 是否明文。适配器策略：**文件内含可用 client_secret → 直接用它刷新；缺失/为空 → 导入时报错并提示原因**。DPAPI/钥匙串解密属二期增强，仅当后续实测发现落盘为加密格式时再加。
 - 参考实现对 chatgpt.com 使用 uTLS Chrome 指纹 → 同 R1
@@ -238,6 +243,7 @@ UI（Next.js 设置页）：
 
 **已记录的偏差**
 
+- **协议对齐核验（2026-10-16，逐条对照参考源码）**：把 spec §5 的带 cite 常量逐条在实现中定位，并回 CLIProxyAPI 源码复核记录忠实性。**一致项**：Codex（token URL、`ClientID` `openai_auth.go:27`、刷新 scope、上游 `/codex/responses`、`refresh_token_reused` 致命分类、`tokens.*` 凭证格式、id_token claims 提取、未轮换沿用旧 RT）、Claude（token URL、`ClientID` `anthropic_auth.go:33`、scope、JSON body 刷新、UA `axios/1.15.2` `anthropic_auth.go:221`、profile URL、Retry-After 5s–5min clamp、缺 `refresh_token` 沿用旧值、`anthropic-beta: oauth-2025-04-20`、`claudeAiOauth` 凭证格式）、Google（token URL `oauth2.googleapis.com/token` `constants.go:22`、`loadCodeAssist` prod 端点、`daily-cloudcode-pa` 生成端点、`oauth_creds.json` 格式与 client_secret 策略）。**两处差异**：① §5.3 原记为单一 `cloudcode-pa` 通道，实际实现与参考均为"初始化 prod + 生成 daily"两个 host——**是本文档记录不完整，实现无误，已在 §2/§4/§5.3 更正**；② Google **未调用**参考的 `UserInfoEndpoint`（`constants.go:24`，参考用它取 email），实现改用 `id_token` claims + refresh_token 派生 id 作账号标识（`google.ts` `profileFromRefreshToken`，注释已说明"Google 没有账号级 id 来源"）——账号 id 稳定性等价，但 email 不再回源核实，属路径差异，如实记录。**计划内未实现（非失配）**：三家 OAuth 授权端点 / PKCE / redirect_uri（Codex `localhost:1455`、Claude `localhost:54545`、Google `accounts.google.com/o/oauth2/v2/auth`）属二期交互登录；uTLS 指纹伪装按 §3 决定不作一期硬依赖（风险 R1）。
 - 订阅模型 `free: true` + `subscription: true` 并存：免费审计靠 `subscription` 标记排除（见 R3 的补充实现）。
 - `audit-free-models.mjs` 在 Windows 上 `await import()` 绝对路径抛 `ERR_UNSUPPORTED_ESM_URL_SCHEME`，已改 `pathToFileURL`（Linux CI 行为不变，属附带修复）。
 - scripts 层测试不在 CI 链上，本地 `node --test scripts/audit-free-models.test.mjs` 覆盖。
