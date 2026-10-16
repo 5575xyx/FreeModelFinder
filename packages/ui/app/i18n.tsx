@@ -681,12 +681,12 @@ export const zh: Dict = {
   'settings.subscription.dialog.login.ok': '授权成功，账号已添加',
   'settings.subscription.dialog.login.callback.heading': '或手动粘贴回调地址',
   'settings.subscription.dialog.login.callback.hint':
-    '远程部署时浏览器与网关不同机，授权后会跳回 http://{endpoint} 并显示「无法连接」。把浏览器地址栏里那条带 code= 的完整 URL（或授权码）粘贴到这里。',
+    '远程部署时浏览器与网关不同机，授权后会跳回 http://{endpoint} 并显示「无法连接」。把浏览器地址栏里那条带 code= 的完整 URL（或 code= 开头的那段）粘贴到这里。',
   'settings.subscription.dialog.login.callback.placeholder':
     '粘贴回跳 URL，例如 http://{endpoint}?code=…',
   'settings.subscription.dialog.login.callback.submit': '提交回调',
   'settings.subscription.dialog.login.callback.tunnel':
-    '不想手动粘贴：在自己的电脑上建一条隧道，回调会自动送达，登录后关闭隧道即可。',
+    '不想手动粘贴：在自己的电脑上建一条隧道，回调会自动送达，登录后关闭隧道即可。（Docker 部署请先在 docker-compose.yml 里解开三行端口映射注释。）',
   'settings.subscription.dialog.autoRead.heading': '登录成功后自动读取',
   'settings.subscription.field.email': '邮箱',
   'settings.subscription.field.plan': '套餐',
@@ -705,6 +705,8 @@ export const zh: Dict = {
     '本机端口 {port} 被占用：先关掉占用它的程序（通常是官方 CLI）再重试',
   'settings.subscription.oauth.error.pending': '该平台已有一个登录会话在进行中，请先完成或取消它',
   'settings.subscription.oauth.error.state': '登录会话已失效，请重新发起',
+  'settings.subscription.oauth.error.invalidRedirect':
+    '粘贴的不是回调地址，请从浏览器地址栏复制那条带 code= 的完整 URL。',
   'settings.subscription.oauth.error.denied': '授权被拒绝：请在浏览器里点「允许」后重试',
   'settings.subscription.quotaExceeded.switchProject': '额度超限时自动切换 GCP 项目',
   'settings.subscription.quotaExceeded.switchProject.hint':
@@ -1450,12 +1452,12 @@ export const en: Dict = {
   'settings.subscription.dialog.login.ok': 'Signed in. The account has been added.',
   'settings.subscription.dialog.login.callback.heading': 'Or paste the callback address manually',
   'settings.subscription.dialog.login.callback.hint':
-    'With a remote deployment the browser and the gateway are on different machines, so the callback redirects to http://{endpoint} on your own machine and shows "Cannot connect". Paste the full URL from your browser address bar (the one containing code=), or the authorization code itself.',
+    'With a remote deployment the browser and the gateway are on different machines, so the callback redirects to http://{endpoint} on your own machine and shows "Cannot connect". Paste the full URL from your browser address bar (the one containing code=), or just the part starting with code=.',
   'settings.subscription.dialog.login.callback.placeholder':
     'Paste the callback URL, e.g. http://{endpoint}?code=…',
   'settings.subscription.dialog.login.callback.submit': 'Submit callback',
   'settings.subscription.dialog.login.callback.tunnel':
-    'Prefer not to paste manually: open a tunnel from your own machine and the callback arrives automatically. Close the tunnel once sign-in is done.',
+    'Prefer not to paste manually: open a tunnel from your own machine and the callback arrives automatically. Close the tunnel once sign-in is done. (For Docker, first uncomment the three port mappings in docker-compose.yml.)',
   'settings.subscription.dialog.autoRead.heading': 'Read automatically after sign-in',
   'settings.subscription.field.email': 'Email',
   'settings.subscription.field.plan': 'Plan',
@@ -1477,6 +1479,8 @@ export const en: Dict = {
     'A sign-in session for this provider is already pending. Finish or cancel it first.',
   'settings.subscription.oauth.error.state':
     'The sign-in session is no longer valid. Please start again.',
+  'settings.subscription.oauth.error.invalidRedirect':
+    'That is not a callback URL — copy the full URL containing code= from your browser address bar.',
   'settings.subscription.oauth.error.denied':
     'Authorization was denied. Approve the request in the browser and try again.',
   'settings.subscription.quotaExceeded.switchProject': 'Switch GCP project when quota is exceeded',

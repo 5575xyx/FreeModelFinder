@@ -316,6 +316,7 @@ describe('SubscriptionProviderDialog manual callback', () => {
   const pendingHandlers = [
     http.get(authUrl, () => HttpResponse.json({ status: 'ok', url: 'https://x/y', state })),
     http.get(statusUrl, () => HttpResponse.json({ status: 'wait' })),
+    http.delete(sessionUrl, () => HttpResponse.json({ status: 'ok', cancelled: true })),
   ];
 
   it('renders a callback url field and a submit button while waiting', async () => {
@@ -431,6 +432,32 @@ describe('SubscriptionProviderDialog manual callback', () => {
 
     await user.click(screen.getByTestId('subscription-cancel-codex'));
     await waitFor(() => expect(screen.queryByTestId('subscription-callback-url-codex')).toBeNull());
+  });
+
+  it('localizes the error when the pasted url is the authorize page, not the callback', async () => {
+    vi.stubGlobal('open', vi.fn());
+    server.use(
+      ...pendingHandlers,
+      http.post(callbackUrl, () =>
+        HttpResponse.json({ status: 'error', error: 'invalid redirect_url' }, { status: 400 }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<SubscriptionAccountsPanel />);
+
+    await openDialog(user, 'codex');
+    await user.click(screen.getByTestId('subscription-start-codex'));
+    await screen.findByText(/等待授权中/);
+
+    await user.type(
+      screen.getByTestId('subscription-callback-url-codex'),
+      `https://auth.openai.com/oauth/authorize?client_id=whatever&state=${state}`,
+    );
+    await user.click(screen.getByTestId('subscription-callback-submit-codex'));
+
+    // 本功能最高频的解析失败：用户把授权页地址当回调粘进来
+    expect(await screen.findByText(/不是回调地址/)).toBeTruthy();
+    expect(screen.queryByText('invalid redirect_url')).toBeNull();
   });
 });
 
@@ -839,6 +866,7 @@ describe('subscription i18n keys', () => {
     'settings.subscription.oauth.error.portBusy',
     'settings.subscription.oauth.error.pending',
     'settings.subscription.oauth.error.state',
+    'settings.subscription.oauth.error.invalidRedirect',
     'settings.subscription.oauth.error.denied',
     'settings.subscription.quotaExceeded.switchProject',
     'settings.subscription.quotaExceeded.switchProject.hint',
