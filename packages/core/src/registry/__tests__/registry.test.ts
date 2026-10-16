@@ -1338,3 +1338,114 @@ describe('resolveModel honours ids published by /v1/models', () => {
     assert.equal(resolved.modelId, 'some/unknown-model');
   });
 });
+
+// 订阅额度是用户已付费的配额，不是免费 key：auto 链必须把它排在所有免费模型之后，
+// 只有免费池空了才轮到它，免得订阅额度在用户不知情时被日常请求消耗掉。
+describe('ProviderRegistry subscription models rank last', () => {
+  const freeModel: ModelInfo = {
+    id: 'tiny-3b',
+    provider: 'openrouter',
+    displayName: 'Tiny',
+    free: true,
+  };
+  // 订阅目录里的 id 带 provider 前缀（与 codex/claude/google 的 listModels 一致），
+  // 且 free: true —— 这正是为什么单靠 free 过滤挡不住它进入 auto 池。
+  const subscriptionModel: ModelInfo = {
+    id: 'claude:claude-opus-4.8',
+    provider: 'claude',
+    displayName: 'Opus',
+    free: true,
+    subscription: true,
+  };
+
+  function mixedRegistry(models: ModelInfo[]): ProviderRegistry {
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        openrouter: { enabled: true, credentials: { apiKey: 'k' } },
+      } as unknown as AppConfig['providers']),
+    );
+    (registry as unknown as { modelsCache: unknown }).modelsCache = {
+      models,
+      succeededProviders: ['openrouter', 'claude'],
+      failedProviders: [],
+    };
+    return registry;
+  }
+
+  function chainOf(registry: ProviderRegistry): ModelInfo[] {
+    return (
+      registry as unknown as { buildFallbackChain(i?: number): ModelInfo[] }
+    ).buildFallbackChain();
+  }
+
+  it('puts a higher-scoring subscription model behind a weaker free one', () => {
+    resetAutoPoolCursor();
+    // claude-opus 是 flagship(95)，tiny-3b 是 tiny(30)：没有分段规则时 opus 会排第一。
+    const registry = mixedRegistry([subscriptionModel, freeModel]);
+
+    assert.deepEqual(
+      chainOf(registry).map((m) => composeModelId(m.provider, m.id)),
+      ['openrouter:tiny-3b', 'claude:claude-opus-4.8'],
+    );
+  });
+
+  it('still offers the subscription model when every free model is cooling', async () => {
+    resetAutoPoolCursor();
+    const registry = mixedRegistry([freeModel, subscriptionModel]);
+    const router = registry.getAutoRouter();
+    router.markRateLimited(freeModel.id, 'openrouter', {
+      isRateLimit: true,
+      resetAt: Date.now() + 60_000,
+      message: 'rpm',
+    });
+    router.clearProviderCooldown('openrouter');
+
+    assert.deepEqual(
+      chainOf(registry).map((m) => composeModelId(m.provider, m.id)),
+      ['claude:claude-opus-4.8'],
+    );
+  });
+
+  it('resolves a bare id to the free provider when both catalogs publish it', () => {
+    const { runtime } = stubRuntime(true);
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        openrouter: { enabled: true, credentials: { apiKey: 'k' } },
+        codex: { enabled: true, credentials: { apiKey: '' } },
+      } as unknown as AppConfig['providers']),
+      undefined,
+      undefined,
+      runtime,
+    );
+    // 订阅条目故意排在前面：旧的 catalog.find 会命中它，裸名必须偏好免费 provider。
+    (registry as unknown as { modelsCache: unknown }).modelsCache = {
+      models: [
+        { id: 'gpt-5.5', provider: 'codex', displayName: 'S', free: true, subscription: true },
+        { id: 'gpt-5.5', provider: 'openrouter', displayName: 'F', free: true },
+      ],
+      succeededProviders: ['codex', 'openrouter'],
+      failedProviders: [],
+    };
+
+    const resolved = registry.resolveModel('gpt-5.5');
+    assert.equal(resolved.provider.id, 'openrouter');
+    assert.equal(resolved.modelId, 'gpt-5.5');
+  });
+
+  it('keeps an explicit provider prefix pointed at the subscription provider', () => {
+    const { runtime } = stubRuntime(true);
+    const registry = new ProviderRegistry(
+      configWithProviders({
+        openrouter: { enabled: true, credentials: { apiKey: 'k' } },
+        codex: { enabled: true, credentials: { apiKey: '' } },
+      } as unknown as AppConfig['providers']),
+      undefined,
+      undefined,
+      runtime,
+    );
+
+    const resolved = registry.resolveModel('codex:gpt-5.1-codex-max');
+    assert.equal(resolved.provider.id, 'codex');
+    assert.equal(resolved.modelId, 'gpt-5.1-codex-max');
+  });
+});

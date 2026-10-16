@@ -718,7 +718,11 @@ export class ProviderRegistry {
     // the caller's allowlist as "model not allowed" for a model that was on it.
     const catalog = this.modelsCache?.models;
     if (catalog) {
-      const hit = catalog.find((m) => m.id === modelId);
+      // 裸名同时被免费目录与订阅目录发布时，先取免费条目：订阅额度是用户已付费的
+      // 配额，不该被一次裸名请求无声消耗。只有免费目录里没有时才落回订阅目录。
+      const hit =
+        catalog.find((m) => m.id === modelId && m.subscription !== true) ??
+        catalog.find((m) => m.id === modelId);
       if (hit) {
         try {
           return {
@@ -781,9 +785,19 @@ export class ProviderRegistry {
           a.m.id.localeCompare(b.m.id)
         );
       });
+    // 订阅额度是用户已付费的配额，不是免费 key：auto 链把它稳定分区到尾部，
+    // 免费模型按分数排在前面。只有免费池被冷却/过滤空了，订阅模型才会被选中，
+    // 这样日常请求永远不会无感知地消耗订阅额度。
+    const [freeRows, subscriptionRows] = scored.reduce<[typeof scored, typeof scored]>(
+      (acc, row) => {
+        acc[row.m.subscription === true ? 1 : 0].push(row);
+        return acc;
+      },
+      [[], []],
+    );
     const seats = new Map<ProviderId, number>();
     const chain: ModelInfo[] = [];
-    for (const row of scored) {
+    for (const row of [...freeRows, ...subscriptionRows]) {
       const used = seats.get(row.m.provider) ?? 0;
       if (used >= 2) continue;
       seats.set(row.m.provider, used + 1);
