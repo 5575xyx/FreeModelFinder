@@ -25,12 +25,12 @@ The 对话测试 page only accepts text (`page.tsx` `send()` posts `{role, conte
 
 ## Decisions (user-confirmed)
 
-| Topic          | Decision                                                    |
-| -------------- | ----------------------------------------------------------- |
-| Count          | Multiple images per message                                 |
-| Empty text     | Allowed when ≥1 image attached                              |
-| Oversize       | Reject client-side when a single image > 10MB (matches server `MAX_IMAGE_DATA_BYTES`) |
-| Architecture   | Approach A: separate display state (`uploadImages`) + wire mapping in `send()` |
+| Topic        | Decision                                                                              |
+| ------------ | ------------------------------------------------------------------------------------- |
+| Count        | Multiple images per message                                                           |
+| Empty text   | Allowed when ≥1 image attached                                                        |
+| Oversize     | Reject client-side when a single image > 10MB (matches server `MAX_IMAGE_DATA_BYTES`) |
+| Architecture | Approach A: separate display state (`uploadImages`) + wire mapping in `send()`        |
 
 ## 1. State and types (`packages/ui/app/page.tsx`, `TesterView.tsx`)
 
@@ -111,12 +111,12 @@ setInputImages([]);
 
 ## 6. i18n (`packages/ui/app/i18n.tsx`, zh + en)
 
-| Key | zh | en |
-| --- | -- | -- |
-| `tester.attach.aria` | 附加图片 | Attach images |
-| `tester.attach.tooLarge` | 图片超过 10MB，未添加 | Image exceeds 10MB and was not added |
-| `tester.attach.readError` | 图片读取失败 | Failed to read image |
-| `tester.attach.removeAria` | 移除图片 {index} | Remove image {index} |
+| Key                        | zh                    | en                                   |
+| -------------------------- | --------------------- | ------------------------------------ |
+| `tester.attach.aria`       | 附加图片              | Attach images                        |
+| `tester.attach.tooLarge`   | 图片超过 10MB，未添加 | Image exceeds 10MB and was not added |
+| `tester.attach.readError`  | 图片读取失败          | Failed to read image                 |
+| `tester.attach.removeAria` | 移除图片 {index}      | Remove image {index}                 |
 
 Optional placeholder suffix unchanged (keep existing `tester.input.placeholder`).
 

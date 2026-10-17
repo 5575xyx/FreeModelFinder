@@ -12,23 +12,24 @@
 
 ## 文件结构
 
-| 文件 | 操作 | 职责 |
-|------|------|------|
-| `packages/core/src/types.ts` | 修改 | 新增多模态类型定义 |
-| `packages/core/src/providers/base.ts` | 修改 | 添加可选的 generateImage/generateVideo 方法 |
-| `packages/core/src/providers/agnes.ts` | 修改 | 实现 Agnes 图片/视频 API 调用 |
-| `packages/server/src/routes/openai.ts` | 修改 | 添加 `/v1/images/generations` 和 `/v1/videos` 路由 |
-| `packages/core/src/protocols/openai.ts` | 修改 | 添加图片/视频请求/响应转换函数 |
-| `packages/core/src/__tests__/multimodal.test.ts` | 新建 | 多模态类型和转换函数测试 |
-| `packages/core/src/providers/__tests__/agnes-multimodal.test.ts` | 新建 | Agnes 多模态 Provider 测试 |
-| `packages/server/src/routes/__tests__/images.test.ts` | 新建 | 图片生成端点测试 |
-| `packages/server/src/routes/__tests__/videos.test.ts` | 新建 | 视频生成端点测试 |
+| 文件                                                             | 操作 | 职责                                               |
+| ---------------------------------------------------------------- | ---- | -------------------------------------------------- |
+| `packages/core/src/types.ts`                                     | 修改 | 新增多模态类型定义                                 |
+| `packages/core/src/providers/base.ts`                            | 修改 | 添加可选的 generateImage/generateVideo 方法        |
+| `packages/core/src/providers/agnes.ts`                           | 修改 | 实现 Agnes 图片/视频 API 调用                      |
+| `packages/server/src/routes/openai.ts`                           | 修改 | 添加 `/v1/images/generations` 和 `/v1/videos` 路由 |
+| `packages/core/src/protocols/openai.ts`                          | 修改 | 添加图片/视频请求/响应转换函数                     |
+| `packages/core/src/__tests__/multimodal.test.ts`                 | 新建 | 多模态类型和转换函数测试                           |
+| `packages/core/src/providers/__tests__/agnes-multimodal.test.ts` | 新建 | Agnes 多模态 Provider 测试                         |
+| `packages/server/src/routes/__tests__/images.test.ts`            | 新建 | 图片生成端点测试                                   |
+| `packages/server/src/routes/__tests__/videos.test.ts`            | 新建 | 视频生成端点测试                                   |
 
 ---
 
 ### Task 1: 扩展类型系统
 
 **Files:**
+
 - Modify: `packages/core/src/types.ts`
 - Test: `packages/core/src/__tests__/multimodal.test.ts`
 
@@ -176,6 +177,7 @@ git commit -m "feat(core): add multimodal type definitions for image and video g
 ### Task 2: 扩展 Provider 基类接口
 
 **Files:**
+
 - Modify: `packages/core/src/providers/base.ts`
 - Test: `packages/core/src/__tests__/multimodal.test.ts` (追加)
 
@@ -249,6 +251,7 @@ git commit -m "feat(core): add generateImage/generateVideo to ProviderRegistry"
 ### Task 3: 实现 Agnes 图片生成
 
 **Files:**
+
 - Modify: `packages/core/src/providers/agnes.ts`
 - Test: `packages/core/src/providers/__tests__/agnes-multimodal.test.ts`
 
@@ -546,7 +549,8 @@ const AGNES_STATIC_MODELS: Omit<ModelInfo, 'provider'>[] = [
     displayName: 'Agnes Video 2.5 Flash',
     free: true,
     capabilities: ['video'],
-    description: 'Agnes Video 2.5 Flash, video generation with first/last frame control, permanently free.',
+    description:
+      'Agnes Video 2.5 Flash, video generation with first/last frame control, permanently free.',
   },
 ];
 ```
@@ -568,6 +572,7 @@ git commit -m "feat(agnes): implement image and video generation methods"
 ### Task 4: 添加 Server 路由
 
 **Files:**
+
 - Modify: `packages/server/src/routes/openai.ts`
 - Test: `packages/server/src/routes/__tests__/images.test.ts`, `videos.test.ts`
 
@@ -703,10 +708,7 @@ Expected: FAIL with "Route POST /v1/images/generations not found"
 在 `packages/server/src/routes/openai.ts` 中添加：
 
 ```typescript
-import type {
-  ImageGenerationRequest,
-  VideoGenerationRequest,
-} from '@freemodelfinder/core';
+import type { ImageGenerationRequest, VideoGenerationRequest } from '@freemodelfinder/core';
 
 // ... 在 registerOpenAIRoutes 函数中添加：
 
@@ -770,7 +772,9 @@ fastify.get<{
   try {
     const provider = reg.getProvider(providerId);
     if (!provider.queryVideoStatus) {
-      return reply.code(400).send({ error: { message: `Provider ${providerId} does not support video status queries` } });
+      return reply.code(400).send({
+        error: { message: `Provider ${providerId} does not support video status queries` },
+      });
     }
     const response = await provider.queryVideoStatus(video_id);
     return reply.send(response);
@@ -793,8 +797,8 @@ function isPublicGatewayRoute(url: string): boolean {
     '/v1/messages',
     '/v1beta/',
     '/healthz',
-    '/v1/images/generations',  // 新增
-    '/v1/videos',              // 新增
+    '/v1/images/generations', // 新增
+    '/v1/videos', // 新增
   ];
   return publicRoutes.some((route) => url.startsWith(route));
 }
@@ -817,6 +821,7 @@ git commit -m "feat(server): add /v1/images/generations and /v1/videos endpoints
 ### Task 5: 导出多模态类型
 
 **Files:**
+
 - Modify: `packages/core/src/index.ts`
 
 - [ ] **Step 1: 确保多模态类型已导出**
@@ -845,6 +850,7 @@ git commit -m "chore: verify multimodal support exports and types"
 ### Task 6: 端到端验证
 
 **Files:**
+
 - Manual testing with actual Agnes API key
 
 - [ ] **Step 1: 启动本地服务器**

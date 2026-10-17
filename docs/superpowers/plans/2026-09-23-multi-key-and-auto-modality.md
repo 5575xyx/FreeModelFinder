@@ -11,6 +11,7 @@
 **Spec:** `docs/superpowers/specs/2026-09-23-multi-key-and-auto-modality-design.md`
 
 **Notes:**
+
 - 两部分独立，可按 Part 顺序执行；每 Task 结束跑对应测试。
 - 不推送 GitHub；仅本地 commit（用户已要求勿擅自 push）。
 - 验证命令：`npx prettier --write <files>` → `npx eslint <files> --max-warnings=0` → `pnpm --filter @freemodelfinder/server test` / `ui test` → 必要时 `pnpm typecheck`。
@@ -19,15 +20,15 @@
 
 ## File Structure
 
-| 文件 | 职责 |
-|------|------|
-| `packages/server/src/server.ts` | config `keyMeta`；POST append/remove |
-| `packages/server/src/routes/openai.ts` | 图片文本意图 + auto 发现 imageModel |
-| `packages/server/src/__tests__/server.test.ts` | Part A API 测试（或新文件 `multi-key.test.ts`） |
-| `packages/server/src/routes/__tests__/auto-modality.test.ts` | Part B 路由测试（新建） |
-| `packages/ui/app/components/SettingsView.tsx` | 多 Key UI |
-| `packages/ui/app/i18n.tsx` | 文案 |
-| `packages/ui/app/components/__tests__/settings.test.tsx` | UI 测试 |
+| 文件                                                         | 职责                                            |
+| ------------------------------------------------------------ | ----------------------------------------------- |
+| `packages/server/src/server.ts`                              | config `keyMeta`；POST append/remove            |
+| `packages/server/src/routes/openai.ts`                       | 图片文本意图 + auto 发现 imageModel             |
+| `packages/server/src/__tests__/server.test.ts`               | Part A API 测试（或新文件 `multi-key.test.ts`） |
+| `packages/server/src/routes/__tests__/auto-modality.test.ts` | Part B 路由测试（新建）                         |
+| `packages/ui/app/components/SettingsView.tsx`                | 多 Key UI                                       |
+| `packages/ui/app/i18n.tsx`                                   | 文案                                            |
+| `packages/ui/app/components/__tests__/settings.test.tsx`     | UI 测试                                         |
 
 ---
 
@@ -36,6 +37,7 @@
 ## Task A1: keyMeta 工具 + GET /api/config
 
 **Files:**
+
 - Modify: `packages/server/src/server.ts`（`/api/config` ~463-527）
 
 - [ ] **Step 1: 在 server.ts 顶部附近（helpers 区）加入 buildKeyMeta**
@@ -247,6 +249,7 @@ git commit -m "feat(server): expose keyMeta hints in /api/config"
 ## Task A2: POST appendKeys / removeKeyIndex
 
 **Files:**
+
 - Modify: `packages/server/src/server.ts` POST `/api/providers` ~536-720
 - Test: `packages/server/src/__tests__/multi-key.test.ts`
 
@@ -314,8 +317,10 @@ const appendSourceKeyList =
     : undefined;
 if (
   appendSourceKeys !== undefined &&
-  (typeof appendSourceKeys.sourceId !== 'string' || !appendSourceKeys.sourceId.trim() ||
-    !appendSourceKeyList || appendSourceKeyList.length === 0)
+  (typeof appendSourceKeys.sourceId !== 'string' ||
+    !appendSourceKeys.sourceId.trim() ||
+    !appendSourceKeyList ||
+    appendSourceKeyList.length === 0)
 ) {
   return reply.code(400).send({ error: 'appendSourceKeys invalid' });
 }
@@ -367,8 +372,8 @@ let nextApiKeys =
     ? cleanApiKeys
     : cleanApiKey
       ? [cleanApiKey]
-      : cur.credentials?.apiKeys ??
-        (cur.credentials?.apiKey ? [cur.credentials.apiKey] : undefined);
+      : (cur.credentials?.apiKeys ??
+        (cur.credentials?.apiKey ? [cur.credentials.apiKey] : undefined));
 if (removeKeyIndex !== undefined && !shouldClear) {
   const base = nextApiKeys ?? providerKeyPool(cur.credentials);
   if (removeKeyIndex >= base.length) {
@@ -426,91 +431,91 @@ if (removeSourceKey || appendSourceKeys) {
 - [ ] **Step 5: 追加测试到 multi-key.test.ts**
 
 ```ts
-  it('appends and removes provider keys', async () => {
-    const append = await app.inject({
-      method: 'POST',
-      url: '/api/providers',
-      headers: localUiHeaders,
-      payload: { provider: 'openrouter', appendKeys: ['sk-third-cccc'], enabled: true },
-    });
-    assert.equal(append.statusCode, 200);
-
-    let cfg = await app.inject({
-      method: 'GET',
-      url: '/api/config',
-      headers: localUiHeaders,
-    });
-    assert.equal(cfg.json().providers.openrouter.keyMeta.length, 3);
-    assert.equal(cfg.json().providers.openrouter.keyMeta[2].hint, '…cccc');
-
-    const empty = await app.inject({
-      method: 'POST',
-      url: '/api/providers',
-      headers: localUiHeaders,
-      payload: { provider: 'openrouter', appendKeys: [] },
-    });
-    assert.equal(empty.statusCode, 400);
-
-    const remove = await app.inject({
-      method: 'POST',
-      url: '/api/providers',
-      headers: localUiHeaders,
-      payload: { provider: 'openrouter', removeKeyIndex: 0 },
-    });
-    assert.equal(remove.statusCode, 200);
-
-    cfg = await app.inject({
-      method: 'GET',
-      url: '/api/config',
-      headers: localUiHeaders,
-    });
-    assert.equal(cfg.json().providers.openrouter.keyMeta.length, 2);
-    assert.equal(cfg.json().providers.openrouter.keyMeta[0].hint, '…bbbb');
-
-    const oob = await app.inject({
-      method: 'POST',
-      url: '/api/providers',
-      headers: localUiHeaders,
-      payload: { provider: 'openrouter', removeKeyIndex: 99 },
-    });
-    assert.equal(oob.statusCode, 400);
+it('appends and removes provider keys', async () => {
+  const append = await app.inject({
+    method: 'POST',
+    url: '/api/providers',
+    headers: localUiHeaders,
+    payload: { provider: 'openrouter', appendKeys: ['sk-third-cccc'], enabled: true },
   });
+  assert.equal(append.statusCode, 200);
 
-  it('appends and removes custom source keys', async () => {
-    const append = await app.inject({
-      method: 'POST',
-      url: '/api/providers',
-      headers: localUiHeaders,
-      payload: {
-        provider: 'custom',
-        appendSourceKeys: { sourceId: 'fixture', keys: ['src-three-3333'] },
-      },
-    });
-    assert.equal(append.statusCode, 200);
-
-    let cfg = await app.inject({
-      method: 'GET',
-      url: '/api/config',
-      headers: localUiHeaders,
-    });
-    assert.equal(cfg.json().custom.sources[0].keyMeta.length, 3);
-
-    const remove = await app.inject({
-      method: 'POST',
-      url: '/api/providers',
-      headers: localUiHeaders,
-      payload: { provider: 'custom', removeSourceKey: { sourceId: 'fixture', index: 0 } },
-    });
-    assert.equal(remove.statusCode, 200);
-
-    cfg = await app.inject({
-      method: 'GET',
-      url: '/api/config',
-      headers: localUiHeaders,
-    });
-    assert.equal(cfg.json().custom.sources[0].keyMeta.length, 2);
-    assert.ok(!cfg.body.includes('src-one-1111'));
+  let cfg = await app.inject({
+    method: 'GET',
+    url: '/api/config',
+    headers: localUiHeaders,
   });
+  assert.equal(cfg.json().providers.openrouter.keyMeta.length, 3);
+  assert.equal(cfg.json().providers.openrouter.keyMeta[2].hint, '…cccc');
+
+  const empty = await app.inject({
+    method: 'POST',
+    url: '/api/providers',
+    headers: localUiHeaders,
+    payload: { provider: 'openrouter', appendKeys: [] },
+  });
+  assert.equal(empty.statusCode, 400);
+
+  const remove = await app.inject({
+    method: 'POST',
+    url: '/api/providers',
+    headers: localUiHeaders,
+    payload: { provider: 'openrouter', removeKeyIndex: 0 },
+  });
+  assert.equal(remove.statusCode, 200);
+
+  cfg = await app.inject({
+    method: 'GET',
+    url: '/api/config',
+    headers: localUiHeaders,
+  });
+  assert.equal(cfg.json().providers.openrouter.keyMeta.length, 2);
+  assert.equal(cfg.json().providers.openrouter.keyMeta[0].hint, '…bbbb');
+
+  const oob = await app.inject({
+    method: 'POST',
+    url: '/api/providers',
+    headers: localUiHeaders,
+    payload: { provider: 'openrouter', removeKeyIndex: 99 },
+  });
+  assert.equal(oob.statusCode, 400);
+});
+
+it('appends and removes custom source keys', async () => {
+  const append = await app.inject({
+    method: 'POST',
+    url: '/api/providers',
+    headers: localUiHeaders,
+    payload: {
+      provider: 'custom',
+      appendSourceKeys: { sourceId: 'fixture', keys: ['src-three-3333'] },
+    },
+  });
+  assert.equal(append.statusCode, 200);
+
+  let cfg = await app.inject({
+    method: 'GET',
+    url: '/api/config',
+    headers: localUiHeaders,
+  });
+  assert.equal(cfg.json().custom.sources[0].keyMeta.length, 3);
+
+  const remove = await app.inject({
+    method: 'POST',
+    url: '/api/providers',
+    headers: localUiHeaders,
+    payload: { provider: 'custom', removeSourceKey: { sourceId: 'fixture', index: 0 } },
+  });
+  assert.equal(remove.statusCode, 200);
+
+  cfg = await app.inject({
+    method: 'GET',
+    url: '/api/config',
+    headers: localUiHeaders,
+  });
+  assert.equal(cfg.json().custom.sources[0].keyMeta.length, 2);
+  assert.ok(!cfg.body.includes('src-one-1111'));
+});
 ```
 
 - [ ] **Step 6: 跑测试**
@@ -530,6 +535,7 @@ git commit -m "feat(server): append/remove API keys via providers API"
 ## Task A3: i18n 文案
 
 **Files:**
+
 - Modify: `packages/ui/app/i18n.tsx`
 
 - [ ] **Step 1: 中文键替换/新增**（~309-330）
@@ -576,6 +582,7 @@ git commit -m "feat(ui): i18n for multi-key add/remove"
 ## Task A4: SettingsView Provider 多 Key UI
 
 **Files:**
+
 - Modify: `packages/ui/app/components/SettingsView.tsx`
 
 - [ ] **Step 1: 类型与状态**
@@ -605,9 +612,7 @@ const [srcKeyDrafts, setSrcKeyDrafts] = useState<Record<string, string[]>>({});
 
 ```ts
 async function save(providerId: string) {
-  const appendKeys = (keyDrafts[providerId] ?? [])
-    .map((k) => k.trim())
-    .filter(Boolean);
+  const appendKeys = (keyDrafts[providerId] ?? []).map((k) => k.trim()).filter(Boolean);
   if (!appendKeys.length) return;
   setSaveStates((s) => ({ ...s, [providerId]: 'saving' }));
   try {
@@ -680,7 +685,10 @@ async function removeProviderKey(providerId: string, index: number) {
     setSaveStates((s) => ({ ...s, [providerId]: 'idle' }));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    setToast({ kind: 'error', text: t('settings.sources.saveFailed', { provider: providerId, detail: `: ${msg}` }) });
+    setToast({
+      kind: 'error',
+      text: t('settings.sources.saveFailed', { provider: providerId, detail: `: ${msg}` }),
+    });
     setSaveStates((s) => ({ ...s, [providerId]: 'idle' }));
   }
 }
@@ -695,9 +703,7 @@ async function removeProviderKey(providerId: string, index: number) {
       key={row.id}
       className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
     >
-      <code className="flex-1 truncate font-mono text-xs text-foreground">
-        {row.hint}
-      </code>
+      <code className="flex-1 truncate font-mono text-xs text-foreground">{row.hint}</code>
       <span className="sr-only">
         {t('settings.sources.keyRow', { n: idx + 1, hint: row.hint })}
       </span>
@@ -762,9 +768,7 @@ async function removeProviderKey(providerId: string, index: number) {
   <div className="flex flex-wrap items-center gap-2">
     <button
       type="button"
-      onClick={() =>
-        setKeyDrafts((d) => ({ ...d, [p.id]: [...(d[p.id] ?? []), ''] }))
-      }
+      onClick={() => setKeyDrafts((d) => ({ ...d, [p.id]: [...(d[p.id] ?? []), ''] }))}
       className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <Plus size={12} strokeWidth={2} />
@@ -816,6 +820,7 @@ git commit -m "feat(ui): provider multi-key mask list and add-key flow"
 ## Task A5: SettingsView Custom source 多 Key UI
 
 **Files:**
+
 - Modify: `packages/ui/app/components/SettingsView.tsx`
 
 - [ ] **Step 1: source key 增删函数**
@@ -916,7 +921,10 @@ const payloadSources = customSources.map((s) => ({
     <KeyRound size={12} strokeWidth={1.75} /> API Key
   </div>
   {(src.keyMeta ?? []).map((row, idx) => (
-    <div key={row.id} className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5">
+    <div
+      key={row.id}
+      className="flex items-center gap-2 rounded-md border border-border bg-surface-muted/40 px-2 py-1.5"
+    >
       <code className="flex-1 truncate font-mono text-xs">{row.hint}</code>
       <button
         type="button"
@@ -964,9 +972,7 @@ const payloadSources = customSources.map((s) => ({
   <div className="flex flex-wrap gap-2">
     <button
       type="button"
-      onClick={() =>
-        setSrcKeyDrafts((d) => ({ ...d, [src.id]: [...(d[src.id] ?? []), ''] }))
-      }
+      onClick={() => setSrcKeyDrafts((d) => ({ ...d, [src.id]: [...(d[src.id] ?? []), ''] }))}
       className="..."
     >
       <Plus size={12} /> {t('settings.custom.addKey')}
@@ -1001,6 +1007,7 @@ git commit -m "feat(ui): custom source multi-key list and immediate delete"
 ## Task A6: UI 测试 + 全量验证
 
 **Files:**
+
 - Modify: `packages/ui/app/components/__tests__/settings.test.tsx`
 - Modify: `packages/ui/test/server.ts`（如需 mock keyMeta / POST）
 
@@ -1091,6 +1098,7 @@ git commit -m "test(ui): multi-key append flow and keyMeta mocks"
 ## Task B1: 文本图片意图检测
 
 **Files:**
+
 - Modify: `packages/server/src/routes/openai.ts` ~154-167
 - Create: `packages/server/src/routes/__tests__/auto-modality.test.ts`
 
@@ -1190,6 +1198,7 @@ git commit -m "feat(server): detect text image-generation intent for auto modali
 ## Task B2: auto + image 未配置时自动发现
 
 **Files:**
+
 - Modify: `packages/server/src/routes/openai.ts` ~284-307
 
 - [ ] **Step 1: 增加 findImageModel helper（openai.ts 模块级）**
@@ -1328,6 +1337,7 @@ git commit -m "feat(server): auto discovers image model when imageModel unset"
 ## Task B3: 文案（可选）+ 全量验证
 
 **Files:**
+
 - Modify: `packages/ui/app/i18n.tsx` ~245-246 / ~701-702
 
 - [ ] **Step 1: modality.desc 补一句**

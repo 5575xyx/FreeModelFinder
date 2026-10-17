@@ -47,13 +47,13 @@ export interface AppConfig {
 
 ### 别名命名校验（保存时执行，不合法返回 400）
 
-| 规则 | 理由 |
-|---|---|
-| trim 后非空，长度 ≥ 1 | 基本 |
-| 不含 `:` | gemini 路由按最后一个 `:` 拆模型/动作；`provider:model` 前缀解析会被污染 |
-| 不等于 `auto` / `default` | 保留字 |
-| 不与已存在的真实模型 id 冲突 | `/v1/models` 替换规则需要唯一映射 |
-| 值（真实 id）不必强制存在于当前目录 | 目录动态刷新，允许先配别名等模型上线；解析失败时报 model not found |
+| 规则                                | 理由                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------ |
+| trim 后非空，长度 ≥ 1               | 基本                                                                     |
+| 不含 `:`                            | gemini 路由按最后一个 `:` 拆模型/动作；`provider:model` 前缀解析会被污染 |
+| 不等于 `auto` / `default`           | 保留字                                                                   |
+| 不与已存在的真实模型 id 冲突        | `/v1/models` 替换规则需要唯一映射                                        |
+| 值（真实 id）不必强制存在于当前目录 | 目录动态刷新，允许先配别名等模型上线；解析失败时报 model not found       |
 
 ## 第 2 节：解析链路
 
@@ -86,7 +86,7 @@ toClientFacingModel(realId: string): string;
 在三个协议路由入口，把请求模型名归一为真实 id，同时保留原始名：
 
 ```ts
-const requestedModel = String(body.model);       // 保留原始名（回显别名用）
+const requestedModel = String(body.model); // 保留原始名（回显别名用）
 chatReq.model = reg.resolveAlias(chatReq.model); // 归一为真实 id
 ```
 
@@ -115,15 +115,15 @@ chatReq.model = reg.resolveAlias(chatReq.model); // 归一为真实 id
 
 ### 响应回显
 
-| 位置 | 改法 |
-|---|---|
-| openai.ts 非流式 `payload.model = finalModel` | `reg.toClientFacingModel(finalModel)` |
-| openai.ts chat 内嵌图片/视频应答 `model: chatReq.model` | 用 `requestedModel`（原始请求名） |
-| openai.ts 流式 `streamChunkToOpenAI(chunk)` 输出后 | 覆盖 `payload.model = requestedModel`（请求用的是别名时） |
-| anthropic.ts 非流式 `payload.model = finalModel` | `reg.toClientFacingModel(finalModel)` |
-| anthropic.ts 流式 `message_start` 的 `model` | 同理 |
-| gemini | 响应不含 model 字段，无需改 |
-| `/v1/images/generations`、`/v1/videos` | `body.model` 原样回显已是请求名，不动 |
+| 位置                                                    | 改法                                                      |
+| ------------------------------------------------------- | --------------------------------------------------------- |
+| openai.ts 非流式 `payload.model = finalModel`           | `reg.toClientFacingModel(finalModel)`                     |
+| openai.ts chat 内嵌图片/视频应答 `model: chatReq.model` | 用 `requestedModel`（原始请求名）                         |
+| openai.ts 流式 `streamChunkToOpenAI(chunk)` 输出后      | 覆盖 `payload.model = requestedModel`（请求用的是别名时） |
+| anthropic.ts 非流式 `payload.model = finalModel`        | `reg.toClientFacingModel(finalModel)`                     |
+| anthropic.ts 流式 `message_start` 的 `model`            | 同理                                                      |
+| gemini                                                  | 响应不含 model 字段，无需改                               |
+| `/v1/images/generations`、`/v1/videos`                  | `body.model` 原样回显已是请求名，不动                     |
 
 ### 诊断元数据保留真实 id
 

@@ -49,9 +49,16 @@ interface CarriesHint {
   retryAfter?: string;
 }
 
-function failingFetch(status: number, body: string, headers: Record<string, string> = {}): typeof fetch {
+function failingFetch(
+  status: number,
+  body: string,
+  headers: Record<string, string> = {},
+): typeof fetch {
   return (async () =>
-    new Response(body, { status, headers: { 'content-type': 'text/plain', ...headers } })) as typeof fetch;
+    new Response(body, {
+      status,
+      headers: { 'content-type': 'text/plain', ...headers },
+    })) as typeof fetch;
 }
 
 async function caught(fn: () => Promise<unknown>): Promise<unknown> {

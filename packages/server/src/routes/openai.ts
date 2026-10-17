@@ -753,6 +753,8 @@ export function registerOpenAIRoutes(
           context_window: m.contextWindow,
           provider: m.provider,
           free: m.free,
+          // 订阅额度不是免费 key：客户端据此把订阅模型排除在 auto 免费池之外。
+          ...(m.subscription === true ? { subscription: true } : {}),
           description: m.description,
           capabilities: m.capabilities,
           // Discovery clients read the reasoning ladder at the top level, while

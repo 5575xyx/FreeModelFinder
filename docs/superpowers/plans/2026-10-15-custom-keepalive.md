@@ -36,11 +36,13 @@
 ### Task 1: core —— CustomSource 保活字段与默认值
 
 **Files:**
+
 - Modify: `packages/core/src/types.ts:32-38`（`CustomSource` 加两个字段）
 - Modify: `packages/core/src/config/store.ts`（旧 config 迁移：缺失字段回落默认）
 - Test: `packages/core/src/config/__tests__/store.test.ts` 或 `packages/core/src/providers/__tests__/`（追加）
 
 **Interfaces:**
+
 - Consumes: 既有 `CustomSource`（types.ts:32-38）。
 - Produces:
   - `CustomSource` 新增 `keepAlive?: boolean`（默认 true；false 表示该 source 不参与保活）
@@ -88,11 +90,13 @@ git commit -m "feat(core): CustomSource 支持 per-source 保活开关与间隔�
 ### Task 2: server —— KeepAliveService 定时保活
 
 **Files:**
+
 - Create: `packages/server/src/keep-alive.ts`
 - Modify: `packages/server/src/server.ts`（`createApp` 内启动 + `onClose` 停止，参照 watcher `server.ts:699-716`）
 - Test: Create `packages/server/src/__tests__/keep-alive.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 1 的 `normalizeKeepAliveMinutes`、`CustomSource`；`reg.getConfig()` 解密语义。
 - Produces:
   - `export interface KeepAliveSource { id: string; baseUrl: string; apiKey?: string | string[]; keepAlive?: boolean; keepAliveMinutes?: number }`
@@ -114,7 +118,9 @@ function stubFetch(log: string[]) {
     void init;
     return new Response('{}', { status: 200 });
   }) as typeof fetch;
-  return () => { globalThis.fetch = orig; };
+  return () => {
+    globalThis.fetch = orig;
+  };
 }
 
 it('pings only enabled sources that have a baseUrl', async () => {
@@ -127,7 +133,9 @@ it('pings only enabled sources that have a baseUrl', async () => {
       { id: 'c', baseUrl: '' },
     ]);
     await svc.tick();
-  } finally { restore(); }
+  } finally {
+    restore();
+  }
   assert.deepEqual(log, ['https://a.example.com/v1/models']);
 });
 
@@ -135,34 +143,53 @@ it('sends the source key as a bearer token', async () => {
   const seen: Array<{ url: string; auth: string | null }> = [];
   const orig = globalThis.fetch;
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
-    seen.push({ url: String(url), auth: (init?.headers as Record<string,string>)?.['Authorization'] ?? null });
+    seen.push({
+      url: String(url),
+      auth: (init?.headers as Record<string, string>)?.['Authorization'] ?? null,
+    });
     return new Response('{}');
   }) as typeof fetch;
   try {
-    const svc = new KeepAliveService(() => [{ id: 'a', baseUrl: 'https://a.example.com/v1', apiKey: 'secret-key' }]);
+    const svc = new KeepAliveService(() => [
+      { id: 'a', baseUrl: 'https://a.example.com/v1', apiKey: 'secret-key' },
+    ]);
     await svc.tick();
-  } finally { globalThis.fetch = orig; }
+  } finally {
+    globalThis.fetch = orig;
+  }
   assert.equal(seen[0]!.auth, 'Bearer secret-key');
 });
 
 it('ignores ping failures without throwing', async () => {
   const orig = globalThis.fetch;
-  globalThis.fetch = (async () => { throw new Error('CPA is asleep'); }) as typeof fetch;
+  globalThis.fetch = (async () => {
+    throw new Error('CPA is asleep');
+  }) as typeof fetch;
   try {
     const svc = new KeepAliveService(() => [{ id: 'a', baseUrl: 'https://a.example.com/v1' }]);
     await svc.tick(); // must not throw
-  } finally { globalThis.fetch = orig; }
+  } finally {
+    globalThis.fetch = orig;
+  }
 });
 
 it('pings immediately on the first tick (fresh start) then respects the interval', async () => {
   const log: string[] = [];
   const restore = stubFetch(log);
   try {
-    const svc = new KeepAliveService(() => [{ id: 'a', baseUrl: 'https://a.example.com/v1', keepAliveMinutes: 14 }]);
-    await svc.tick();               // first tick → ping
-    await svc.tick();               // immediate second tick → NOT due yet
-  } finally { restore(); }
-  assert.deepEqual(log, ['https://a.example.com/v1/models'], 'only the first tick pings; the second is not due');
+    const svc = new KeepAliveService(() => [
+      { id: 'a', baseUrl: 'https://a.example.com/v1', keepAliveMinutes: 14 },
+    ]);
+    await svc.tick(); // first tick → ping
+    await svc.tick(); // immediate second tick → NOT due yet
+  } finally {
+    restore();
+  }
+  assert.deepEqual(
+    log,
+    ['https://a.example.com/v1/models'],
+    'only the first tick pings; the second is not due',
+  );
 });
 
 it('honors per-source intervals independently', async () => {
@@ -175,13 +202,15 @@ it('honors per-source intervals independently', async () => {
       { id: 'long', baseUrl: 'https://l.example.com/v1', keepAliveMinutes: 14 },
     ];
     const svc = new KeepAliveService(sources);
-    await svc.tick();               // both ping (fresh)
+    await svc.tick(); // both ping (fresh)
     log.length = 0;
-    now += 2 * 60_000;              // 2 minutes later
+    now += 2 * 60_000; // 2 minutes later
     // Manually advance by re-creating with a clock is complex; instead assert
     // the interval math via a direct second construction is not needed here.
     await svc.tick();
-  } finally { restore(); }
+  } finally {
+    restore();
+  }
   // short (1min) is due after 2min; long (14min) is not → only 'short' pings.
   assert.deepEqual(log, ['https://s.example.com/v1/models']);
 });
@@ -215,10 +244,12 @@ git commit -m "feat(server): 新增自定义 CPA 定时保活服务，防 Render
 ### Task 3: server —— 配置 API 透传 per-source 保活字段
 
 **Files:**
+
 - Modify: `packages/server/src/server.ts`（`POST /api/providers` custom 分支保留 `source.keepAlive`/`keepAliveMinutes`；`GET /api/config` 暴露）
 - Test: `packages/server/src/__tests__/keep-alive.test.ts`（追加 1-2 个用例）
 
 **Interfaces:**
+
 - Consumes: Task 1 的 `normalizeKeepAliveMinutes`；既有 `/api/providers`、`/api/config` handler。
 - Produces:
   - `POST /api/providers` 的 custom `sources[]` 每项支持 `keepAlive?: boolean`、`keepAliveMinutes?: number`（保存时用 `normalizeKeepAliveMinutes` clamp；未被提供的字段保留原值）。
@@ -260,12 +291,14 @@ git commit -m "feat(server): 配置接口透传每源保活开关与间隔"
 ### Task 4: ui —— 设置页每源保活开关与间隔
 
 **Files:**
+
 - Modify: `packages/ui/app/components/SettingsView.tsx`（每个自定义 source 行：保活开关 + 间隔输入）
 - Modify: `packages/ui/app/i18n.tsx`（zh + en 各补 key）
 - Modify: `packages/ui/test/server.ts`（msw：`/api/config` 的 custom sources 补 `keepAlive`/`keepAliveMinutes`）
 - Test: Create `packages/ui/app/components/__tests__/settings-keepalive.test.tsx`
 
 **Interfaces:**
+
 - Consumes: Task 3 的 `/api/config` sources[].keepAlive/keepAliveMinutes；`POST /api/providers` 接受同字段。
 - Produces: 无（叶子视图）。新增 i18n key：
   - `settings.keepAlive.title`（'保活' / 'Keep-alive'）

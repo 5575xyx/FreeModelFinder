@@ -7,17 +7,26 @@ services:
     container_name: freemodelfinder
     restart: unless-stopped
     ports:
-      - "11435:11435"
+      - '11435:11435'
+      # 订阅账号 OAuth 登录的回跳端口。上游把 redirect_uri 注册死成
+      # http://localhost:<port>/...，浏览器在自己电脑上打不开，所以这些端口
+      # 只在需要**自动回调**（配合 ssh -L 隧道）时才映射。
+      #
+      # ⚠️ 必须带 127.0.0.1: 前缀：回调监听器不做鉴权，映射到公网等于把这几个
+      # 端口直接开出去。走面板里的「手动回调」则完全不需要这两行。
+      #   - "127.0.0.1:1455:1455"    # Codex
+      #   - "127.0.0.1:54545:54545"  # Claude
+      #   - "127.0.0.1:51121:51121"  # Google
     environment:
       FREEMODELFINDER_HOME: /data
-      FREEMODELFINDER_TRUST_UI: "true"
+      FREEMODELFINDER_TRUST_UI: 'true'
       NODE_ENV: production
     volumes:
       - freemodelfinder-data:/data
     healthcheck:
       test:
         - CMD-SHELL
-        - "node -e \"fetch('http://127.0.0.1:11435/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""
+        - 'node -e "fetch(''http://127.0.0.1:11435/healthz'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"'
       interval: 30s
       timeout: 5s
       retries: 5

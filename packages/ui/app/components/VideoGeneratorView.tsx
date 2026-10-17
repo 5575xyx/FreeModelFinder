@@ -79,9 +79,7 @@ export function VideoGeneratorView({
       if (count > MAX_POLLS) {
         stopPolling(videoId);
         setTasks((prev) =>
-          prev.map((t) =>
-            t.video_id === videoId ? { ...t, status: 'poll_timeout' } : t,
-          ),
+          prev.map((t) => (t.video_id === videoId ? { ...t, status: 'poll_timeout' } : t)),
         );
         return;
       }
@@ -122,9 +120,7 @@ export function VideoGeneratorView({
             try {
               const blobUrl = await fetchProxied(data.video_url, providerId);
               setTasks((prev) =>
-                prev.map((t) =>
-                  t.video_id === videoId ? { ...t, proxyBlobUrl: blobUrl } : t,
-                ),
+                prev.map((t) => (t.video_id === videoId ? { ...t, proxyBlobUrl: blobUrl } : t)),
               );
             } catch {
               // proxy fetch failed, will show fallback message
@@ -230,9 +226,7 @@ export function VideoGeneratorView({
               disabled={videoModels.length === 0}
               className="h-11 w-full rounded-xl border border-input bg-surface px-3 text-sm font-medium text-foreground shadow-sm outline-none transition focus:border-ring focus:ring-4 focus:ring-ring/10 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {videoModels.length === 0 && (
-                <option value="">{t('videogen.noModels')}</option>
-              )}
+              {videoModels.length === 0 && <option value="">{t('videogen.noModels')}</option>}
               {videoModels.map((item) => (
                 <option key={modelValue(item)} value={modelValue(item)}>
                   {item.provider} · {item.display_name ?? item.id}
@@ -273,7 +267,9 @@ export function VideoGeneratorView({
                 const isComplete = task.status === 'completed';
                 const isFailed = task.status === 'failed';
                 const isPolling =
-                  task.status === 'queued' || task.status === 'in_progress' || task.status === 'polling';
+                  task.status === 'queued' ||
+                  task.status === 'in_progress' ||
+                  task.status === 'polling';
                 return (
                   <div
                     key={task.video_id}
@@ -360,7 +356,9 @@ export function VideoGeneratorView({
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-border bg-surface">
                 <Video className="text-muted-foreground" size={20} />
               </div>
-              <h2 className="mt-4 text-base font-semibold text-foreground">{t('videogen.empty.title')}</h2>
+              <h2 className="mt-4 text-base font-semibold text-foreground">
+                {t('videogen.empty.title')}
+              </h2>
               <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
                 {t('videogen.empty.body')}
               </p>
@@ -387,7 +385,9 @@ export function VideoGeneratorView({
           {showSettings && (
             <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-surface p-3 sm:grid-cols-4">
               <div>
-                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t('videogen.width')}</label>
+                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                  {t('videogen.width')}
+                </label>
                 <select
                   value={width}
                   onChange={(event) => setWidth(Number(event.target.value))}
@@ -400,7 +400,9 @@ export function VideoGeneratorView({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t('videogen.height')}</label>
+                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                  {t('videogen.height')}
+                </label>
                 <select
                   value={height}
                   onChange={(event) => setHeight(Number(event.target.value))}
@@ -413,7 +415,9 @@ export function VideoGeneratorView({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t('videogen.frames')}</label>
+                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                  {t('videogen.frames')}
+                </label>
                 <select
                   value={frames}
                   onChange={(event) => setFrames(Number(event.target.value))}
@@ -424,7 +428,9 @@ export function VideoGeneratorView({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t('videogen.fps')}</label>
+                <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                  {t('videogen.fps')}
+                </label>
                 <select
                   value={fps}
                   onChange={(event) => setFps(Number(event.target.value))}

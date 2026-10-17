@@ -34,10 +34,12 @@
 ### Task 1: UA 字符串改为 opencode/latest/2.0.29/cli（#httpx/client.go）
 
 **Files:**
+
 - Modify: `packages/zen/src/identity/client.ts:1,25-27`
 - Test: `packages/zen/src/__tests__/client.test.ts:7`
 
 **Interfaces:**
+
 - Consumes: 无。
 - Produces: `openCodeUserAgent()` 返回 `` `opencode/latest/${OPENCODE_VERSION}/cli` ``，`OPENCODE_VERSION = '2.0.29'`。删除 `runtimeOs`/`runtimeArch`（不再用于 UA）。
 
@@ -47,10 +49,10 @@
   assert.equal(openCodeUserAgent(), 'opencode/latest/2.0.29/cli');
   ```
 - [ ] **Step 2: 跑测试确认变红**
-  Run: `cd packages/zen && pnpm exec node --import tsx --test src/__tests__/client.test.ts`
-  Expected: FAIL —— 旧 UA 形状不匹配。
+      Run: `cd packages/zen && pnpm exec node --import tsx --test src/__tests__/client.test.ts`
+      Expected: FAIL —— 旧 UA 形状不匹配。
 - [ ] **Step 3: 实现**
-  `OPENCODE_VERSION = '2.0.29'`；`openCodeUserAgent()` 返回 `` `opencode/latest/${OPENCODE_VERSION}/cli` ``；删除 `runtimeOs`/`runtimeArch`。对照 Go `internal/httpx/client.go` `UserAgent()`。
+      `OPENCODE_VERSION = '2.0.29'`；`openCodeUserAgent()` 返回 `` `opencode/latest/${OPENCODE_VERSION}/cli` ``；删除 `runtimeOs`/`runtimeArch`。对照 Go `internal/httpx/client.go` `UserAgent()`。
 - [ ] **Step 4: 跑测试确认变绿**（同上，Expected: PASS）+ `pnpm --filter @freemodelfinder/zen test` 无回归。
 - [ ] **Step 5: 提交**
   ```bash
@@ -60,10 +62,12 @@
 ### Task 2: 请求头指纹对齐（#upstream.go + #identity/request.go）
 
 **Files:**
+
 - Modify: `packages/zen/src/gateway/upstream.ts:270-307`（`buildUpstreamRequest`）
 - Test: `packages/zen/src/__tests__/gateway-upstream.test.ts`（新建或追加，断言头集合）
 
 **Interfaces:**
+
 - Consumes: Task 1 的 `openCodeUserAgent()`。
 - Produces:
   - `export function clientProjectID(project: string): string` —— sha256(`"opencode-project\0"+project`) 取前 20 字节 → 40 位裸 hex（无 `prj_` 前缀）。用 `node:crypto` `createHash('sha256')`。
@@ -72,9 +76,20 @@
 - [ ] **Step 1: 写失败测试**
   ```ts
   it('builds upstream headers with the new fingerprint', () => {
-    const req = buildUpstreamRequest('https://opencode.ai/inference', 'chat', {}, { session: 'ses_abc', request: 'req', project: 'global' } as never, 'k', {} as never);
+    const req = buildUpstreamRequest(
+      'https://opencode.ai/inference',
+      'chat',
+      {},
+      { session: 'ses_abc', request: 'req', project: 'global' } as never,
+      'k',
+      {} as never,
+    );
     assert.equal(req.headers['x-opencode-session-id'], 'ses_abc');
-    assert.equal(req.headers['x-opencode-request'], undefined, 'x-opencode-request must be removed');
+    assert.equal(
+      req.headers['x-opencode-request'],
+      undefined,
+      'x-opencode-request must be removed',
+    );
     assert.match(req.headers['x-opencode-project'] as string, /^[0-9a-f]{40}$/);
     assert.equal(req.headers['user-agent'], 'opencode/latest/2.0.29/cli');
   });
@@ -91,10 +106,12 @@
 ### Task 3: responses max_output_tokens 下限 16（#protocol/request.go #63）
 
 **Files:**
+
 - Modify: `packages/zen/src/protocol/request.ts`、`packages/zen/src/protocol/responses.ts:65`
 - Test: `packages/zen/src/__tests__/protocol-request.test.ts`（新建或追加）
 
 **Interfaces:**
+
 - Produces:
   - `export const MIN_RESPONSES_MAX_OUTPUT_TOKENS = 16`
   - `export function floorResponsesMaxTokens(value: unknown): unknown` —— 仅 `typeof value === 'number'` 且 `0 < value < 16` 时返回 16，否则原样返回（含 undefined）。
@@ -108,8 +125,13 @@
   assert.equal(floorResponsesMaxTokens(undefined), undefined);
   assert.equal(floorResponsesMaxTokens('x'), 'x');
   // prepareRequest same-protocol responses 克隆路径也被 floor：
-  const req = { model:'m', rawProtocol:'openai', raw:{ model:'m', max_output_tokens: 4 }, messages: [] } as never;
-  assert.equal((prepareRequest(req,'responses') as any).max_output_tokens, 16);
+  const req = {
+    model: 'm',
+    rawProtocol: 'openai',
+    raw: { model: 'm', max_output_tokens: 4 },
+    messages: [],
+  } as never;
+  assert.equal((prepareRequest(req, 'responses') as any).max_output_tokens, 16);
   ```
 - [ ] **Step 2: 跑测试确认变红**。
 - [ ] **Step 3: 实现**：对照 Go `internal/protocol/request.go` `floorResponsesMaxTokens`/`minResponsesMaxOutputTokens`。`prepareRequest` 的 `cloneRaw` 分支返回后，若 `target==='responses'` 且 body 有 `max_output_tokens` 则 floor；`toResponsesBody` 的 max_tokens 也 floor。
@@ -123,10 +145,12 @@
 ### Task 4: upstream.anonymous + models.freeOnly（#config/config.go）
 
 **Files:**
+
 - Modify: `packages/zen/src/config/index.ts:25-30,50-55`
 - Test: `packages/zen/src/__tests__/config.test.ts`（追加）
 
 **Interfaces:**
+
 - Produces:
   - `ZenConfig.upstream` 加 `anonymous: z.string().default('https://opencode.ai/inference')`
   - `ZenConfig.models` 加 `freeOnly: z.boolean().default(false)`
@@ -137,7 +161,10 @@
   const cfg = normalizeZenConfig({});
   assert.equal(cfg.upstream.anonymous, 'https://opencode.ai/inference');
   assert.equal(cfg.models.freeOnly, false);
-  assert.equal(normalizeZenConfig({ upstream: { anonymous: '' } }).upstream.anonymous, 'https://opencode.ai/inference');
+  assert.equal(
+    normalizeZenConfig({ upstream: { anonymous: '' } }).upstream.anonymous,
+    'https://opencode.ai/inference',
+  );
   ```
 - [ ] **Step 2: 跑测试确认变红**。
 - [ ] **Step 3: 实现**：`upstream` 对象加 `anonymous` 字段（默认 `https://opencode.ai/inference`）；`models` 加 `freeOnly`（默认 false）。对照 Go `internal/config/config.go` `UpstreamConfig.Anonymous` / `ModelsConfig.FreeOnly`。
@@ -151,10 +178,12 @@
 ### Task 5: ModelCost 类型 + pricing cache_read/cache_write（#discovery.go + #pricing.go）
 
 **Files:**
+
 - Modify: `packages/zen/src/models/types.ts`、`packages/zen/src/models/pricing.ts`
 - Test: `packages/zen/src/__tests__/models-pricing.test.ts`（追加）
 
 **Interfaces:**
+
 - Produces:
   - `export interface ModelCost { input?: number; output?: number; cacheRead?: number; cacheWrite?: number }`（types.ts，从 index 导出）
   - `ZenModelMetadata` 加 `cost?: ModelCost`
@@ -178,10 +207,12 @@
 ### Task 6: catalog freeOnly + metadataForTier cost（#catalog.go #66）
 
 **Files:**
+
 - Modify: `packages/zen/src/models/catalog.ts`
 - Test: `packages/zen/src/__tests__/models-catalog.test.ts`（追加）
 
 **Interfaces:**
+
 - Consumes: Task 5 的 `ModelCost`。
 - Produces:
   - `ZenCatalog` 加 `private freeOnly = false` + `setFreeOnly(enabled: boolean): void`
@@ -206,11 +237,13 @@
 ### Task 7: reasoningEfforts 阶梯天花板（#health.go → 新建 gateway/models.ts）
 
 **Files:**
+
 - Create: `packages/zen/src/gateway/models.ts`
 - Modify: `packages/zen/src/config/index.ts`（提 `REASONING_LEVELS` 常量）、`packages/zen/src/index.ts`（导出）
 - Test: `packages/zen/src/__tests__/gateway-models.test.ts`（新建）
 
 **Interfaces:**
+
 - Consumes: `protocol/effort.ts` 的 `resolvedEffort`（probe.ts:368 已有引用）。
 - Produces:
   - `export const REASONING_LEVELS = ['minimal','low','medium','high','xhigh','max'] as const`（config/index.ts）
@@ -219,11 +252,23 @@
 - [ ] **Step 1: 写失败测试**
   ```ts
   // auto + 探针确认 high → ['minimal','low','medium','high']
-  assert.deepEqual(reasoningEfforts(m,'zen','chat',{forcedEffort:()=>'auto',resolvedEffort:()=>'high'}), ['minimal','low','medium','high']);
+  assert.deepEqual(
+    reasoningEfforts(m, 'zen', 'chat', {
+      forcedEffort: () => 'auto',
+      resolvedEffort: () => 'high',
+    }),
+    ['minimal', 'low', 'medium', 'high'],
+  );
   // auto + max → 全量
-  assert.deepEqual(reasoningEfforts(m,'zen','chat',{forcedEffort:()=>'auto',resolvedEffort:()=>'max'}), [...REASONING_LEVELS]);
+  assert.deepEqual(
+    reasoningEfforts(m, 'zen', 'chat', { forcedEffort: () => 'auto', resolvedEffort: () => 'max' }),
+    [...REASONING_LEVELS],
+  );
   // 非 auto → 全量
-  assert.deepEqual(reasoningEfforts(m,'zen','chat',{forcedEffort:()=>'high',resolvedEffort:()=>'low'}), [...REASONING_LEVELS]);
+  assert.deepEqual(
+    reasoningEfforts(m, 'zen', 'chat', { forcedEffort: () => 'high', resolvedEffort: () => 'low' }),
+    [...REASONING_LEVELS],
+  );
   ```
 - [ ] **Step 2: 跑测试确认变红**。
 - [ ] **Step 3: 实现**：对照 Go `internal/gateway/health.go` `reasoningLevels` / `reasoningEfforts`。
@@ -233,10 +278,12 @@
 ### Task 8: FMF 侧 ModelInfo + /v1/models 透传 cost/reasoning（#65/#66）
 
 **Files:**
+
 - Modify: `packages/core/src/types.ts`（`ModelInfo` 加 `reasoningEfforts?/defaultReasoningEffort?/cost?`）、`packages/core/src/providers/zen.ts:listModels()`、`packages/server/src/routes/openai.ts:727`（`/v1/models`）
 - Test: `packages/core/src/providers/__tests__/zen.test.ts`（追加）
 
 **Interfaces:**
+
 - Consumes: Task 7 的 `reasoningEfforts`、Task 5 的 `ModelCost`。
 - Produces: `ModelInfo` 加可选字段；`/v1/models` 响应每 reasoning 模型带 `reasoning_efforts`、`compat: { supportsReasoningEffort, supportedReasoningEfforts }`、`default_reasoning_effort`（非 none）；有 cost 时带 `cost`（snake + camel 别名）。
 
@@ -253,11 +300,13 @@
 ### Task 9: first-event.ts —— attempt phase 分类与 upstreamAccepted（#first_event.go）
 
 **Files:**
+
 - Create: `packages/zen/src/gateway/first-event.ts`
 - Modify: `packages/zen/src/index.ts`（导出）
 - Test: `packages/zen/src/__tests__/gateway-first-event.test.ts`（新建）
 
 **Interfaces:**
+
 - Produces:
   - `export type AttemptPhase = 'dial' | 'write' | 'headers' | 'first_event'`
   - `export function classifyAttemptError(error: unknown): string` —— 返回 `attempt_timeout_<phase>` / `first_event` / `timeout_<phase>` / `transport_<phase>`（phase 从错误的标记读取）。
@@ -268,7 +317,12 @@
   ```ts
   assert.equal(upstreamAccepted(new PhasedError('first_event', new Error('slow'))), true);
   assert.equal(upstreamAccepted(new PhasedError('dial', new Error('x'))), false);
-  assert.equal(classifyAttemptError(new PhasedError('dial', Object.assign(new Error('t'),{name:'TimeoutError'}))), 'attempt_timeout_dial');
+  assert.equal(
+    classifyAttemptError(
+      new PhasedError('dial', Object.assign(new Error('t'), { name: 'TimeoutError' })),
+    ),
+    'attempt_timeout_dial',
+  );
   ```
 - [ ] **Step 2: 跑测试确认变红**。
 - [ ] **Step 3: 实现**：对照 Go `internal/gateway/first_event.go` `phasedError` / `classifyAttemptError` / `upstreamAccepted` / `attemptTrace`。Node 无 `httptrace`，phase 用近似（见 Task 10）。
@@ -278,10 +332,12 @@
 ### Task 10: http.ts attempt 超时只覆盖到响应头（#first_event.go + #httpx）
 
 **Files:**
+
 - Modify: `packages/zen/src/http.ts:70-71`（`attemptTimeoutMs`）
 - Test: `packages/zen/src/__tests__/http.test.ts`（追加）
 
 **Interfaces:**
+
 - Consumes: Task 9 的 `PhasedError`。
 - Produces: `ZenHttpResponse` 加 `committed: boolean`（响应头已到达标记）。`attemptTimeoutMs` 触发的 abort 在 `resolve()`（拿到响应头）时 disarm；已建立流在 request 级预算下继续。用 `req.on('socket')` / `socket.once('connect'|'secureConnect')` / `res.on('data')` 近似 phase，超时抛 `PhasedError(phase, TimeoutError)`。
 
@@ -298,10 +354,12 @@
 ### Task 11: attemptDeadline 封顶 + makeRequestIds.project（#gateway.go + #identity/request.go）
 
 **Files:**
+
 - Modify: `packages/zen/src/gateway/runtime.ts:139,128-133`、`packages/zen/src/gateway/upstream.ts:29-35`（`ZenRequestIds`）
 - Test: `packages/zen/src/__tests__/gateway-runtime.test.ts`（追加）
 
 **Interfaces:**
+
 - Produces:
   - `attemptDeadlineMs(config): number` —— `attemptTimeoutSeconds <= 0` 返回 0；否则 `min(attemptTimeoutSeconds, retry.timeoutSeconds) * 1000`。`withConfiguredTimeouts` 用它（现在直接 `attemptTimeoutSeconds*1000`，无封顶）。
   - `ZenRequestIds` 加 `project?: string`（原始信号，不哈希）；`makeRequestIds` 填。
@@ -309,8 +367,20 @@
 
 - [ ] **Step 1: 写失败测试**
   ```ts
-  assert.equal(attemptDeadlineMs({performance:{attemptTimeoutSeconds:600},retry:{timeoutSeconds:300}} as any), 300000); // min(600,300)
-  assert.equal(attemptDeadlineMs({performance:{attemptTimeoutSeconds:0},retry:{timeoutSeconds:300}} as any), 0);
+  assert.equal(
+    attemptDeadlineMs({
+      performance: { attemptTimeoutSeconds: 600 },
+      retry: { timeoutSeconds: 300 },
+    } as any),
+    300000,
+  ); // min(600,300)
+  assert.equal(
+    attemptDeadlineMs({
+      performance: { attemptTimeoutSeconds: 0 },
+      retry: { timeoutSeconds: 300 },
+    } as any),
+    0,
+  );
   ```
 - [ ] **Step 2: 跑测试确认变红**。
 - [ ] **Step 3: 实现**：对照 Go `gateway.go` `attemptDeadline` + `identity/request.go`（只取 project 语义变化）。
@@ -324,10 +394,12 @@
 ### Task 12: 匿名 base 拆分 + pool.restoreProxy + 8x 截断 + isProxyFailure 豁免（#upstream.go + #pool.go + #probe.go #59）
 
 **Files:**
+
 - Modify: `packages/zen/src/gateway/upstream.ts`（`baseUrlFor` + `doAnonymousUpstream` + `isProxyFailure`）、`packages/zen/src/gateway/pool.ts`（`restoreProxy` + `markFailure` 8x）、`packages/zen/src/gateway/probe.ts`（`ProbeLane.baseUrl` + `ids.project` 裸串）、`packages/zen/src/gateway/runtime.ts`（代理恢复调 restoreProxy）
 - Test: `packages/zen/src/__tests__/gateway-pool.test.ts`、`gateway-probe.test.ts`（追加/更新）
 
 **Interfaces:**
+
 - Consumes: Task 4 的 `upstream.anonymous`、Task 9 的 `upstreamAccepted`、Task 11 的 `project`。
 - Produces:
   - `ZenUpstreamOptions.upstream` 加 `anonymous`；`baseUrlFor(route)` 加 `route==='anonymous' → upstream.anonymous` 分支。
@@ -352,10 +424,12 @@
 ### Task 13: refresh 匿名 tier 发现 + 404 legacy 回退（#refresh.go）
 
 **Files:**
+
 - Modify: `packages/zen/src/gateway/refresh.ts`、`packages/zen/src/models/discovery.ts`（`fetchModels` 暴露 status）
 - Test: `packages/zen/src/__tests__/gateway-refresh.test.ts`（追加）
 
 **Interfaces:**
+
 - Produces:
   - `export const LEGACY_ZEN_BASE = 'https://opencode.ai/zen'`（refresh.ts，对应 `modelcatalog.LegacyZenBase`）
   - `ZenRefresher` 匿名 tier 发现：`upstream.zen` 用 key 拉失败且 `config.anonymous` 时改用 `upstream.anonymous` + `'public'` 拉，记到 `zenModels`。
@@ -375,19 +449,25 @@
 ### Task 14: client cancel 499（#gateway.go #76）
 
 **Files:**
+
 - Modify: `packages/zen/src/gateway/runtime.ts`、`packages/zen/src/gateway/upstream.ts`（`doUpstream`/`doAnonymousUpstream` 返回值带取消标记）
 - Test: `packages/zen/src/__tests__/gateway-runtime.test.ts`（追加）
 
 **Interfaces:**
+
 - Produces:
   - `export function isClientCanceled(requestSignal: AbortSignal | undefined, error: unknown): boolean` —— 请求信号已 abort 且错误不是 DeadlineExceeded（对应 Go `wire.ClientCanceled`）。
   - 上游错误的 outcome 区分 `client_canceled` vs `transport_error`；传播到 runtime，让上层能返回 499 而非 502。
 
 - [ ] **Step 1: 写失败测试**
   ```ts
-  const ac = new AbortController(); ac.abort();
+  const ac = new AbortController();
+  ac.abort();
   assert.equal(isClientCanceled(ac.signal, new Error('socket hang up')), true);
-  assert.equal(isClientCanceled(ac.signal, Object.assign(new Error('d'),{name:'TimeoutError'})), false);
+  assert.equal(
+    isClientCanceled(ac.signal, Object.assign(new Error('d'), { name: 'TimeoutError' })),
+    false,
+  );
   assert.equal(isClientCanceled(undefined, new Error('x')), false);
   ```
 - [ ] **Step 2: 跑测试确认变红**。
@@ -402,12 +482,14 @@
 ### Task 15: opencode-tools.ts + agent 工具覆盖（#upstream.go + #tool_images 前的 agent 部分）
 
 **Files:**
+
 - Create: `packages/zen/src/protocol/opencode-tools.ts`（内联 12 个工具真值，从上游 `internal/gateway/opencode_tools.json` 转 TS 常量）
 - Modify: `packages/zen/src/protocol/agent.ts`（`CORE_AGENT_TOOLS` 改 `['shell','edit','glob','grep','read']`；`ensureTools` 改「已知名就地替换官方定义 + 追加缺失核心 + 未知名保持原样」）
 - Modify: `packages/zen/src/index.ts`（导出）
 - Test: `packages/zen/src/__tests__/protocol-agent.test.ts`（更新 `'bash'`→`'shell'` + 新增「官方定义覆盖客户端自带 shell」用例）
 
 **Interfaces:**
+
 - Produces:
   - `export const OPENCODE_TOOLS: Record<string, { description: string; parameters: unknown }>`（从 `opencode_tools.json` 逐字转）
   - `export function knownOpencodeTool(name: string): {...} | undefined`
@@ -427,11 +509,13 @@
 ### Task 16: tool-images.ts + 三协议接线（#tool_images.go + #request.go + #content.go）
 
 **Files:**
+
 - Create: `packages/zen/src/protocol/tool-images.ts`
 - Modify: `packages/zen/src/protocol/types.ts`（`ZenContentPart` 加 `mediaType?/data?` 或局部 block 类型）、`packages/zen/src/protocol/request.ts`（decode 接线）、`packages/zen/src/protocol/chat.ts` / `responses.ts` / `anthropic.ts`（tool 消息读 contentParts）、`packages/zen/src/index.ts`（导出）
 - Test: `packages/zen/src/__tests__/protocol-tool-images.test.ts`（新建，覆盖每个校验分支到 85% 分支门槛）
 
 **Interfaces:**
+
 - Consumes: Task 15 的 agent 结构（同改 tool/匿名 body）。
 - Produces:
   - `decodeToolImages(from: ZenProtocol, value: unknown): ZenContentPart[] | undefined` —— 仅 `[]any` 含 image 块时介入；Anthropic 用 `image`/`text`，OpenAI 用 `input_image`/`input_text`；逐块校验（Anthropic `source.type` url/base64；OpenAI `image_url` 非空无 file_id）；未知块报错；`data:` URI 拆成 `{url:'', mediaType, data}`。
@@ -461,12 +545,14 @@
 ### Task 17: ZenAttemptRecord.session + per-session 用量（#telemetry/metrics.go #77）
 
 **Files:**
+
 - Modify: `packages/zen/src/gateway/monitor.ts`（`ZenAttemptRecord` 加 `session?`）、`packages/zen/src/gateway/upstream.ts`（`recordUpstreamAttempt` 填 `ids.session`）
 - Create: `packages/zen/src/gateway/usage.ts`（per-session 累加 + LRU 500）
 - Modify: `packages/zen/src/index.ts`（导出）
 - Test: `packages/zen/src/__tests__/gateway-usage.test.ts`（新建）
 
 **Interfaces:**
+
 - Consumes: Task 11 的 `ZenRequestIds.session`、Task 9 的 `classifyAttemptError`。
 - Produces:
   - `ZenAttemptRecord` 加 `session?: string`
@@ -476,7 +562,9 @@
 - [ ] **Step 1: 写失败测试**
   ```ts
   const t = new SessionUsageTracker(3);
-  t.record('a', 10); t.record('b', 20); t.record('c', 30);
+  t.record('a', 10);
+  t.record('b', 20);
+  t.record('c', 30);
   t.record('a', 5); // touch a
   t.record('d', 40); // evict LRU (b, since a was touched)
   assert.equal(t.snapshot().has('b'), false);

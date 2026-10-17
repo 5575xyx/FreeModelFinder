@@ -13,7 +13,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { isFreeAuditModel, isFreeAuditProvider } from './lib/audit-filter.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..');
@@ -26,7 +27,9 @@ if (!existsSync(CORE_DIST)) {
   process.exit(2);
 }
 
-const { ProviderRegistry } = await import(CORE_DIST);
+// 绝对路径必须转成 file:// URL：POSIX 上 `/a/b.js` 能被 ESM loader 解析，
+// Windows 上 `E:\a\b.js` 会被当成带 `e:` 协议的 URL 而抛 ERR_UNSUPPORTED_ESM_URL_SCHEME。
+const { ProviderRegistry } = await import(pathToFileURL(CORE_DIST).href);
 
 const PROVIDER_META = [
   {
@@ -169,6 +172,9 @@ function buildConfig() {
   const providers = {};
   const missing = [];
   for (const meta of PROVIDER_META) {
+    // 订阅 provider 不进免费审计：即使某天 PROVIDER_META 误加了 codex/claude/google，
+    // 这里也会把它们挡在目录抓取之外（见 lib/audit-filter.mjs）。
+    if (!isFreeAuditProvider(meta.id)) continue;
     const key = readEnvKey(meta.envKeys);
     const credentials = {};
     if (key) credentials.apiKey = key;
@@ -322,9 +328,7 @@ async function main() {
         const { id, models } = r.value;
         const entry = perProvider.get(id);
         if (!entry) continue;
-        const freeModels = models.filter(
-          (m) => m && m.free === true && typeof m.id === 'string' && m.id.trim().length > 0,
-        );
+        const freeModels = models.filter((m) => isFreeAuditModel(m));
         entry.status = 'ok';
         entry.count = freeModels.length;
         entry.models = freeModels

@@ -48,3 +48,6 @@ coverage/
 
 # git worktrees
 .worktrees/
+
+# SDD scratch
+.superpowers/

@@ -37,10 +37,12 @@
 ### Task 1: core —— 调用日志游标分页
 
 **Files:**
+
 - Modify: `packages/core/src/call-logger.ts`（新增 `CallLogCursor`、`parseCursor`、`CallLogPage`；改 `list`）
 - Test: `packages/core/src/__tests__/call-logger.test.ts`（追加用例）
 
 **Interfaces:**
+
 - Consumes: 既有 `CallLogger`、`CallLogFilter`、`parseLine`、`collect()`。
 - Produces:
   - `export interface CallLogCursor { ts: number; skip: number }`
@@ -59,17 +61,37 @@ it('pages by cursor without losing or repeating entries that share a timestamp',
   const logger = new CallLogger(dir);
   const sameTs = 1_700_000_000_000;
   for (const model of ['a', 'b', 'c']) {
-    logger.record({ ts: sameTs, kind: 'chat', provider: 'p', model, status: 'success', latencyMs: 1 });
+    logger.record({
+      ts: sameTs,
+      kind: 'chat',
+      provider: 'p',
+      model,
+      status: 'success',
+      latencyMs: 1,
+    });
   }
-  logger.record({ ts: sameTs - 1, kind: 'chat', provider: 'p', model: 'd', status: 'success', latencyMs: 1 });
+  logger.record({
+    ts: sameTs - 1,
+    kind: 'chat',
+    provider: 'p',
+    model: 'd',
+    status: 'success',
+    latencyMs: 1,
+  });
   await logger.flush();
 
   const first = await logger.listPage({ limit: 2 });
-  assert.deepEqual(first.data.map((e) => e.model), ['a', 'b']);
+  assert.deepEqual(
+    first.data.map((e) => e.model),
+    ['a', 'b'],
+  );
   assert.ok(first.nextCursor);
 
   const second = await logger.listPage({ limit: 2, cursor: first.nextCursor! });
-  assert.deepEqual(second.data.map((e) => e.model), ['c', 'd']);
+  assert.deepEqual(
+    second.data.map((e) => e.model),
+    ['c', 'd'],
+  );
 
   const third = await logger.listPage({ limit: 2, cursor: second.nextCursor ?? undefined });
   assert.deepEqual(third.data, []);
@@ -78,10 +100,20 @@ it('pages by cursor without losing or repeating entries that share a timestamp',
 
 it('starts from the beginning when the cursor is malformed', async () => {
   const logger = new CallLogger(dir);
-  logger.record({ ts: 2, kind: 'chat', provider: 'p', model: 'x', status: 'success', latencyMs: 1 });
+  logger.record({
+    ts: 2,
+    kind: 'chat',
+    provider: 'p',
+    model: 'x',
+    status: 'success',
+    latencyMs: 1,
+  });
   await logger.flush();
   const page = await logger.listPage({ limit: 10, cursor: 'abc' });
-  assert.deepEqual(page.data.map((e) => e.model), ['x']);
+  assert.deepEqual(
+    page.data.map((e) => e.model),
+    ['x'],
+  );
   assert.equal(page.nextCursor, null);
 });
 ```
@@ -112,10 +144,12 @@ git commit -m "feat(core): 调用日志支持游标分页，避免同毫秒记�
 ### Task 2: core —— 日/周/月时间序列聚合 + 保留期 30→90 天
 
 **Files:**
+
 - Modify: `packages/core/src/call-logger.ts`（`RETENTION_DAYS`、新增 `series()` 与桶助手；`CallStatsResult['range']` 追加 `'90d'`）
 - Test: `packages/core/src/__tests__/call-logger.test.ts`（追加用例）
 
 **Interfaces:**
+
 - Consumes: Task 1 的 `collect()` 语义（未改动）；既有 `startOfToday`。
 - Produces:
   - `export type CallStatsRange = 'today' | '7d' | '30d' | '90d' | 'all'`
@@ -133,8 +167,24 @@ git commit -m "feat(core): 调用日志支持游标分页，避免同毫秒记�
 it('buckets a series by local day and zero-fills empty days', async () => {
   const logger = new CallLogger(dir);
   const now = new Date(2026, 9, 14, 12, 0, 0).getTime(); // 2026-10-14 本地
-  logger.record({ ts: new Date(2026, 9, 12, 9, 0, 0).getTime(), kind: 'chat', provider: 'p', model: 'a', status: 'success', latencyMs: 1, promptTokens: 10 });
-  logger.record({ ts: new Date(2026, 9, 14, 9, 0, 0).getTime(), kind: 'chat', provider: 'p', model: 'a', status: 'error', latencyMs: 1, promptTokens: 5 });
+  logger.record({
+    ts: new Date(2026, 9, 12, 9, 0, 0).getTime(),
+    kind: 'chat',
+    provider: 'p',
+    model: 'a',
+    status: 'success',
+    latencyMs: 1,
+    promptTokens: 10,
+  });
+  logger.record({
+    ts: new Date(2026, 9, 14, 9, 0, 0).getTime(),
+    kind: 'chat',
+    provider: 'p',
+    model: 'a',
+    status: 'error',
+    latencyMs: 1,
+    promptTokens: 5,
+  });
   await logger.flush();
 
   const series = await logger.series('7d', 'day', now);
@@ -205,10 +255,12 @@ git commit -m "feat(core): 新增日周月时间序列聚合，保留期延长�
 ### Task 3: server —— `/api/logs` 游标与 `/api/stats/series`
 
 **Files:**
+
 - Modify: `packages/server/src/server.ts:2034-2064`
 - Test: Create `packages/server/src/__tests__/stats-routes.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 1 的 `listPage`、`decodeCursor`；Task 2 的 `series`、`CallStatsRange`、`CallStatsBucket`。
 - Produces:
   - `GET /api/logs` 新增 query `cursor?: string`，返回 `{ data, nextCursor }`（`nextCursor: string | null`）；既有 query 与 `data` 语义不变。
@@ -225,7 +277,14 @@ it('returns a cursor page of logs and honors the status filter', async () => {
   const { app } = await createServer({ registry: stubRegistry(), watchIntervalMs: 3_600_000 });
   const logger = new CallLogger(TMP_HOME);
   for (const s of ['success', 'error', 'success'] as const) {
-    logger.record({ ts: Date.now(), kind: 'chat', provider: 'p', model: 'm', status: s, latencyMs: 1 });
+    logger.record({
+      ts: Date.now(),
+      kind: 'chat',
+      provider: 'p',
+      model: 'm',
+      status: s,
+      latencyMs: 1,
+    });
   }
   await logger.flush();
 
@@ -235,7 +294,10 @@ it('returns a cursor page of logs and honors the status filter', async () => {
   assert.equal(page.data.length, 2);
   assert.ok(page.nextCursor);
 
-  const second = await app.inject({ method: 'GET', url: `/api/logs?limit=2&cursor=${encodeURIComponent(page.nextCursor!)}` });
+  const second = await app.inject({
+    method: 'GET',
+    url: `/api/logs?limit=2&cursor=${encodeURIComponent(page.nextCursor!)}`,
+  });
   assert.equal((second.json() as { data: unknown[] }).data.length, 1);
 
   const errors = await app.inject({ method: 'GET', url: '/api/logs?status=error' });
@@ -246,14 +308,25 @@ it('returns a cursor page of logs and honors the status filter', async () => {
 it('serves a bucketed series and falls back on bad params', async () => {
   const { app } = await createServer({ registry: stubRegistry(), watchIntervalMs: 3_600_000 });
   const logger = new CallLogger(TMP_HOME);
-  logger.record({ ts: Date.now(), kind: 'chat', provider: 'p', model: 'm', status: 'success', latencyMs: 1, promptTokens: 7 });
+  logger.record({
+    ts: Date.now(),
+    kind: 'chat',
+    provider: 'p',
+    model: 'm',
+    status: 'success',
+    latencyMs: 1,
+    promptTokens: 7,
+  });
   await logger.flush();
 
   const ok = await app.inject({ method: 'GET', url: '/api/stats/series?range=today&bucket=week' });
   assert.equal(ok.statusCode, 200);
   const series = ok.json() as { bucket: string; points: { calls: number }[] };
   assert.equal(series.bucket, 'week');
-  assert.equal(series.points.reduce((n, p) => n + p.calls, 0), 1);
+  assert.equal(
+    series.points.reduce((n, p) => n + p.calls, 0),
+    1,
+  );
 
   const bad = await app.inject({ method: 'GET', url: '/api/stats/series?range=nope&bucket=nope' });
   const badSeries = bad.json() as { range: string; bucket: string };
@@ -291,11 +364,13 @@ git commit -m "feat(server): 日志接口返回游标，新增按日周月分桶
 ### Task 4: ui —— 手写 SVG 图表组件
 
 **Files:**
+
 - Create: `packages/ui/app/components/charts/BarChart.tsx`
 - Create: `packages/ui/app/components/charts/DonutChart.tsx`
 - Test: `packages/ui/app/components/__tests__/charts.test.tsx`
 
 **Interfaces:**
+
 - Produces:
   - `BarChart({ points, ariaLabel, formatValue }: { points: { label: string; value: number; secondary?: number }[]; ariaLabel: string; formatValue?: (v: number) => string })` —— 纯 SVG，`role="img"`、`aria-label={ariaLabel}`，每根柱子带 `data-testid="bar"` 与 `data-value`。
   - `DonutChart({ slices, ariaLabel, formatValue }: { slices: { label: string; value: number }[]; ariaLabel: string; formatValue?: (v: number) => string })` —— 纯 SVG，`role="img"`，每个扇区 `data-testid="slice"`；**总量为 0 时渲染 `<p data-testid="chart-empty">` 而非扇区**。
@@ -304,13 +379,29 @@ git commit -m "feat(server): 日志接口返回游标，新增按日周月分桶
 
 ```tsx
 it('renders one bar per point and labels the chart', () => {
-  render(<BarChart points={[{ label: '10-14', value: 3 }, { label: '10-15', value: 0 }]} ariaLabel="趋势" />);
+  render(
+    <BarChart
+      points={[
+        { label: '10-14', value: 3 },
+        { label: '10-15', value: 0 },
+      ]}
+      ariaLabel="趋势"
+    />,
+  );
   expect(screen.getByRole('img', { name: '趋势' })).toBeInTheDocument();
   expect(screen.getAllByTestId('bar')).toHaveLength(2);
 });
 
 it('renders one slice per non-zero entry', () => {
-  render(<DonutChart slices={[{ label: 'a', value: 5 }, { label: 'b', value: 5 }]} ariaLabel="占比" />);
+  render(
+    <DonutChart
+      slices={[
+        { label: 'a', value: 5 },
+        { label: 'b', value: 5 },
+      ]}
+      ariaLabel="占比"
+    />,
+  );
   expect(screen.getAllByTestId('slice')).toHaveLength(2);
 });
 
@@ -348,12 +439,14 @@ git commit -m "feat(ui): 手写 SVG 柱状图与环形图组件，零新增依�
 ### Task 5: ui —— StatsView 接入分页、粒度切换与图表视图
 
 **Files:**
+
 - Modify: `packages/ui/app/components/StatsView.tsx`
 - Modify: `packages/ui/app/i18n.tsx`（zh + en 各补 key）
 - Modify: `packages/ui/test/server.ts`（msw：`/api/stats/series` 桩 + `/api/logs` 返回 `nextCursor`）
 - Test: Create `packages/ui/app/components/__tests__/stats-view.test.tsx`
 
 **Interfaces:**
+
 - Consumes: Task 3 的 `/api/stats/series`（`{ range, bucket, since, until, points }`）与 `/api/logs`（`{ data, nextCursor }`）；Task 4 的 `BarChart`/`DonutChart`。
 - Produces: 无（叶子视图）。新增 i18n key 清单：
   - `stats.range.90d`（'90 天' / '90 days'）

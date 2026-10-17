@@ -44,6 +44,44 @@ export {
   type ClineLoginResult,
 } from './credentials/adapters/cline.js';
 export {
+  SUBSCRIPTION_ADAPTERS,
+  SUBSCRIPTION_OAUTH,
+  SubscriptionImportError,
+  SubscriptionRefreshError,
+  normalizeSubscriptionProvider,
+  runSharedFlight,
+  subscriptionFlightKey,
+  type ParsedSubscription,
+  type RefreshResult,
+  type SubscriptionAccountProfile,
+  type SubscriptionAdapter,
+  type SubscriptionOAuthConfig,
+} from './credentials/adapters/subscription/index.js';
+export { generatePkce } from './credentials/oauth/pkce.js';
+export { CallbackParseError, parseCallbackUrl } from './credentials/oauth/parse-callback.js';
+export {
+  LoopbackPortBusyError,
+  OAuthCallbackTimeoutError,
+  normalizeOAuthFailure,
+  startLoopbackListener,
+  type CallbackQuery,
+  type LoopbackCallback,
+  type LoopbackListenerOptions,
+} from './credentials/oauth/loopback.js';
+export {
+  createOAuthSessionStore,
+  OAUTH_SESSION_TTL_MS,
+  OAuthSessionBusyError,
+  type OAuthSessionStore,
+} from './credentials/oauth/session.js';
+export { generateState, isValidState } from './credentials/oauth/state.js';
+export type {
+  OAuthSessionRecord,
+  OAuthSessionSnapshot,
+  OAuthSessionStatus,
+  SubscriptionProviderId,
+} from './credentials/oauth/types.js';
+export {
   AutoRouter,
   parseRateLimitError,
   parseModelUnavailableError,

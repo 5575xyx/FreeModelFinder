@@ -16,4 +16,7 @@ export { AgnesProvider } from './agnes.js';
 export { AgnesIntlProvider } from './agnes-intl.js';
 export { CustomProvider } from './custom.js';
 export { ClineProvider } from './cline.js';
+export { CodexProvider, CodexError } from './codex.js';
+export { ClaudeProvider, ClaudeError } from './claude.js';
+export { GoogleProvider, GoogleError } from './google.js';
 export { ZenProvider } from './zen.js';

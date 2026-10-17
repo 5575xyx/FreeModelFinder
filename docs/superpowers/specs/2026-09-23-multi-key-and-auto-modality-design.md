@@ -183,13 +183,13 @@ removeSourceKey?: { sourceId: string; index: number };     // custom source 按 
 
 两问题独立，可分 PR/分 commit：
 
-| 模块 | 问题1 | 问题2 |
-|------|-------|-------|
-| `packages/server/src/server.ts` | config keyMeta、POST 增删字段 | 无 |
-| `packages/server/src/routes/openai.ts` | 无 | detectRequestModality、auto image 分支 |
-| `packages/ui/SettingsView.tsx` | 多 Key UI | 无 |
-| `packages/ui/i18n.tsx` | placeholder/按钮文案 | modality.desc（可选） |
-| `packages/core` | 无（除非复用能力推断工具） | 若抽公共 `inferImageCapability` 可放 core |
+| 模块                                   | 问题1                         | 问题2                                     |
+| -------------------------------------- | ----------------------------- | ----------------------------------------- |
+| `packages/server/src/server.ts`        | config keyMeta、POST 增删字段 | 无                                        |
+| `packages/server/src/routes/openai.ts` | 无                            | detectRequestModality、auto image 分支    |
+| `packages/ui/SettingsView.tsx`         | 多 Key UI                     | 无                                        |
+| `packages/ui/i18n.tsx`                 | placeholder/按钮文案          | modality.desc（可选）                     |
+| `packages/core`                        | 无（除非复用能力推断工具）    | 若抽公共 `inferImageCapability` 可放 core |
 
 ## 范围外
 

@@ -20,6 +20,9 @@ import {
   AgnesProvider,
   AgnesIntlProvider,
   ClineProvider,
+  CodexProvider,
+  ClaudeProvider,
+  GoogleProvider,
   ZenProvider,
 } from './providers/index.js';
 import type { ProviderContext } from './providers/base.js';
@@ -66,6 +69,9 @@ const PROVIDER_CTORS: Record<
   'agnes-intl': AgnesIntlProvider,
   custom: CustomProvider,
   cline: ClineProvider,
+  codex: CodexProvider,
+  claude: ClaudeProvider,
+  google: GoogleProvider,
   opencode: ZenProvider,
 };
 
@@ -320,6 +326,9 @@ export class ProviderRegistry {
     if (cached) return cached;
     const settings = this.config.providers[id];
     const Ctor = PROVIDER_CTORS[id as Exclude<ProviderId, 'ollama'>];
+    if (!Ctor) {
+      throw new Error(`provider ${id} is not yet implemented`);
+    }
     const instance = new Ctor({
       credentials: settings?.credentials ?? { apiKey: '' },
       credentialRuntime: this.credentialRuntimeFor(id),
@@ -356,6 +365,7 @@ export class ProviderRegistry {
         return hasSources || hasLegacy;
       }
       const ctor = PROVIDER_CTORS[id];
+      if (!ctor) return false;
       if (typeof ctor.prototype.hasCredentials === 'function') {
         try {
           return this.instantiate(id).hasCredentials?.() ?? false;
@@ -634,7 +644,12 @@ export class ProviderRegistry {
       }
     }
     if (modelId.startsWith('gemini') || modelId.startsWith('models/gemini')) {
-      return { provider: this.getProvider('gemini'), modelId: modelId.replace(/^models\//, '') };
+      try {
+        return { provider: this.getProvider('gemini'), modelId: modelId.replace(/^models\//, '') };
+      } catch {
+        // 免费 Gemini API key 未启用/不可用：与其余启发式一致地继续往下走，
+        // 让目录查找有机会落到 google 订阅目录，而不是把请求变成 500。
+      }
     }
     if (
       modelId.startsWith('SenseChat') ||
@@ -708,7 +723,14 @@ export class ProviderRegistry {
     // the caller's allowlist as "model not allowed" for a model that was on it.
     const catalog = this.modelsCache?.models;
     if (catalog) {
-      const hit = catalog.find((m) => m.id === modelId);
+      // 订阅目录发布的 id 带 provider 前缀（`codex:…`/`google:…`），而裸名请求不带前缀，
+      // 所以比对时要同时认精确 id 与去前缀 id，否则订阅条目对裸名永远不可达。
+      // 命中多条时先取免费条目：订阅额度是用户已付费的配额，不该被一次裸名请求无声消耗
+      // （spec §4.5 —— 订阅模型是"兜底候选"）。只有免费目录里没有时才落回订阅目录。
+      const matches = catalog.filter(
+        (m) => m.id === modelId || bareModelId(m.provider, m.id) === modelId,
+      );
+      const hit = matches.find((m) => m.subscription !== true) ?? matches[0];
       if (hit) {
         try {
           return {
@@ -771,9 +793,19 @@ export class ProviderRegistry {
           a.m.id.localeCompare(b.m.id)
         );
       });
+    // 订阅额度是用户已付费的配额，不是免费 key：auto 链把它稳定分区到尾部，
+    // 免费模型按分数排在前面。只有免费池被冷却/过滤空了，订阅模型才会被选中，
+    // 这样日常请求永远不会无感知地消耗订阅额度。
+    const [freeRows, subscriptionRows] = scored.reduce<[typeof scored, typeof scored]>(
+      (acc, row) => {
+        acc[row.m.subscription === true ? 1 : 0].push(row);
+        return acc;
+      },
+      [[], []],
+    );
     const seats = new Map<ProviderId, number>();
     const chain: ModelInfo[] = [];
-    for (const row of scored) {
+    for (const row of [...freeRows, ...subscriptionRows]) {
       const used = seats.get(row.m.provider) ?? 0;
       if (used >= 2) continue;
       seats.set(row.m.provider, used + 1);
@@ -799,7 +831,11 @@ export class ProviderRegistry {
         const hit = chain.find(
           (m) => m.provider === sticky.provider && bareModelId(m.provider, m.id) === sticky.modelId,
         );
-        if (hit) {
+        // 订阅模型只是兜底候选。若 sticky 钉在订阅模型上、而免费池已经恢复（链首不再是
+        // 订阅模型），必须解钉改取链首 —— 否则这个会话会一直消耗已付费额度，即使免费模型
+        // 已经可用，用户却毫无感知。
+        const pinnedToSubscription = hit?.subscription === true && chain[0]?.subscription !== true;
+        if (hit && !pinnedToSubscription) {
           opts?.onPick?.({ sticky: true, pool });
           return {
             provider: this.getProvider(hit.provider),

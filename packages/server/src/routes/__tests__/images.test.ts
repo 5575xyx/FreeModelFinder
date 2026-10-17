@@ -47,8 +47,19 @@ function fakeRegistry(): ProviderRegistry {
       return response;
     },
     async *stream() {
-      yield { id: 'fixture-stream', model: 'fixture-model', created: 1_700_000_000, delta: 'fixture ' };
-      yield { id: 'fixture-stream', model: 'fixture-model', created: 1_700_000_000, delta: 'reply', finish_reason: 'stop' as const };
+      yield {
+        id: 'fixture-stream',
+        model: 'fixture-model',
+        created: 1_700_000_000,
+        delta: 'fixture ',
+      };
+      yield {
+        id: 'fixture-stream',
+        model: 'fixture-model',
+        created: 1_700_000_000,
+        delta: 'reply',
+        finish_reason: 'stop' as const,
+      };
     },
     async generateImage() {
       return {

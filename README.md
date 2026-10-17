@@ -368,6 +368,22 @@ curl http://127.0.0.1:11435/v1/chat/completions \
 
 Gateway 认证默认关闭。启用 Gateway Key 后，请增加 `Authorization: Bearer <FMF_GATEWAY_KEY>`；也支持 `x-api-key` 和 `x-goog-api-key`。完整的三种协议、流式调用和健康检查示例见 [API 使用说明](docs/API.md)。
 
+## 订阅账号接入
+
+除免费 API Key 外，FreeModelFinder 还能把你**已经付费**的订阅账号（ChatGPT/Codex、Claude、Google/Gemini）接管成本地算力，通过同一套兼容 API 调用。
+
+| Provider | 模型 ID 前缀 | 凭证文件（默认）              |
+| -------- | ------------ | ----------------------------- |
+| Codex    | `codex:`     | `~/.codex/auth.json`          |
+| Claude   | `claude:`    | `~/.claude/.credentials.json` |
+| Google   | `google:`    | `~/.gemini/oauth_creds.json`  |
+
+**导入方式**：先用各家官方 CLI 登录一次（`codex login`、`claude login`、`gemini` 首次运行），生成上述凭证文件；然后打开 Dashboard 的「设置 → 订阅账号」，填入文件路径或直接粘贴凭据内容导入。导入后该账号即由 FMF 接管，令牌轮换由 FMF 负责。
+
+**Auto 兜底行为**：订阅模型恒排在免费模型之后——`auto` 路由只有在免费池被冷却或过滤空时才会动用订阅额度，会话 sticky 一旦钉在订阅模型上、只要免费池恢复就会立即解钉，日常请求不会无感知消耗你的订阅配额。裸模型名（如 `gpt-5.5`）优先解析到免费渠道，只有当没有任何免费渠道发布该模型时才落回订阅 Provider；显式写 `codex:gpt-5.1-codex-max` 这类带前缀的 ID 则总是直连对应 Provider。`/v1/models` 中订阅模型带有 `subscription: true` 标记，客户端可据此区分。
+
+**风险提示**：导入订阅账号可能违反上游服务商条款，且共享额度存在被封禁的风险，请谨慎使用。免费审计报告（`FREE_MODELS.md`）不包含订阅模型。
+
 ## 适合与不适合
 
 | 适合                                    | 暂不适合                                |

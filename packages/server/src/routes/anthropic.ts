@@ -75,7 +75,11 @@ async function dispatchWithAutoRoute(
         if (failure.kind === 'unavailable') {
           router.markModelUnavailable(chatReq.model, provider.id as ProviderId, failure.message);
         } else if (failure.kind === 'rate-limit') {
-          router.markRateLimited(chatReq.model, provider.id as ProviderId, parseRateLimitError(err));
+          router.markRateLimited(
+            chatReq.model,
+            provider.id as ProviderId,
+            parseRateLimitError(err),
+          );
         } else if (failure.kind === 'context') {
           router.markContextOverflow(chatReq.model, provider.id as ProviderId, failure.message);
         }
@@ -207,9 +211,9 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
       let firstChunk: StreamChunk | null = null;
       for (;;) {
         const resolved = reg.resolveModel(chatReq.model, { allowed: allowedModels });
-        const it = resolved.provider.stream({ ...chatReq, model: resolved.modelId })[
-          Symbol.asyncIterator
-        ]();
+        const it = resolved.provider
+          .stream({ ...chatReq, model: resolved.modelId })
+          [Symbol.asyncIterator]();
         try {
           const head = await it.next();
           provider = resolved.provider;
@@ -225,11 +229,7 @@ export function registerAnthropicRoutes(app: FastifyInstance, getRegistry: () =>
             if (failure.kind === 'unavailable') {
               router.markModelUnavailable(chatReq.model, resolved.provider.id, failure.message);
             } else if (failure.kind === 'rate-limit') {
-              router.markRateLimited(
-                chatReq.model,
-                resolved.provider.id,
-                parseRateLimitError(err),
-              );
+              router.markRateLimited(chatReq.model, resolved.provider.id, parseRateLimitError(err));
             } else if (failure.kind === 'context') {
               router.markContextOverflow(chatReq.model, resolved.provider.id, failure.message);
             }

@@ -54,6 +54,8 @@ import { KeepAliveService, customSourcesFromConfig } from './keep-alive.js';
 import { catalogSignature } from './catalog-signature.js';
 import { recordRemovalCleanup, loadRemovalCleanupLog } from './removal-cleanup-log.js';
 import { registerOnboardingRoutes } from './onboarding.js';
+import { registerSubscriptionRoutes } from './routes/subscription.js';
+import { registerSubscriptionOAuthRoutes } from './routes/subscription-oauth.js';
 import {
   createRuntimeIdentity,
   DESKTOP_CONTROL_PROTOCOL,
@@ -631,6 +633,10 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
   const app = Fastify<Server>(appOptions);
   if (opts.surface !== 'gateway') {
     await app.register(cors, {
+      // @fastify/cors 默认只广播 GET,HEAD,POST。dashboard 还会发 DELETE（取消 OAuth 会话、
+      // 移除订阅账号）和 PUT/PATCH（switch-project 开关）；漏掉任何一个，浏览器都会在预检
+      // 阶段直接拦掉请求，表现为按钮点了没反应，而 app.inject 测试根本不过预检、照绿。
+      methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
       origin(origin, callback) {
         if (!origin) {
           callback(null, true);
@@ -1282,6 +1288,9 @@ async function createApp(opts: AppOptions): Promise<FastifyInstance> {
         return reply.code(500).send({ error: redactMessage(error) });
       }
     });
+
+    registerSubscriptionRoutes(app, getRegistry);
+    registerSubscriptionOAuthRoutes(app, getRegistry);
 
     app.get('/api/model-cleanup-log', async () => {
       const log = await loadRemovalCleanupLog();

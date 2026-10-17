@@ -14,15 +14,15 @@
 
 ## File Structure
 
-| Action | File | Responsibility |
-| ------ | ---- | -------------- |
-| Modify | `packages/server/src/server.ts` | Tag `vision` on `model-options` entries (`~lines 7-15` import, `~lines 1005-1057` handler) |
-| Test   | `packages/server/src/__tests__/model-options.test.ts` | Failing tests for `vision` tagging |
-| Modify | `packages/ui/app/components/ModelMultiSelect.tsx` | `ModelOption.vision`, `filterCapability: 'vision'`, `matchesCapability` vision branch |
-| Modify | `packages/ui/app/components/SettingsView.tsx` | `AutoRouteInfo.visionModel`, third selector, grid `sm:grid-cols-3` (`~line 1308`) |
-| Modify | `packages/ui/app/i18n.tsx` | `visionModel` label/placeholder + desc sentences (zh `~line 244`, en `~line 712`) |
-| Modify | `packages/ui/test/server.ts` | MSW fixtures: `visionModel: []` on auto-route GET; vision-tagged model option |
-| Test   | `packages/ui/app/components/__tests__/settings.test.tsx` | Failing render/POST tests + `matchesCapability` vision cases |
+| Action | File                                                     | Responsibility                                                                             |
+| ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Modify | `packages/server/src/server.ts`                          | Tag `vision` on `model-options` entries (`~lines 7-15` import, `~lines 1005-1057` handler) |
+| Test   | `packages/server/src/__tests__/model-options.test.ts`    | Failing tests for `vision` tagging                                                         |
+| Modify | `packages/ui/app/components/ModelMultiSelect.tsx`        | `ModelOption.vision`, `filterCapability: 'vision'`, `matchesCapability` vision branch      |
+| Modify | `packages/ui/app/components/SettingsView.tsx`            | `AutoRouteInfo.visionModel`, third selector, grid `sm:grid-cols-3` (`~line 1308`)          |
+| Modify | `packages/ui/app/i18n.tsx`                               | `visionModel` label/placeholder + desc sentences (zh `~line 244`, en `~line 712`)          |
+| Modify | `packages/ui/test/server.ts`                             | MSW fixtures: `visionModel: []` on auto-route GET; vision-tagged model option              |
+| Test   | `packages/ui/app/components/__tests__/settings.test.tsx` | Failing render/POST tests + `matchesCapability` vision cases                               |
 
 **Conventions (from repo AGENTS.md):** TDD (RED → GREEN); per-file `npx prettier --write` before commit; `npx eslint ... --max-warnings=0`; never run `pnpm build` and `pnpm typecheck` in parallel; PowerShell — chain with `if ($?) { ... }`, never `&&`.
 
@@ -44,6 +44,7 @@ pnpm --filter @freemodelfinder/ui test
 ### Task 1: Server — tag `vision` on model-options
 
 **Files:**
+
 - Modify: `packages/server/src/server.ts` (import block `:7-15`, handler `:1005-1057`)
 - Test: `packages/server/src/__tests__/model-options.test.ts`
 
@@ -112,20 +113,17 @@ describe('GET /api/auto-route/model-options vision tags', () => {
   });
 
   it('forced visionModel pool marks listed ids vision even without heuristic match', async () => {
-    await withApp(
-      async (app) => {
-        const res = await app.inject({
-          method: 'GET',
-          url: '/api/auto-route/model-options',
-          headers: localUiHeaders,
-        });
-        assert.equal(res.statusCode, 200);
-        const body = res.json() as { models: Array<{ id: string; vision?: boolean }> };
-        const plain = body.models.find((m) => m.id === 'custom:fixture:plain-chat');
-        assert.equal(plain?.vision, true, 'forced-pool member must be vision-tagged');
-      },
-      configWithForcedVision,
-    );
+    await withApp(async (app) => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/auto-route/model-options',
+        headers: localUiHeaders,
+      });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as { models: Array<{ id: string; vision?: boolean }> };
+      const plain = body.models.find((m) => m.id === 'custom:fixture:plain-chat');
+      assert.equal(plain?.vision, true, 'forced-pool member must be vision-tagged');
+    }, configWithForcedVision);
   });
 });
 ```
@@ -227,6 +225,7 @@ git commit -m "feat(server): tag vision capability on model-options"
 ### Task 2: UI — `matchesCapability` vision branch
 
 **Files:**
+
 - Modify: `packages/ui/app/components/ModelMultiSelect.tsx` (`:10-46`)
 - Test: `packages/ui/app/components/__tests__/settings.test.tsx` (`describe('matchesCapability')` `:331-410`)
 
@@ -316,6 +315,7 @@ git commit -m "feat(ui): vision filter branch in matchesCapability"
 ### Task 3: UI — selector, types, i18n, fixtures
 
 **Files:**
+
 - Modify: `packages/ui/app/components/SettingsView.tsx` (`AutoRouteInfo` `:175-191`, modality card `:1298-1332`)
 - Modify: `packages/ui/app/i18n.tsx` (zh `:244-250`, en `:712-718`)
 - Modify: `packages/ui/test/server.ts` (auto-route GET `:70-81`, model-options `:82-106`)

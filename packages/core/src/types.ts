@@ -20,6 +20,9 @@ export const ProviderIdSchema = z.enum([
   'custom',
   'cline',
   'opencode',
+  'codex',
+  'claude',
+  'google',
 ]);
 export type ProviderId = z.infer<typeof ProviderIdSchema>;
 
@@ -206,6 +209,8 @@ export interface ModelInfo {
   defaultReasoningEffort?: string;
   /** Per-million-token price, when the provider publishes one. */
   cost?: ModelCost;
+  /** 订阅额度模型，auto 路由中恒排免费之后 */
+  subscription?: boolean;
 }
 
 export type QuotaResource = 'requests' | 'tokens' | 'neurons';
@@ -398,7 +403,7 @@ export interface CallLogEntry {
   error?: string;
 }
 
-export type CredentialPlatform = 'cline';
+export type CredentialPlatform = 'cline' | 'codex' | 'claude' | 'google';
 
 export interface CredentialAccountEntry {
   id: string;
@@ -415,6 +420,12 @@ export interface CredentialPoolConfig {
   cooldownFallbackMinutes?: number;
 }
 
+/** 额度超限后的兜底行为（对齐参考项目的 `quota-exceeded` 配置段）。 */
+export interface QuotaExceededSettings {
+  /** 额度超限时自动切换 GCP 项目（对齐参考项目 `quota-exceeded/switch-project`）。 */
+  switchProject?: boolean;
+}
+
 export interface AppConfig {
   version: number;
   port: number;
@@ -424,6 +435,7 @@ export interface AppConfig {
   autoRoute?: AutoRouteSettings;
   onboarding?: OnboardingState;
   credentials?: Partial<Record<CredentialPlatform, CredentialPoolConfig>>;
+  quotaExceeded?: QuotaExceededSettings;
   /** External alias -> real model id (composed form, e.g. "opencode:mimo-v2.6-flash-free"). */
   modelAliases?: Record<string, string>;
   /**
