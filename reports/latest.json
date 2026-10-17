@@ -1,15 +1,15 @@
 {
   "schemaVersion": 2,
-  "date": "2026-10-15",
-  "generatedAt": "2026-10-15T00:34:26.491Z",
-  "reportPath": "reports/provider-free-model-audit-2026-10-15.md",
-  "totalModels": 93,
+  "date": "2026-10-16",
+  "generatedAt": "2026-10-16T00:27:40.358Z",
+  "reportPath": "reports/provider-free-model-audit-2026-10-16.md",
+  "totalModels": 95,
   "providers": [
     {
       "id": "openrouter",
       "display": "OpenRouter",
       "status": "ok",
-      "count": 14,
+      "count": 15,
       "freeType": "零价格模型",
       "freeBasis": "实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型",
       "risk": "免费账号通常共享日请求额度；上游目录和限额会变",
@@ -57,6 +57,11 @@
         {
           "id": "nvidia/nemotron-3.5-lightning:free",
           "displayName": "NVIDIA: Nemotron 3.5 Lightning (free)",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "nvidia/nemotron-3.5-super-vl:free",
+          "displayName": "NVIDIA: Nemotron 3.5 Super VL (free)",
           "contextWindow": 1000000
         },
         {
@@ -580,7 +585,7 @@
       "id": "opencode",
       "display": "OpenCode Zen",
       "status": "ok",
-      "count": 9,
+      "count": 10,
       "freeType": "实时零价模型（匿名通道）",
       "freeBasis": "实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public）",
       "risk": "匿名通道与免费层有速率和并发限制；部分免费模型只在 Go tier 提供；上游目录与定价可能随时变化",
@@ -593,7 +598,12 @@
         {
           "id": "opencode:cat-jam-free",
           "displayName": "cat-jam-free",
-          "contextWindow": 262144
+          "contextWindow": 1048576
+        },
+        {
+          "id": "opencode:deepseek-v4.1-flash-free",
+          "displayName": "deepseek-v4.1-flash-free",
+          "contextWindow": 200000
         },
         {
           "id": "opencode:longcat-2.5-preview-free",
@@ -621,27 +631,46 @@
           "contextWindow": 262144
         },
         {
-          "id": "opencode:space-bunny-free",
-          "displayName": "space-bunny-free",
+          "id": "opencode:nemotron-3.5-super-vl-free",
+          "displayName": "nemotron-3.5-super-vl-free",
           "contextWindow": 1048576
         },
         {
-          "id": "opencode:step-5-preview-free",
-          "displayName": "step-5-preview-free",
-          "contextWindow": 1000000
+          "id": "opencode:space-bunny-free",
+          "displayName": "space-bunny-free",
+          "contextWindow": 1048576
         }
       ]
     }
   ],
   "changes": {
-    "comparedWith": "2026-10-14",
-    "added": [],
+    "comparedWith": "2026-10-15",
+    "added": [
+      {
+        "provider": "openrouter",
+        "id": "nvidia/nemotron-3.5-super-vl:free",
+        "displayName": "NVIDIA: Nemotron 3.5 Super VL (free)",
+        "contextWindow": 1000000
+      },
+      {
+        "provider": "opencode",
+        "id": "opencode:deepseek-v4.1-flash-free",
+        "displayName": "deepseek-v4.1-flash-free",
+        "contextWindow": 200000
+      },
+      {
+        "provider": "opencode",
+        "id": "opencode:nemotron-3.5-super-vl-free",
+        "displayName": "nemotron-3.5-super-vl-free",
+        "contextWindow": 1048576
+      }
+    ],
     "removed": [
       {
         "provider": "opencode",
-        "id": "opencode:ling-3.1-flash-free",
-        "displayName": "ling-3.1-flash-free",
-        "contextWindow": null
+        "id": "opencode:step-5-preview-free",
+        "displayName": "step-5-preview-free",
+        "contextWindow": 1000000
       }
     ],
     "comparedProviders": [

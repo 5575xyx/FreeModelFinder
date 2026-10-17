@@ -2,25 +2,31 @@
 
 <!-- 此文件由 scripts/update-readme-audit.mjs 自动生成，请勿手动编辑。 -->
 
-> 最近目录审计：**2026-10-15（Asia/Shanghai）** · **93** 个免费模型入口 · **13/15** 个 Provider 正常。
+> 最近目录审计：**2026-10-16（Asia/Shanghai）** · **95** 个免费模型入口 · **13/15** 个 Provider 正常。
 
-[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-15.md)
+[返回项目 README](README.md) · [查看本次目录审计报告](reports/provider-free-model-audit-2026-10-16.md)
 
 这份列表每天由 GitHub Actions 通过各 Provider 的模型目录接口刷新，并应用 FreeModelFinder 核心层的免费规则。它不执行真实推理，不代表无限额度、永久免费或生产级可用。同一上游模型通过多个 Provider 提供时会分别计数，因为对应的账号资格、额度和 Gateway 模型 ID 不同。
 
 ## 今日变化
 
-与 2026-10-14 相比，在成功比较的 13 个 Provider 中：**新增 0 个，移除 1 个**。
+与 2026-10-15 相比，在成功比较的 13 个 Provider 中：**新增 3 个，移除 1 个**。
+
+### 新增
+
+- `openrouter:nvidia/nemotron-3.5-super-vl:free`
+- `opencode:opencode:deepseek-v4.1-flash-free`
+- `opencode:opencode:nemotron-3.5-super-vl-free`
 
 ### 移除
 
-- `opencode:opencode:ling-3.1-flash-free`
+- `opencode:opencode:step-5-preview-free`
 
 ## Provider 汇总
 
 | Provider                 | 状态      | 免费模型数 | 免费类型                 | 免费依据                                                                                                                                      |
 | ------------------------ | --------- | ---------: | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenRouter               | 🟢 正常   |         14 | 零价格模型               | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型                                                           |
+| OpenRouter               | 🟢 正常   |         15 | 零价格模型               | 实时目录中仅保留 `:free` 或 `openrouter/free`、输入输出价格均为 0、仅输出文本的模型                                                           |
 | Google Gemini            | ⚪ 未接入 |     未接入 | 账号 Free Tier           | 账号实时目录与 Free Tier 白名单取交集，只保留支持 `generateContent` 的型号                                                                    |
 | Zhipu AI                 | 🟢 正常   |          2 | 官方免费型号             | 只列入官方免费 Flash 清单                                                                                                                     |
 | SiliconFlow              | 🟢 正常   |          5 | 免费白名单               | 平台免费型号白名单与实时模型目录取交集                                                                                                        |
@@ -34,7 +40,7 @@
 | Kilo Code                | 🟢 正常   |         18 | 聚合免费模型             | 白名单 + 零价格双重验证，覆盖 17+ 个免费模型                                                                                                  |
 | Agnes AI (China)         | 🟢 正常   |          5 | 官方免费模型             | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                                                |
 | Agnes AI (International) | 🟢 正常   |          6 | 官方免费模型             | 官方定价页确认的免费模型清单（agnes-2.5-flash、agnes-3.0-flash、agnes-image-_、agnes-video-_）                                                |
-| OpenCode Zen             | 🟢 正常   |          9 | 实时零价模型（匿名通道） | 实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public） |
+| OpenCode Zen             | 🟢 正常   |         10 | 实时零价模型（匿名通道） | 实时抓取 https://opencode.ai/zen（Zen / Zen Go 双 tier）目录，并以 models.dev 定价 cost=0 判定免费；未配置密钥时回退匿名通道（Bearer public） |
 
 ## 完整列表
 
@@ -56,6 +62,7 @@
 | `openrouter:nvidia/nemotron-3-super-120b-a12b:free`             | NVIDIA: Nemotron 3 Super (free)         |     262.1K |
 | `openrouter:nvidia/nemotron-3-ultra-550b-a55b:free`             | NVIDIA: Nemotron 3 Ultra (free)         |         1M |
 | `openrouter:nvidia/nemotron-3.5-lightning:free`                 | NVIDIA: Nemotron 3.5 Lightning (free)   |         1M |
+| `openrouter:nvidia/nemotron-3.5-super-vl:free`                  | NVIDIA: Nemotron 3.5 Super VL (free)    |         1M |
 | `openrouter:openrouter/free`                                    | Free Models Router                      |       200K |
 | `openrouter:poolside/laguna-s-2.1:free`                         | Poolside: Laguna S 2.1 (free)           |     262.1K |
 | `openrouter:poolside/laguna-xs-2.1:free`                        | Poolside: Laguna XS 2.1 (free)          |     262.1K |
@@ -269,11 +276,12 @@
 | Gateway 模型 ID                                     | 显示名称                        | 上下文窗口 |
 | --------------------------------------------------- | ------------------------------- | ---------: |
 | `opencode:opencode:big-pickle`                      | big-pickle                      |       200K |
-| `opencode:opencode:cat-jam-free`                    | cat-jam-free                    |     262.1K |
+| `opencode:opencode:cat-jam-free`                    | cat-jam-free                    |         1M |
+| `opencode:opencode:deepseek-v4.1-flash-free`        | deepseek-v4.1-flash-free        |       200K |
 | `opencode:opencode:longcat-2.5-preview-free`        | longcat-2.5-preview-free        |         1M |
 | `opencode:opencode:mimo-v2.6-flash-free`            | mimo-v2.6-flash-free            |       200K |
 | `opencode:opencode:muse-spark-1.2-contributor-free` | muse-spark-1.2-contributor-free |         1M |
 | `opencode:opencode:muse-spark-1.3-contributor-free` | muse-spark-1.3-contributor-free |         1M |
 | `opencode:opencode:nemotron-3.5-lightning-free`     | nemotron-3.5-lightning-free     |     262.1K |
+| `opencode:opencode:nemotron-3.5-super-vl-free`      | nemotron-3.5-super-vl-free      |         1M |
 | `opencode:opencode:space-bunny-free`                | space-bunny-free                |         1M |
-| `opencode:opencode:step-5-preview-free`             | step-5-preview-free             |         1M |
